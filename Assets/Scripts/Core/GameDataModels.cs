@@ -1,22 +1,71 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 #region Server Communication Models
 
-[Serializable]
-public class Features
+public static class StPatricksGoldDefinition
 {
-    public int totalLines;
-    public UltraWheel ultraWheel;
-    public ScatterWheel scatterWheel;
-    public TempleRiches templeRiches;
-    public WildMultiplier wildMultiplier;
-    public LowSymbolAnyPay lowSymbolAnyPay;
+    public const string GameId = "SL-SPG";
+    public const int ReelCount = 5;
+    public const int RowCount = 3;
+    public const int SymbolCount = 13;
+    public const int PaylineCount = 30;
+}
+
+public static class StPatricksGoldSymbolIds
+{
+    public const int Ace = 0;
+    public const int King = 1;
+    public const int Queen = 2;
+    public const int Jack = 3;
+    public const int Ten = 4;
+    public const int BeerGlass = 5;
+    public const int GreenHat = 6;
+    public const int Magnet = 7;
+    public const int Cigar = 8;
+    public const int Wild = 9;
+    public const int ScatterWheel = 10;
+    public const int UltraWheel = 11;
+    public const int TempleRiches = 12;
+
+    public static string GetName(int symbolId)
+    {
+        return symbolId switch
+        {
+            Ace => "Ace",
+            King => "King",
+            Queen => "Queen",
+            Jack => "Jack",
+            Ten => "Ten",
+            BeerGlass => "BeerGlass",
+            GreenHat => "GreenHat",
+            Magnet => "Magnet",
+            Cigar => "Cigar",
+            Wild => "Wild",
+            ScatterWheel => "ScatterWheel",
+            UltraWheel => "UltraWheel",
+            TempleRiches => "TempleRiches",
+            _ => null
+        };
+    }
 }
 
 [Serializable]
-public class LowSymbolAnyPay
+public class StPatricksGoldFeatureConfig
+{
+    public int totalLines;
+    public double betMultiplier;
+    public UltraWheelConfig ultraWheel;
+    public ScatterWheelConfig scatterWheel;
+    public TempleRichesConfig templeRiches;
+    public WildMultiplierConfig wildMultiplier;
+    public LowSymbolAnyPayConfig lowSymbolAnyPay;
+}
+
+[Serializable]
+public class LowSymbolAnyPayConfig
 {
     public bool enabled;
     public int payout3x;
@@ -26,55 +75,61 @@ public class LowSymbolAnyPay
 }
 
 [Serializable]
-public class Matrix
+public class SlotMatrixDimensions
 {
     public int x;
     public int y;
 }
 
 [Serializable]
-public class ReelsInstance
+public class ReelSymbolCounts
 {
-    public int _0;
-    public int _1;
-    public int _2;
-    public int _3;
-    public int _4;
+    [UnityEngine.Serialization.FormerlySerializedAs("0")] public int reel0;
+    [UnityEngine.Serialization.FormerlySerializedAs("1")] public int reel1;
+    [UnityEngine.Serialization.FormerlySerializedAs("2")] public int reel2;
+    [UnityEngine.Serialization.FormerlySerializedAs("3")] public int reel3;
+    [UnityEngine.Serialization.FormerlySerializedAs("4")] public int reel4;
 }
 
 [Serializable]
-public class Root
+public class StPatricksGoldConfigResponse
 {
     public string id;
     public List<double> bets;
     public List<List<int>> lines;
-    public Matrix matrix;
-    public List<Symbol> symbols;
-    public Features features;
+    public SlotMatrixDimensions matrix;
+    public List<StPatricksGoldSymbol> symbols;
+    public StPatricksGoldFeatureConfig features;
     public bool isSpecial;
 }
 
 [Serializable]
-public class ScatterWheel
+public class ScatterWheelConfig
 {
-    public List<Wheel> wheels;
+    public List<ScatterWheelAwardTable> wheels;
     public bool enabled;
     public int minTriggerCount;
+    // Present in the compact live initData response.
+    public int wheelCount;
 }
 
 [Serializable]
-public class Symbol
+public class StPatricksGoldSymbol
 {
     public int id;
     public string name;
     public string group;
     public List<int> multiplier;
     public string description;
-    public ReelsInstance reelsInstance;
+    public ReelSymbolCounts reelsInstance;
+    // Present alongside multiplier in the compact live UI data.
+    public int payout3x;
+    public int payout4x;
+    public int payout5x;
 }
 
 [Serializable]
-public class TempleRiches
+public class TempleRichesConfig
 {
     public bool enabled;
     public int multiplier;
@@ -82,9 +137,13 @@ public class TempleRiches
 }
 
 [Serializable]
-public class UltraWheel
+public class UltraWheelConfig
 {
     public bool enabled;
+    // Compact live initData supplies min/max ranges instead of full award tables.
+    public List<int> wheel1Range;
+    public List<int> wheel2Range;
+    public List<int> wheel3Range;
     public List<double> wheel1Probs;
     public List<double> wheel2Probs;
     public List<double> wheel3Probs;
@@ -100,7 +159,7 @@ public class UltraWheel
 }
 
 [Serializable]
-public class Wheel
+public class ScatterWheelAwardTable
 {
     public List<int> awards;
     public int wheelId;
@@ -108,13 +167,15 @@ public class Wheel
 }
 
 [Serializable]
-public class WildMultiplier
+public class WildMultiplierConfig
 {
     public bool enabled;
     public List<int> multipliers;
     public List<int> excludedSymbols;
     public List<double> multipliersProb;
     public int maxCumulativeMultiplier;
+    // Alias used by the compact live initData response.
+    public int maxCumulative;
 }
 
 // ============================================================================
@@ -124,7 +185,7 @@ public class WildMultiplier
 [Serializable]
 public class ServerSpinResponse
 {
-    public string id = "ResultData";
+    public string id;
     public bool success;
     public List<List<string>> matrix;
     public ServerPlayerBalance player;
@@ -144,8 +205,8 @@ public class ServerPayload
     public List<List<string>> reels;        // Server sends STRINGS not ints!
     public List<ServerWinLine> winningLines; // Server uses "winningLines"
     public double totalWin;                  // Server uses "totalWin"
-    public List<ServerWinLine> lineWins;     // Server uses "lineWins" in Diamond Rose
-    public double winAmount;                 // Server uses "winAmount" in Diamond Rose
+    public List<ServerWinLine> lineWins;     // Alternate server win-line field
+    public double winAmount;                 // Alternate server total-win field
     public int scatterCount;
     public bool scatterTriggered;
     public ServerFreeSpinState freeSpinState; // Can be null
@@ -168,13 +229,13 @@ public class ServerFreeSpinState
 public class ServerWinLine
 {
     public int lineIndex;                    // Server uses "lineIndex"
-    public List<string> positions;           // Diamond Rose format: ["1,0", "0,1", "1,2"] (col,row strings)
+    public List<string> positions;           // Coordinate strings supplied by the server
     public string symbolId;                  // Server sends STRING!
-    public string symbolName;                // Diamond Rose sends "Any 7" etc.
+    public string symbolName;
     public int matchCount;
     public double basePayout;
     public double payout;
-    public double winAmount;                 // Diamond Rose sends winAmount per line
+    public double winAmount;
     public int wildMultiplier;
     public List<WildDetail> wildDetails;
 }
@@ -239,45 +300,40 @@ public class SpinPayload
 #region Game Configuration (Client Side Converted)
 
 [Serializable]
-public class GameConfig
+public class StPatricksGoldGameConfig
 {
-    public int reelCount = 5;
-    public int rowCount = 4;
-    public int symbolCount = 13;
-    public int paylineCount = 40;
+    public int reelCount = StPatricksGoldDefinition.ReelCount;
+    public int rowCount = StPatricksGoldDefinition.RowCount;
+    public int symbolCount = StPatricksGoldDefinition.SymbolCount;
+    public int paylineCount = StPatricksGoldDefinition.PaylineCount;
     public List<List<int>> paylines;
     public List<double> availableBets;
-    public List<SymbolInfo> symbols;
+    public List<StPatricksGoldSymbolInfo> symbols;
 
-    // Wild configuration
-    public int wildSymbolId = 11;      // Base wild (1x)
-    public int wild2xSymbolId = 13;     // Wild 2x multiplier
-    public int wild3xSymbolId = 14;     // Wild 3x multiplier
-    public int wild5xSymbolId = 15;     // Wild 5x multiplier
-    public List<int> wildMultipliers = new List<int> { 1, 2, 3, 5 };
+    public int wildSymbolId = StPatricksGoldSymbolIds.Wild;
+    public List<int> wildMultipliers = new List<int> { 2, 3, 4, 5 };
 
-    // Scatter configuration
-    public int scatterSymbolId = 12;
+    public int scatterWheelSymbolId = StPatricksGoldSymbolIds.ScatterWheel;
+    public int ultraWheelSymbolId = StPatricksGoldSymbolIds.UltraWheel;
+    public int templeRichesSymbolId = StPatricksGoldSymbolIds.TempleRiches;
 
-
-
-    public int betMultiplier = 100;
+    public double betMultiplier = StPatricksGoldDefinition.PaylineCount;
     public bool isSpecial;
-    public UltraWheel ultraWheel;
-    public ScatterWheel scatterWheel;
-    public TempleRiches templeRiches;
-    public WildMultiplier wildMultiplierFeature;
-    public LowSymbolAnyPay lowSymbolAnyPay;
+    public UltraWheelConfig ultraWheel;
+    public ScatterWheelConfig scatterWheel;
+    public TempleRichesConfig templeRiches;
+    public WildMultiplierConfig wildMultiplierFeature;
+    public LowSymbolAnyPayConfig lowSymbolAnyPay;
 }
 
 [Serializable]
-public class SymbolInfo
+public class StPatricksGoldSymbolInfo
 {
     public int id;
     public string name;
     public string group;
     public string description;
-    public ReelsInstance reelsInstance;
+    public ReelSymbolCounts reelSymbolCounts;
     public List<double> multipliers;
     public bool isWild;
     public bool isScatter;
@@ -379,8 +435,8 @@ public enum GameState
 public enum SpinSpeed
 {
     Normal,
-    Turbo,
-    QuickSpin
+    FastSpin,
+    SkipSpin
 }
 
 #endregion
@@ -388,16 +444,18 @@ public enum SpinSpeed
 #region Helper Classes for Conversion
 
 /// <summary>
-/// Converts server data to client GameConfig
+/// Converts the SL-SPG configuration response to the runtime configuration.
 /// </summary>
 public static class GameDataConverter
 {
-    internal static GameConfig ConvertToGameConfig(Root serverData)
+    internal static StPatricksGoldGameConfig ConvertStPatricksGoldConfig(StPatricksGoldConfigResponse serverData)
     {
-        int reelCount = serverData.matrix != null && serverData.matrix.x > 0 ? serverData.matrix.x : 3;
+        int reelCount = serverData.matrix != null && serverData.matrix.x > 0
+            ? serverData.matrix.x
+            : StPatricksGoldDefinition.ReelCount;
         int rowCount = serverData.matrix != null && serverData.matrix.y > 0 ? serverData.matrix.y : InferRowCount(serverData.lines);
 
-        var config = new GameConfig
+        var config = new StPatricksGoldGameConfig
         {
             reelCount = reelCount,
             rowCount = rowCount,
@@ -405,7 +463,7 @@ public static class GameDataConverter
             paylineCount = ResolvePaylineCount(serverData),
             paylines = serverData.lines ?? new List<List<int>>(),
             availableBets = serverData.bets ?? new List<double>(),
-            symbols = new List<SymbolInfo>(),
+            symbols = new List<StPatricksGoldSymbolInfo>(),
             isSpecial = serverData.isSpecial
         };
 
@@ -413,13 +471,13 @@ public static class GameDataConverter
         {
             foreach (var serverSymbol in serverData.symbols)
             {
-                var symbolInfo = new SymbolInfo
+                var symbolInfo = new StPatricksGoldSymbolInfo
                 {
                     id = serverSymbol.id,
                     name = serverSymbol.name,
                     group = serverSymbol.group,
                     description = serverSymbol.description,
-                    reelsInstance = serverSymbol.reelsInstance,
+                    reelSymbolCounts = serverSymbol.reelsInstance,
                     multipliers = serverSymbol.multiplier != null
                         ? serverSymbol.multiplier.Select(value => (double)value).ToList()
                         : new List<double>(),
@@ -438,7 +496,7 @@ public static class GameDataConverter
 
                 if (symbolInfo.isScatter)
                 {
-                    config.scatterSymbolId = symbolInfo.id;
+                    config.scatterWheelSymbolId = symbolInfo.id;
                 }
             }
         }
@@ -450,8 +508,11 @@ public static class GameDataConverter
             if (serverData.features.totalLines > 0)
             {
                 config.paylineCount = serverData.features.totalLines;
-                config.betMultiplier = serverData.features.totalLines;
             }
+
+            config.betMultiplier = serverData.features.betMultiplier > 0
+                ? serverData.features.betMultiplier
+                : (config.paylineCount > 0 ? config.paylineCount : 1);
 
             config.ultraWheel = serverData.features.ultraWheel;
             config.scatterWheel = serverData.features.scatterWheel;
@@ -469,7 +530,7 @@ public static class GameDataConverter
         return config;
     }
 
-    internal static PlayerData ConvertToPlayerData(Root serverData, int defaultBetIndex = 0, double defaultBalance = 0)
+    internal static PlayerData CreateInitialPlayerData(StPatricksGoldConfigResponse serverData, int defaultBetIndex = 0, double defaultBalance = 0)
     {
         return new PlayerData
         {
@@ -478,7 +539,7 @@ public static class GameDataConverter
         };
     }
 
-    private static int ResolvePaylineCount(Root serverData)
+    private static int ResolvePaylineCount(StPatricksGoldConfigResponse serverData)
     {
         if (serverData.features != null && serverData.features.totalLines > 0)
         {
@@ -492,7 +553,7 @@ public static class GameDataConverter
     {
         if (lines == null || lines.Count == 0)
         {
-            return 3;
+            return StPatricksGoldDefinition.RowCount;
         }
 
         int maxRow = 0;
@@ -512,7 +573,7 @@ public static class GameDataConverter
         return maxRow + 1;
     }
 
-    private static bool IsSymbolType(Symbol symbol, string typeName)
+    private static bool IsSymbolType(StPatricksGoldSymbol symbol, string typeName)
     {
         return ContainsIgnoreCase(symbol.name, typeName) ||
                ContainsIgnoreCase(symbol.group, typeName) ||
@@ -526,11 +587,104 @@ public static class GameDataConverter
     }
 
     /// <summary>
+    /// Converts the authoritative server matrix from [row][column] strings to
+    /// the [column][row] integer layout used by SlotView.
+    /// </summary>
+    internal static bool TryConvertServerMatrix(
+        ServerSpinResponse serverResponse,
+        StPatricksGoldGameConfig gameConfig,
+        out List<List<int>> resultMatrix,
+        out string error)
+    {
+        resultMatrix = null;
+        error = null;
+
+        if (serverResponse == null)
+        {
+            error = "Spin response is null.";
+            return false;
+        }
+
+        if (gameConfig == null)
+        {
+            error = "Game configuration is unavailable; matrix dimensions cannot be validated.";
+            return false;
+        }
+
+        int expectedRows = gameConfig.rowCount;
+        int expectedColumns = gameConfig.reelCount;
+        if (expectedRows <= 0 || expectedColumns <= 0)
+        {
+            error = $"Game configuration has invalid matrix dimensions: rows={expectedRows}, columns={expectedColumns}.";
+            return false;
+        }
+
+        List<List<string>> sourceMatrix = serverResponse.matrix;
+        string sourceName = "response.matrix";
+
+        if (sourceMatrix == null || sourceMatrix.Count == 0)
+        {
+            sourceMatrix = serverResponse.payload?.reels;
+            sourceName = "response.payload.reels";
+        }
+
+        if (sourceMatrix == null || sourceMatrix.Count == 0)
+        {
+            error = "Spin response contains neither response.matrix nor response.payload.reels.";
+            return false;
+        }
+
+        if (sourceMatrix.Count != expectedRows)
+        {
+            error = $"{sourceName} has {sourceMatrix.Count} rows; expected {expectedRows}.";
+            return false;
+        }
+
+        var convertedMatrix = new List<List<int>>(expectedColumns);
+        for (int column = 0; column < expectedColumns; column++)
+        {
+            convertedMatrix.Add(new List<int>(expectedRows));
+        }
+
+        for (int row = 0; row < expectedRows; row++)
+        {
+            List<string> sourceRow = sourceMatrix[row];
+            if (sourceRow == null)
+            {
+                error = $"{sourceName} row {row} is null.";
+                return false;
+            }
+
+            if (sourceRow.Count != expectedColumns)
+            {
+                error = $"{sourceName} row {row} has {sourceRow.Count} columns; expected {expectedColumns}.";
+                return false;
+            }
+
+            for (int column = 0; column < expectedColumns; column++)
+            {
+                string symbolValue = sourceRow[column];
+                if (string.IsNullOrWhiteSpace(symbolValue) ||
+                    !int.TryParse(symbolValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int symbolId))
+                {
+                    error = $"{sourceName}[{row}][{column}] contains invalid symbol ID '{symbolValue ?? "null"}'.";
+                    return false;
+                }
+
+                convertedMatrix[column].Add(symbolId);
+            }
+        }
+
+        resultMatrix = convertedMatrix;
+        return true;
+    }
+
+    /// <summary>
     /// CRITICAL: Converts server response to client SpinResult
     /// Handles string-to-int conversion, matrix transposition, and wild multiplier mapping
     /// Server sends [row][col] (4 rows x 5 cols), Client needs [col][row] (5 cols x 4 rows)
     /// </summary>
-    internal static SpinResult ConvertServerResponseToSpinResult(ServerSpinResponse serverResponse, double currentBalance, double betAmount, GameConfig gameConfig)
+    internal static SpinResult ConvertServerResponseToSpinResult(ServerSpinResponse serverResponse, double currentBalance, double betAmount, StPatricksGoldGameConfig gameConfig)
     {
         double totalWinAmount = 0;
         if (serverResponse.payload != null)
@@ -550,13 +704,16 @@ public static class GameDataConverter
 
         var stickyWilds = serverResponse.payload?.freeSpinState?.stickyWilds;
 
-        var reelsSource = serverResponse.matrix ?? serverResponse.payload?.reels;
         var winsSource = serverResponse.payload?.lineWins ?? serverResponse.payload?.winningLines;
+
+        if (!TryConvertServerMatrix(serverResponse, gameConfig, out List<List<int>> convertedMatrix, out string matrixError))
+        {
+            UnityEngine.Debug.LogError($"[GameDataConverter] {matrixError}");
+        }
 
         var result = new SpinResult
         {
-            // Convert and transpose reels from server format to client format
-            resultMatrix = ConvertReelsToMatrix(reelsSource, winsSource, stickyWilds, gameConfig),
+            resultMatrix = convertedMatrix,
 
             // Map totalWin to winAmount
             winAmount = totalWinAmount,
@@ -615,15 +772,15 @@ public static class GameDataConverter
     }
 
 
-    private static List<List<int>> ConvertReelsToMatrix(List<List<string>> serverReels, List<ServerWinLine> winningLines, Dictionary<string, int> stickyWilds, GameConfig gameConfig)
+    private static List<List<int>> ConvertReelsToMatrix(List<List<string>> serverReels, List<ServerWinLine> winningLines, Dictionary<string, int> stickyWilds, StPatricksGoldGameConfig gameConfig)
     {
-        int rows = gameConfig != null ? gameConfig.rowCount : 3;
-        int cols = gameConfig != null ? gameConfig.reelCount : 3;
+        int rows = gameConfig != null ? gameConfig.rowCount : StPatricksGoldDefinition.RowCount;
+        int cols = gameConfig != null ? gameConfig.reelCount : StPatricksGoldDefinition.ReelCount;
 
         if (serverReels == null || serverReels.Count != rows)
         {
             UnityEngine.Debug.LogError($"Invalid server reels: expected {rows} rows, got {serverReels?.Count}");
-            return GenerateDefaultMatrix(rows, cols);
+            return null;
         }
 
         // Build wild multiplier lookup: [col][row] -> multiplier
@@ -676,8 +833,7 @@ public static class GameDataConverter
                 if (col >= serverReels[row].Count)
                 {
                     UnityEngine.Debug.LogError($"Invalid server data at row {row}, col {col}");
-                    column.Add(0);
-                    continue;
+                    return null;
                 }
 
                 string symbolStr = serverReels[row][col];
@@ -685,8 +841,7 @@ public static class GameDataConverter
                 if (!int.TryParse(symbolStr, out int symbolId))
                 {
                     UnityEngine.Debug.LogError($"Failed to parse symbol: {symbolStr}");
-                    column.Add(0);
-                    continue;
+                    return null;
                 }
 
                 // Check if this is a wild with multiplier
@@ -713,58 +868,24 @@ public static class GameDataConverter
     /// Maps wild multiplier to correct symbol ID
     /// 1x → 11 (Wild), 2x → 13 (Wild2x), 3x → 14 (Wild3x), 5x → 15 (Wild5x)
     /// </summary>
-    private static int GetWildSymbolIdForMultiplier(int multiplier, GameConfig gameConfig)
+    private static int GetWildSymbolIdForMultiplier(int multiplier, StPatricksGoldGameConfig gameConfig)
     {
-        if (gameConfig == null)
-        {
-            return 11;
-        }
-
-        int mappedSymbolId = multiplier switch
-        {
-            1 => gameConfig.wildSymbolId,
-            2 => gameConfig.wild2xSymbolId,
-            3 => gameConfig.wild3xSymbolId,
-            5 => gameConfig.wild5xSymbolId,
-            _ => gameConfig.wildSymbolId
-        };
-
-        return HasSymbolId(gameConfig, mappedSymbolId) ? mappedSymbolId : gameConfig.wildSymbolId;
+        return gameConfig != null ? gameConfig.wildSymbolId : StPatricksGoldSymbolIds.Wild;
     }
 
-    private static bool HasSymbolId(GameConfig gameConfig, int symbolId)
-    {
-        return gameConfig.symbols != null && gameConfig.symbols.Any(symbol => symbol.id == symbolId);
-    }
-
-
-    private static List<List<int>> GenerateDefaultMatrix(int rows, int cols)
-    {
-        var matrix = new List<List<int>>();
-        for (int col = 0; col < cols; col++)
-        {
-            var column = new List<int>();
-            for (int row = 0; row < rows; row++)
-            {
-                column.Add(0);
-            }
-            matrix.Add(column);
-        }
-        return matrix;
-    }
 
     /// <summary>
     /// Converts server winningLines to client winLines.
-    /// Diamond Rose format: positions are strings like "1,0" (col,row).
+    /// Supports server position strings such as "1,0".
     /// Encodes as flat index = row * cols + col.
     /// </summary>
-    private static List<WinLine> ConvertWinningLines(List<ServerWinLine> serverWinLines, GameConfig gameConfig)
+    private static List<WinLine> ConvertWinningLines(List<ServerWinLine> serverWinLines, StPatricksGoldGameConfig gameConfig)
     {
         var winLines = new List<WinLine>();
 
         if (serverWinLines == null) return winLines;
 
-        int cols = gameConfig != null ? gameConfig.reelCount : 3;
+        int cols = gameConfig != null ? gameConfig.reelCount : StPatricksGoldDefinition.ReelCount;
 
         foreach (var serverLine in serverWinLines)
         {
@@ -798,7 +919,7 @@ public static class GameDataConverter
 
             if (serverLine.positions != null && serverLine.positions.Count > 0)
             {
-                // Diamond Rose format: positions are "row,col" strings
+                // Server positions are coordinate strings.
                 foreach (var posStr in serverLine.positions)
                 {
                     string[] parts = posStr.Split(',');

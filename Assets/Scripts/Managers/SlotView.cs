@@ -9,16 +9,20 @@ public class SlotView : MonoBehaviour
     [Header("References")]
     [SerializeField] private GameManager gameManager;
 
-    [Header("Symbol Sprites - Assign by Name")]
-    [SerializeField] private Sprite spriteRedTriple;         // ID: 0
-    [SerializeField] private Sprite spritePurpleDouble;      // ID: 1
-    [SerializeField] private Sprite spriteBlueWild;          // ID: 2
-    [SerializeField] private Sprite spriteRed7;              // ID: 3
-    [SerializeField] private Sprite spriteGolden7;           // ID: 4
-    [SerializeField] private Sprite spriteBlack7;            // ID: 5
-    [SerializeField] private Sprite spriteDoubleBar;         // ID: 6
-    [SerializeField] private Sprite spriteBar;               // ID: 7
-    [SerializeField] private Sprite spriteBlank;             // ID: 8
+    [Header("St. Patrick's Gold Symbol Sprites")]
+    [SerializeField] private Sprite spriteAce;                // ID: 0
+    [SerializeField] private Sprite spriteKing;               // ID: 1
+    [SerializeField] private Sprite spriteQueen;              // ID: 2
+    [SerializeField] private Sprite spriteJack;               // ID: 3
+    [SerializeField] private Sprite spriteTen;                // ID: 4
+    [SerializeField] private Sprite spriteBeerGlass;          // ID: 5
+    [SerializeField] private Sprite spriteGreenHat;           // ID: 6
+    [SerializeField] private Sprite spriteMagnet;             // ID: 7
+    [SerializeField] private Sprite spriteCigar;              // ID: 8
+    [SerializeField] private Sprite spriteWild;               // ID: 9
+    [SerializeField] private Sprite spriteScatterWheel;       // ID: 10
+    [SerializeField] private Sprite spriteUltraWheel;         // ID: 11
+    [SerializeField] private Sprite spriteTempleRiches;       // ID: 12
 
     // Internal array built from named sprites
     private Sprite[] symbolSprites;
@@ -31,7 +35,13 @@ public class SlotView : MonoBehaviour
 
     [Header("Spin Settings")]
     [SerializeField] private float symbolHeight = 100f;
+    [Tooltip("Base duration in seconds for a reel to move by one symbol height.")]
     [SerializeField] private float spinSpeed = 0.05f;
+    [Tooltip("Multiplier for the visible reel travel speed. Lower values produce a slower, more readable spin.")]
+    [SerializeField, Range(0.25f, 1f)] private float reelSpeedMultiplier = 0.6f;
+    [Tooltip("Visible reel travel multiplier used while Fast or Skip Spin is selected.")]
+    [UnityEngine.Serialization.FormerlySerializedAs("quickSpinReelSpeedMultiplier")]
+    [SerializeField, Range(0.25f, 2f)] private float fastSpinReelSpeedMultiplier = 1f;
     [SerializeField] private float reelStopStagger = 0.12f;
 
     [Header("Start Animation Settings")]
@@ -52,12 +62,7 @@ public class SlotView : MonoBehaviour
     [Header("Win Animation Settings")]
     [SerializeField] private float winSymbolLoopDuration = 1.5f;
 
-    [Header("Blank Symbol Settings")]
-    [SerializeField] private int blankSymbolId = 8;
-    [SerializeField] private float blankSpacingValue = -100f;
-    [SerializeField] private float blankMiddleYOffset = -160f;
-    [SerializeField] private float blankMiddleSpacingValue = 60f;
-    [SerializeField] private float blankTopBottomSpacingValue = 20f;
+    [Header("Reel Layout Settings")]
     [SerializeField] private float defaultSpacing = 0f;
 
 
@@ -71,15 +76,14 @@ public class SlotView : MonoBehaviour
     private List<Tween> spacingTweens = new List<Tween>();
     private List<int> reelCycleCount = new List<int>();
     private Coroutine winAnimationCoroutine;
+    private Coroutine stopSpinCoroutine;
     private VerticalLayoutGroup[] reelLayoutGroups;
-    private BlankScenario[] currentBlankScenarios;
     private float[] startSpinYPositions;
     private float[] reelCycleProgress;
     private float[] reelAnticipationOffset;
 
     private bool[] isPreparingToStop;
     private List<int>[] reelTargetSymbols;
-    private BlankScenario[] reelTargetScenarios;
     private float[] reelTargetYPositions;
     private bool[] reelIsQuickStop;
 
@@ -87,6 +91,7 @@ public class SlotView : MonoBehaviour
     internal List<List<int>> currentDisplayMatrix;
 
     private bool isSpinning;
+    private SpinSpeed activeSpinSpeed = SpinSpeed.Normal;
 
     #region Initialization
 
@@ -98,23 +103,27 @@ public class SlotView : MonoBehaviour
 
     private void BuildSymbolSpriteArray()
     {
-        symbolSprites = new Sprite[9];
-        symbolSprites[0] = spriteRedTriple;
-        symbolSprites[1] = spritePurpleDouble;
-        symbolSprites[2] = spriteBlueWild;
-        symbolSprites[3] = spriteRed7;
-        symbolSprites[4] = spriteGolden7;
-        symbolSprites[5] = spriteBlack7;
-        symbolSprites[6] = spriteDoubleBar;
-        symbolSprites[7] = spriteBar;
-        symbolSprites[8] = spriteBlank;
+        symbolSprites = new Sprite[StPatricksGoldDefinition.SymbolCount];
+        symbolSprites[StPatricksGoldSymbolIds.Ace] = spriteAce;
+        symbolSprites[StPatricksGoldSymbolIds.King] = spriteKing;
+        symbolSprites[StPatricksGoldSymbolIds.Queen] = spriteQueen;
+        symbolSprites[StPatricksGoldSymbolIds.Jack] = spriteJack;
+        symbolSprites[StPatricksGoldSymbolIds.Ten] = spriteTen;
+        symbolSprites[StPatricksGoldSymbolIds.BeerGlass] = spriteBeerGlass;
+        symbolSprites[StPatricksGoldSymbolIds.GreenHat] = spriteGreenHat;
+        symbolSprites[StPatricksGoldSymbolIds.Magnet] = spriteMagnet;
+        symbolSprites[StPatricksGoldSymbolIds.Cigar] = spriteCigar;
+        symbolSprites[StPatricksGoldSymbolIds.Wild] = spriteWild;
+        symbolSprites[StPatricksGoldSymbolIds.ScatterWheel] = spriteScatterWheel;
+        symbolSprites[StPatricksGoldSymbolIds.UltraWheel] = spriteUltraWheel;
+        symbolSprites[StPatricksGoldSymbolIds.TempleRiches] = spriteTempleRiches;
 
         // Validate
         for (int i = 0; i < symbolSprites.Length; i++)
         {
             if (symbolSprites[i] == null)
             {
-                Debug.LogError($"[SlotView] Symbol sprite at index {i} is not assigned in inspector!");
+                Debug.LogError($"[SlotView] SL-SPG sprite for ID {i} ({StPatricksGoldSymbolIds.GetName(i)}) is not assigned in the Inspector.");
             }
         }
     }
@@ -126,8 +135,8 @@ public class SlotView : MonoBehaviour
         middlePosition = 0f;
 
         currentDisplayMatrix = new List<List<int>>();
-        int defaultCols = 3;
-        int defaultRows = 3;
+        int defaultCols = StPatricksGoldDefinition.ReelCount;
+        int defaultRows = StPatricksGoldDefinition.RowCount;
         reelCycleCount.Clear();
         for (int col = 0; col < defaultCols; col++)
         {
@@ -142,14 +151,12 @@ public class SlotView : MonoBehaviour
 
         // Cache VerticalLayoutGroup references from reel containers
         reelLayoutGroups = new VerticalLayoutGroup[reelTransforms.Length];
-        currentBlankScenarios = new BlankScenario[reelTransforms.Length];
         startSpinYPositions = new float[reelTransforms.Length];
         reelCycleProgress = new float[reelTransforms.Length];
         reelAnticipationOffset = new float[reelTransforms.Length];
         
         isPreparingToStop = new bool[reelTransforms.Length];
         reelTargetSymbols = new List<int>[reelTransforms.Length];
-        reelTargetScenarios = new BlankScenario[reelTransforms.Length];
         reelTargetYPositions = new float[reelTransforms.Length];
         reelIsQuickStop = new bool[reelTransforms.Length];
         spacingTweens.Clear();
@@ -205,11 +212,6 @@ public class SlotView : MonoBehaviour
             SetImageAlpha(col, 5, 0f);
             SetImageAlpha(col, 6, 0f);
 
-            // Initialize scenario tracking for this reel
-            if (currentBlankScenarios != null && col < currentBlankScenarios.Length)
-            {
-                currentBlankScenarios[col] = BlankScenario.NoBlanks;
-            }
         }
     }
 
@@ -225,7 +227,9 @@ public class SlotView : MonoBehaviour
             return;
         }
 
-        int expectedRows = gameManager?.gameConfig != null ? gameManager.gameConfig.rowCount : 3;
+        int expectedRows = gameManager?.stPatricksGoldConfig != null
+            ? gameManager.stPatricksGoldConfig.rowCount
+            : StPatricksGoldDefinition.RowCount;
         if (visibleSymbolIds == null || visibleSymbolIds.Count != expectedRows)
         {
             Debug.LogError($"SetReelSymbols: Invalid visibleSymbolIds count {visibleSymbolIds?.Count}, expected {expectedRows}");
@@ -249,19 +253,17 @@ public class SlotView : MonoBehaviour
             reel.images[imageIndex].sprite = GetSymbolSprite(symbolId);
         }
 
-        int maxSymbolId = gameManager?.gameConfig != null ? gameManager.gameConfig.symbols.Count : 9;
+        int symbolCount = gameManager?.stPatricksGoldConfig != null
+            ? gameManager.stPatricksGoldConfig.symbols.Count
+            : StPatricksGoldDefinition.SymbolCount;
 
-        // Determine if top visible slot (row 0) is blank
-        bool isTopBlank = visibleSymbolIds[0] == blankSymbolId;
-        int topSpriteId = isTopBlank ? GetRandomNonBlankSymbolId(maxSymbolId) : blankSymbolId;
+        int topSpriteId = GetRandomSpinSymbolId(symbolCount);
 
         // Fill 2 buffer images above the visible area (indices 0 and 1)
         reel.images[0].sprite = GetSymbolSprite(topSpriteId);
         reel.images[1].sprite = GetSymbolSprite(topSpriteId);
 
-        // Determine if bottom visible slot (row 2) is blank
-        bool isBottomBlank = visibleSymbolIds[2] == blankSymbolId;
-        int bottomSpriteId = isBottomBlank ? GetRandomNonBlankSymbolId(maxSymbolId) : blankSymbolId;
+        int bottomSpriteId = GetRandomSpinSymbolId(symbolCount);
 
         // Fill 2 buffer images below the visible area (indices 5 and 6)
         reel.images[5].sprite = GetSymbolSprite(bottomSpriteId);
@@ -299,10 +301,11 @@ public class SlotView : MonoBehaviour
 
     #region Spin Animation
 
-    internal void StartSpin()
+    internal void StartSpin(SpinSpeed spinSpeedMode)
     {
         if (isSpinning) return;
 
+        activeSpinSpeed = spinSpeedMode;
         isSpinning = true;
         KillAllTweens();
 
@@ -313,7 +316,9 @@ public class SlotView : MonoBehaviour
         }
 
         int cols = currentDisplayMatrix != null ? currentDisplayMatrix.Count : 3;
-        int maxSymbolId = gameManager?.gameConfig != null ? gameManager.gameConfig.symbols.Count : 9;
+        int maxSymbolId = gameManager?.stPatricksGoldConfig != null
+            ? gameManager.stPatricksGoldConfig.symbols.Count
+            : StPatricksGoldDefinition.SymbolCount;
 
         for (int col = 0; col < cols; col++)
         {
@@ -384,13 +389,20 @@ public class SlotView : MonoBehaviour
         
         reelCycleProgress[columnIndex] = 0f;
 
-        float currentSpeed = spinSpeed;
+        const float defaultSpeedMultiplier = 0.6f;
+        float configuredSpeedMultiplier = activeSpinSpeed != SpinSpeed.Normal
+            ? fastSpinReelSpeedMultiplier
+            : reelSpeedMultiplier;
+        float speedMultiplier = configuredSpeedMultiplier > 0f
+            ? Mathf.Clamp(configuredSpeedMultiplier, 0.25f, 2f)
+            : defaultSpeedMultiplier;
+        float symbolCycleDuration = Mathf.Max(0.01f, spinSpeed) / speedMultiplier;
 
         Sequence cycleSequence = DOTween.Sequence();
 
         // Tween reelCycleProgress from 0 to -cycleDistance, updating position using current startSpinYPositions
         cycleSequence.Append(
-            DOTween.To(() => reelCycleProgress[columnIndex], x => reelCycleProgress[columnIndex] = x, -cycleDistance, currentSpeed)
+            DOTween.To(() => reelCycleProgress[columnIndex], x => reelCycleProgress[columnIndex] = x, -cycleDistance, symbolCycleDuration)
                 .SetEase(Ease.Linear)
                 .OnUpdate(() => {
                     if (slotTransform != null)
@@ -419,7 +431,17 @@ public class SlotView : MonoBehaviour
                 }
                 else
                 {
+                    // Wrap the reel and its symbol strip in the same DOTween callback.
+                    // Without this explicit reset, the completed reel remains one full
+                    // symbol below its origin until the next tween update, producing a
+                    // visible one-frame flash after the sprites have already shifted.
                     CycleReelSymbols(columnIndex);
+                    reelCycleProgress[columnIndex] = 0f;
+                    slotTransform.localPosition = new Vector3(
+                        slotTransform.localPosition.x,
+                        startSpinYPositions[columnIndex],
+                        0f
+                    );
 
                     // Smoothly transition layout group spacing and Y offset to 0f after the first cycle completes
                     // (occurs in mid-spin at top speed, making the transition completely invisible)
@@ -465,28 +487,20 @@ public class SlotView : MonoBehaviour
             reel.images[i].sprite = reel.images[i - 1].sprite;
         }
 
-        int maxSymbolId = gameManager?.gameConfig != null ? gameManager.gameConfig.symbols.Count : 9;
+        int maxSymbolId = gameManager?.stPatricksGoldConfig != null
+            ? gameManager.stPatricksGoldConfig.symbols.Count
+            : StPatricksGoldDefinition.SymbolCount;
         
         // Always pick a random non-blank symbol during active spin cycle
-        int randomSymbolId = GetRandomNonBlankSymbolId(maxSymbolId);
+        int randomSymbolId = GetRandomSpinSymbolId(maxSymbolId);
 
         reel.images[0].sprite = GetSymbolSprite(randomSymbolId);
     }
 
-    private int GetRandomNonBlankSymbolId(int maxSymbolId)
+    private int GetRandomSpinSymbolId(int symbolCount)
     {
-        int id = Random.Range(0, maxSymbolId);
-        int attempts = 0;
-        while (id == blankSymbolId && attempts < 10)
-        {
-            id = Random.Range(0, maxSymbolId);
-            attempts++;
-        }
-        if (id == blankSymbolId)
-        {
-            id = 0; // Fallback to 0 (RedTriple) if all attempts are blank
-        }
-        return id;
+        int validSymbolCount = Mathf.Clamp(symbolCount, 1, symbolSprites.Length);
+        return Random.Range(0, validSymbolCount);
     }
 
     #endregion
@@ -495,6 +509,14 @@ public class SlotView : MonoBehaviour
 
     internal void StopSpin(List<List<int>> resultMatrix, System.Action onComplete)
     {
+        if (!TryValidateResultMatrix(resultMatrix, out string error))
+        {
+            Debug.LogError($"[SlotView] Cannot stop reels with an invalid result matrix: {error}");
+            CancelSpin();
+            onComplete?.Invoke();
+            return;
+        }
+
         if (!isSpinning)
         {
             currentDisplayMatrix = resultMatrix;
@@ -502,14 +524,12 @@ public class SlotView : MonoBehaviour
             for (int col = 0; col < cols; col++)
             {
                 SetReelSymbols(col, resultMatrix[col], false);
-                BlankScenario scenario = DetectBlankScenario(resultMatrix[col]);
-                ApplyBlankScenario(col, scenario, resultMatrix[col]);
+                ApplyStoppedReelLayout(col);
                 if (col < reelTransforms.Length && reelTransforms[col] != null)
                 {
-                    float targetY = GetTargetYForScenario(scenario);
                     reelTransforms[col].localPosition = new Vector3(
                         reelTransforms[col].localPosition.x,
-                        targetY,
+                        middlePosition,
                         0
                     );
                 }
@@ -519,7 +539,7 @@ public class SlotView : MonoBehaviour
             return;
         }
 
-        StartCoroutine(StopSpinSequence(resultMatrix, onComplete, false));
+        stopSpinCoroutine = StartCoroutine(StopSpinSequence(resultMatrix, onComplete, false));
     }
 
     private IEnumerator StopSpinSequence(List<List<int>> resultMatrix, System.Action onComplete, bool isQuickStop)
@@ -568,6 +588,7 @@ public class SlotView : MonoBehaviour
         yield return new WaitForSeconds(longestStopTime);
 
         isSpinning = false;
+        stopSpinCoroutine = null;
 
         onComplete?.Invoke();
     }
@@ -579,24 +600,18 @@ public class SlotView : MonoBehaviour
             yield return new WaitForSeconds(delay);
         }
 
-        // Detect the target blank scenario and its stop parameters
-        BlankScenario scenario = DetectBlankScenario(targetSymbols);
-        float targetSpacing = GetTargetSpacingForScenario(scenario);
-        float targetY = GetTargetYForScenario(scenario);
-
         // Apply stopped spacing IMMEDIATELY while spinning (one cycle before bounce).
         // Since it happens while spinning at top speed, the layout adjustment is completely invisible to the user.
         var layoutGroup = reelLayoutGroups[columnIndex];
         if (layoutGroup != null)
         {
-            layoutGroup.spacing = targetSpacing;
+            layoutGroup.spacing = defaultSpacing;
         }
-        startSpinYPositions[columnIndex] = targetY;
+        startSpinYPositions[columnIndex] = middlePosition;
 
         // Store stopping parameters for the actual stop trigger on cycle complete
         reelTargetSymbols[columnIndex] = targetSymbols;
-        reelTargetScenarios[columnIndex] = scenario;
-        reelTargetYPositions[columnIndex] = targetY;
+        reelTargetYPositions[columnIndex] = middlePosition;
         reelIsQuickStop[columnIndex] = isQuickStop;
         isPreparingToStop[columnIndex] = true;
     }
@@ -613,25 +628,21 @@ public class SlotView : MonoBehaviour
         Transform slotTransform = reelTransforms[columnIndex];
 
         var targetSymbols = reelTargetSymbols[columnIndex];
-        var scenario = reelTargetScenarios[columnIndex];
         var isQuickStop = reelIsQuickStop[columnIndex];
-        float scenarioTargetY = reelTargetYPositions[columnIndex];
+        float targetY = reelTargetYPositions[columnIndex];
 
-        // Load final result symbols (which can include blank symbols)
+        // Load the exact final result symbols supplied by the server.
         SetReelSymbols(columnIndex, targetSymbols, false);
-
-        // Apply blank scenario details (like sprite overrides for special scenarios)
-        ApplyBlankScenario(columnIndex, scenario, targetSymbols);
+        ApplyStoppedReelLayout(columnIndex);
 
         // Snap to target position (visually identical since cycle completes at -cycleDistance phase)
         slotTransform.localPosition = new Vector3(
             slotTransform.localPosition.x,
-            scenarioTargetY,
+            targetY,
             0
         );
 
         // ── Play reel-stop sound immediately when symbols lock in ──────────
-        bool isLastReel = (columnIndex == reelTransforms.Length - 1);
 
 
         // ──────────────────────────────────────────────────────────────────
@@ -641,12 +652,12 @@ public class SlotView : MonoBehaviour
             Sequence quickStopSequence = DOTween.Sequence();
 
             quickStopSequence.Append(
-                slotTransform.DOLocalMoveY(scenarioTargetY - quickStopOvershoot, quickStopDuration * 0.3f)
+                slotTransform.DOLocalMoveY(targetY - quickStopOvershoot, quickStopDuration * 0.3f)
                     .SetEase(Ease.OutQuad)
             );
 
             quickStopSequence.Append(
-                slotTransform.DOLocalMoveY(scenarioTargetY, quickStopDuration * 0.7f)
+                slotTransform.DOLocalMoveY(targetY, quickStopDuration * 0.7f)
                     .SetEase(Ease.OutQuad)
             );
 
@@ -657,12 +668,12 @@ public class SlotView : MonoBehaviour
             Sequence stopSequence = DOTween.Sequence();
 
             stopSequence.Append(
-                slotTransform.DOLocalMoveY(scenarioTargetY - stopOvershootDistance, stopOvershootDuration)
+                slotTransform.DOLocalMoveY(targetY - stopOvershootDistance, stopOvershootDuration)
                     .SetEase(Ease.OutQuad)
             );
 
             stopSequence.Append(
-                slotTransform.DOLocalMoveY(scenarioTargetY, stopBounceBackDuration)
+                slotTransform.DOLocalMoveY(targetY, stopBounceBackDuration)
                     .SetEase(Ease.OutQuad)
             );
 
@@ -673,6 +684,49 @@ public class SlotView : MonoBehaviour
     #endregion
 
     #region Quick Spin
+
+    internal void ShowServerResultImmediately(
+        List<List<int>> resultMatrix,
+        System.Action onComplete = null)
+    {
+        if (!TryValidateResultMatrix(resultMatrix, out string error))
+        {
+            Debug.LogError($"[SlotView] Cannot show an invalid server result matrix: {error}");
+            CancelSpin();
+            onComplete?.Invoke();
+            return;
+        }
+
+        StopAllCoroutines();
+        stopSpinCoroutine = null;
+        winAnimationCoroutine = null;
+        KillAllTweens();
+
+        currentDisplayMatrix = resultMatrix;
+        isSpinning = false;
+
+        if (isPreparingToStop != null)
+        {
+            for (int index = 0; index < isPreparingToStop.Length; index++)
+            {
+                isPreparingToStop[index] = false;
+            }
+        }
+
+        for (int column = 0; column < resultMatrix.Count; column++)
+        {
+            SetReelSymbols(column, resultMatrix[column], false);
+            ApplyStoppedReelLayout(column);
+
+            reelTransforms[column].localPosition = new Vector3(
+                reelTransforms[column].localPosition.x,
+                middlePosition,
+                0f
+            );
+        }
+
+        onComplete?.Invoke();
+    }
 
     internal void QuickStop(List<List<int>> resultMatrix, System.Action onComplete = null)
     {
@@ -685,12 +739,10 @@ public class SlotView : MonoBehaviour
                 if (col < reelTransforms.Length)
                 {
                     SetReelSymbols(col, resultMatrix[col], false);
-                    BlankScenario scenario = DetectBlankScenario(resultMatrix[col]);
-                    ApplyBlankScenario(col, scenario, resultMatrix[col]);
-                    float targetY = GetTargetYForScenario(scenario);
+                    ApplyStoppedReelLayout(col);
                     reelTransforms[col].localPosition = new Vector3(
                         reelTransforms[col].localPosition.x,
-                        targetY,
+                        middlePosition,
                         0
                     );
                 }
@@ -700,7 +752,7 @@ public class SlotView : MonoBehaviour
             return;
         }
 
-        StartCoroutine(StopSpinSequence(resultMatrix, onComplete, true));
+        stopSpinCoroutine = StartCoroutine(StopSpinSequence(resultMatrix, onComplete, true));
     }
 
     #endregion
@@ -742,7 +794,7 @@ public class SlotView : MonoBehaviour
                 if (prevPositions != null)
                 {
                     KillWinTweens(false);
-                    int cols = gameManager?.gameConfig != null ? gameManager.gameConfig.reelCount : 3;
+                    int cols = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.reelCount : StPatricksGoldDefinition.ReelCount;
                     foreach (int flatIdx in prevPositions)
                     {
                         int r = flatIdx / cols;
@@ -756,8 +808,8 @@ public class SlotView : MonoBehaviour
 
                 foreach (int flatIndex in winLine.positions)
                 {
-                    int cols = gameManager?.gameConfig != null ? gameManager.gameConfig.reelCount : 3;
-                    int rows = gameManager?.gameConfig != null ? gameManager.gameConfig.rowCount : 3;
+                    int cols = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.reelCount : StPatricksGoldDefinition.ReelCount;
+                    int rows = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.rowCount : StPatricksGoldDefinition.RowCount;
                     int row = flatIndex / cols;
                     int col = flatIndex % cols;
 
@@ -785,8 +837,8 @@ public class SlotView : MonoBehaviour
                 {
                     foreach (int flatIndex in winLine.positions)
                     {
-                        int cols = gameManager?.gameConfig != null ? gameManager.gameConfig.reelCount : 3;
-                        int rows = gameManager?.gameConfig != null ? gameManager.gameConfig.rowCount : 3;
+                        int cols = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.reelCount : StPatricksGoldDefinition.ReelCount;
+                        int rows = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.rowCount : StPatricksGoldDefinition.RowCount;
                         int row = flatIndex / cols;
                         int col = flatIndex % cols;
 
@@ -813,7 +865,7 @@ public class SlotView : MonoBehaviour
                         if (prevPositions != null)
                         {
                             KillWinTweens(false);
-                            int cols = gameManager?.gameConfig != null ? gameManager.gameConfig.reelCount : 3;
+                            int cols = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.reelCount : StPatricksGoldDefinition.ReelCount;
                             foreach (int flatIdx in prevPositions)
                             {
                                 int r = flatIdx / cols;
@@ -827,8 +879,8 @@ public class SlotView : MonoBehaviour
 
                         foreach (int flatIndex in winLine.positions)
                         {
-                            int cols = gameManager?.gameConfig != null ? gameManager.gameConfig.reelCount : 3;
-                            int rows = gameManager?.gameConfig != null ? gameManager.gameConfig.rowCount : 3;
+                            int cols = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.reelCount : StPatricksGoldDefinition.ReelCount;
+                            int rows = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.rowCount : StPatricksGoldDefinition.RowCount;
                             int row = flatIndex / cols;
                             int col = flatIndex % cols;
 
@@ -863,8 +915,7 @@ public class SlotView : MonoBehaviour
         {
             ResetSymbolAnimation(reel.images[imageIndex], col, row);
         }
-        // Re-apply blank alpha if this column has an active blank scenario
-        ReapplyBlankAlphaForColumn(col);
+        ApplyStoppedReelLayout(col);
     }
 
     private void AnimateWinSymbol(int column, int row)
@@ -931,19 +982,14 @@ public class SlotView : MonoBehaviour
             }
         }
 
-        // Re-apply blank scenarios after restoring alphas
-        ReapplyCurrentBlankScenarios();
+        for (int col = 0; col < reelImagesList.Count; col++)
+        {
+            ApplyStoppedReelLayout(col);
+        }
     }
 
     private int GetVisualRow(int col, int row)
     {
-        if (currentBlankScenarios != null && col < currentBlankScenarios.Length)
-        {
-            if (currentBlankScenarios[col] == BlankScenario.OneBlankMiddle && row == 2)
-            {
-                return 1;
-            }
-        }
         return row;
     }
 
@@ -1005,6 +1051,131 @@ public class SlotView : MonoBehaviour
         return isSpinning;
     }
 
+    internal bool TryValidateResultMatrix(List<List<int>> matrix, out string error)
+    {
+        error = null;
+
+        if (matrix == null || matrix.Count == 0)
+        {
+            error = "Result matrix is null or empty.";
+            return false;
+        }
+
+        if (reelTransforms == null || reelTransforms.Length == 0)
+        {
+            error = "No reel transforms are assigned to SlotView.";
+            return false;
+        }
+
+        if (matrix.Count != reelTransforms.Length)
+        {
+            error = $"Result matrix has {matrix.Count} columns, but SlotView has {reelTransforms.Length} reels.";
+            return false;
+        }
+
+        if (reelImagesList == null || reelImagesList.Count != reelTransforms.Length)
+        {
+            error = $"SlotView has {reelImagesList?.Count ?? 0} reel image groups; expected {reelTransforms.Length}.";
+            return false;
+        }
+
+        int expectedRows = gameManager?.stPatricksGoldConfig != null
+            ? gameManager.stPatricksGoldConfig.rowCount
+            : StPatricksGoldDefinition.RowCount;
+        if (expectedRows <= 0)
+        {
+            error = $"SlotView has an invalid configured row count: {expectedRows}.";
+            return false;
+        }
+
+        if (expectedRows != StPatricksGoldDefinition.RowCount)
+        {
+            error = $"SL-SPG requires exactly {StPatricksGoldDefinition.RowCount} visible rows, but the game configuration requires {expectedRows}.";
+            return false;
+        }
+
+        if (symbolSprites == null || symbolSprites.Length == 0)
+        {
+            error = "SlotView symbol sprites have not been initialized.";
+            return false;
+        }
+
+        for (int column = 0; column < matrix.Count; column++)
+        {
+            if (reelTransforms[column] == null)
+            {
+                error = $"Reel transform {column} is not assigned.";
+                return false;
+            }
+
+            ReelImages reelImages = reelImagesList[column];
+            if (reelImages == null || reelImages.images == null || reelImages.images.Count != 7)
+            {
+                error = $"Reel {column} must have exactly 7 assigned images.";
+                return false;
+            }
+
+            List<int> resultColumn = matrix[column];
+            if (resultColumn == null || resultColumn.Count != expectedRows)
+            {
+                error = $"Result column {column} has {resultColumn?.Count ?? 0} rows; expected {expectedRows}.";
+                return false;
+            }
+
+            for (int row = 0; row < resultColumn.Count; row++)
+            {
+                int symbolId = resultColumn[row];
+                if (symbolId < 0 || symbolId >= symbolSprites.Length || symbolSprites[symbolId] == null)
+                {
+                    error = $"Result symbol ID {symbolId} at column {column}, row {row} has no assigned SlotView sprite.";
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    internal void CancelSpin()
+    {
+        if (!isSpinning) return;
+
+        isSpinning = false;
+
+        StopAllCoroutines();
+        stopSpinCoroutine = null;
+        winAnimationCoroutine = null;
+        KillAllTweens();
+
+        if (isPreparingToStop != null)
+        {
+            for (int i = 0; i < isPreparingToStop.Length; i++)
+            {
+                isPreparingToStop[i] = false;
+            }
+        }
+
+        if (!TryValidateResultMatrix(currentDisplayMatrix, out string error))
+        {
+            Debug.LogError($"[SlotView] Could not restore the previous matrix after cancelling the spin: {error}");
+            return;
+        }
+
+        int columns = currentDisplayMatrix.Count;
+        for (int column = 0; column < columns; column++)
+        {
+            List<int> symbols = currentDisplayMatrix[column];
+            SetReelSymbols(column, symbols, false);
+            ApplyStoppedReelLayout(column);
+
+            reelTransforms[column].localPosition = new Vector3(
+                reelTransforms[column].localPosition.x,
+                middlePosition,
+                0f
+            );
+        }
+    }
+
 
 
     private void KillAllTweens()
@@ -1029,271 +1200,30 @@ public class SlotView : MonoBehaviour
 
     #endregion
 
-    #region Blank Symbol Handling
-
-    private enum BlankScenario
-    {
-        NoBlanks,          // Scenario 1: No blanks
-        AllBlank,          // Scenario 2: All 3 positions blank
-        TwoBlankTop,       // Scenario 3: Top 2 blank (row 0, 1)
-        TwoBlankBottom,    // Scenario 4: Bottom 2 blank (row 1, 2)
-        TwoBlankTopBottom, // Scenario 5: Top and bottom blank (row 0, 2)
-        OneBlankTop,       // Scenario 6: Top blank (row 0)
-        OneBlankBottom,    // Scenario 7: Bottom blank (row 2)
-        OneBlankMiddle     // Scenario 8: Middle blank (row 1)
-    }
+    #region Reel Layout
 
     /// <summary>
-    /// Analyzes a column's symbol IDs to determine which blank scenario applies.
+    /// Restores the standard three-row St. Patrick's Gold reel layout after a reel stops.
+    /// The outer images are animation buffers and the middle three images are the result rows.
     /// </summary>
-    private BlankScenario DetectBlankScenario(List<int> columnSymbols)
+    private void ApplyStoppedReelLayout(int columnIndex)
     {
-        if (columnSymbols == null || columnSymbols.Count != 3)
-            return BlankScenario.NoBlanks;
+        if (columnIndex < 0 || columnIndex >= reelImagesList.Count) return;
 
-        bool top = columnSymbols[0] == blankSymbolId;
-        bool mid = columnSymbols[1] == blankSymbolId;
-        bool bot = columnSymbols[2] == blankSymbolId;
-
-        int blankCount = (top ? 1 : 0) + (mid ? 1 : 0) + (bot ? 1 : 0);
-
-        if (blankCount == 0) return BlankScenario.NoBlanks;
-        if (blankCount == 3) return BlankScenario.AllBlank;
-
-        if (blankCount == 2)
+        if (reelLayoutGroups != null &&
+            columnIndex < reelLayoutGroups.Length &&
+            reelLayoutGroups[columnIndex] != null)
         {
-            if (top && mid) return BlankScenario.TwoBlankTop;
-            if (mid && bot) return BlankScenario.TwoBlankBottom;
-            if (top && bot) return BlankScenario.TwoBlankTopBottom;
+            reelLayoutGroups[columnIndex].spacing = defaultSpacing;
         }
 
-        // blankCount == 1
-        if (top) return BlankScenario.OneBlankTop;
-        if (bot) return BlankScenario.OneBlankBottom;
-        return BlankScenario.OneBlankMiddle;
-    }
-
-    /// <summary>
-    /// Universal method that applies spacing, alpha, and sprite overrides based on the blank scenario.
-    /// Called after SetReelSymbols to override blank positions.
-    /// </summary>
-    private void ApplyBlankScenario(int columnIndex, BlankScenario scenario, List<int> targetSymbols)
-    {
-        if (columnIndex >= reelTransforms.Length || columnIndex >= reelImagesList.Count) return;
-
-        var reel = reelImagesList[columnIndex];
-        VerticalLayoutGroup layoutGroup = (reelLayoutGroups != null && columnIndex < reelLayoutGroups.Length)
-            ? reelLayoutGroups[columnIndex] : null;
-
-        // Track current scenario for re-application after win animations
-        if (currentBlankScenarios != null && columnIndex < currentBlankScenarios.Length)
-        {
-            currentBlankScenarios[columnIndex] = scenario;
-        }
-
-        // Always hide buffer images (indices 0, 1, 5, 6)
         SetImageAlpha(columnIndex, 0, 0f);
         SetImageAlpha(columnIndex, 1, 0f);
-        SetImageAlpha(columnIndex, 5, 0f);
-        SetImageAlpha(columnIndex, 6, 0f);
-
-        // Reset visible images to full alpha first
         SetImageAlpha(columnIndex, 2, 1f);
         SetImageAlpha(columnIndex, 3, 1f);
         SetImageAlpha(columnIndex, 4, 1f);
-
-        switch (scenario)
-        {
-            case BlankScenario.NoBlanks: // Scenario 1
-                if (layoutGroup != null) layoutGroup.spacing = blankSpacingValue;
-                break;
-
-            case BlankScenario.AllBlank: // Scenario 2
-                if (layoutGroup != null) layoutGroup.spacing = defaultSpacing;
-                SetImageAlpha(columnIndex, 2, 0f);
-                SetImageAlpha(columnIndex, 3, 0f);
-                SetImageAlpha(columnIndex, 4, 0f);
-                break;
-
-            case BlankScenario.TwoBlankTop: // Scenario 3
-                if (layoutGroup != null) layoutGroup.spacing = blankSpacingValue;
-                SetImageAlpha(columnIndex, 2, 0f);
-                SetImageAlpha(columnIndex, 3, 0f);
-                break;
-
-            case BlankScenario.TwoBlankBottom: // Scenario 4
-                if (layoutGroup != null) layoutGroup.spacing = blankSpacingValue;
-                SetImageAlpha(columnIndex, 3, 0f);
-                SetImageAlpha(columnIndex, 4, 0f);
-                break;
-
-            case BlankScenario.TwoBlankTopBottom: // Scenario 5
-                if (layoutGroup != null) layoutGroup.spacing = blankTopBottomSpacingValue;
-                // Show random non-blank sprites at blank positions (index 2 = row 0, index 4 = row 2) if not already set
-                Sprite blankSprite = GetSymbolSprite(blankSymbolId);
-                if (reel.images[2].sprite == null || reel.images[2].sprite == blankSprite)
-                {
-                    reel.images[2].sprite = GetRandomNonBlankSprite();
-                }
-                if (reel.images[4].sprite == null || reel.images[4].sprite == blankSprite)
-                {
-                    reel.images[4].sprite = GetRandomNonBlankSprite();
-                }
-                break;
-
-            case BlankScenario.OneBlankTop: // Scenario 6
-                if (layoutGroup != null) layoutGroup.spacing = blankSpacingValue;
-                SetImageAlpha(columnIndex, 2, 0f);
-                break;
-
-            case BlankScenario.OneBlankBottom: // Scenario 7
-                if (layoutGroup != null) layoutGroup.spacing = blankSpacingValue;
-                SetImageAlpha(columnIndex, 4, 0f);
-                break;
-
-            case BlankScenario.OneBlankMiddle: // Scenario 8
-                if (layoutGroup != null) layoutGroup.spacing = blankMiddleSpacingValue;
-                // Index 3 shows last row result (row 2's symbol)
-                if (targetSymbols != null && targetSymbols.Count > 2)
-                {
-                    reel.images[3].sprite = GetSymbolSprite(targetSymbols[2]);
-                }
-                break;
-        }
-    }
-
-    /// <summary>
-    /// Applies the blank scenario smoothly using DOTween to transition spacing and alphas over stopDuration.
-    /// Called during the reel's deceleration and bounce stop sequence.
-    /// </summary>
-    private void ApplyBlankScenarioSmooth(int columnIndex, BlankScenario scenario, List<int> targetSymbols, float duration)
-    {
-        if (columnIndex >= reelTransforms.Length || columnIndex >= reelImagesList.Count) return;
-
-        var reel = reelImagesList[columnIndex];
-        VerticalLayoutGroup layoutGroup = (reelLayoutGroups != null && columnIndex < reelLayoutGroups.Length)
-            ? reelLayoutGroups[columnIndex] : null;
-
-        // Track current scenario
-        if (currentBlankScenarios != null && columnIndex < currentBlankScenarios.Length)
-        {
-            currentBlankScenarios[columnIndex] = scenario;
-        }
-
-        // Apply sprite overrides immediately (Scenario 5 and Scenario 8) so they are visually aligned before stop starts
-        if (scenario == BlankScenario.TwoBlankTopBottom)
-        {
-            Sprite blankSprite = GetSymbolSprite(blankSymbolId);
-            if (reel.images[2].sprite == null || reel.images[2].sprite == blankSprite)
-            {
-                reel.images[2].sprite = GetRandomNonBlankSprite();
-            }
-            if (reel.images[4].sprite == null || reel.images[4].sprite == blankSprite)
-            {
-                reel.images[4].sprite = GetRandomNonBlankSprite();
-            }
-        }
-        else if (scenario == BlankScenario.OneBlankMiddle)
-        {
-            if (targetSymbols != null && targetSymbols.Count > 2)
-            {
-                reel.images[3].sprite = GetSymbolSprite(targetSymbols[2]);
-            }
-        }
-
-        // Kill any existing spacing/alpha tweens for this column
-        if (spacingTweens[columnIndex] != null)
-        {
-            spacingTweens[columnIndex].Kill();
-        }
-
-        float targetSpacing = GetTargetSpacingForScenario(scenario);
-
-        Sequence stopSeq = DOTween.Sequence();
-
-        // 1. Tween VerticalLayoutGroup spacing to targetSpacing
-        if (layoutGroup != null)
-        {
-            stopSeq.Join(DOTween.To(() => layoutGroup.spacing, x => layoutGroup.spacing = x, targetSpacing, duration));
-        }
-
-        stopSeq.SetEase(Ease.OutQuad);
-        spacingTweens[columnIndex] = stopSeq;
-    }
-
-    private float GetTargetSpacingForScenario(BlankScenario scenario)
-    {
-        switch (scenario)
-        {
-            case BlankScenario.NoBlanks:
-            case BlankScenario.TwoBlankTop:
-            case BlankScenario.TwoBlankBottom:
-            case BlankScenario.OneBlankTop:
-            case BlankScenario.OneBlankBottom:
-                return blankSpacingValue;
-            case BlankScenario.AllBlank:
-                return defaultSpacing;
-            case BlankScenario.TwoBlankTopBottom:
-                return blankTopBottomSpacingValue;
-            case BlankScenario.OneBlankMiddle:
-                return blankMiddleSpacingValue;
-            default:
-                return defaultSpacing;
-        }
-    }
-
-    private float[] GetTargetAlphasForScenario(BlankScenario scenario)
-    {
-        float[] alphas = new float[7];
-        // Buffer images (0, 1, 5, 6) always target 0f alpha when stopped
-        alphas[0] = 0f;
-        alphas[1] = 0f;
-        alphas[5] = 0f;
-        alphas[6] = 0f;
-
-        // Visible images (2, 3, 4) target 1f default
-        alphas[2] = 1f;
-        alphas[3] = 1f;
-        alphas[4] = 1f;
-
-        switch (scenario)
-        {
-            case BlankScenario.AllBlank:
-                alphas[2] = 0f;
-                alphas[3] = 0f;
-                alphas[4] = 0f;
-                break;
-            case BlankScenario.TwoBlankTop:
-                alphas[2] = 0f;
-                alphas[3] = 0f;
-                break;
-            case BlankScenario.TwoBlankBottom:
-                alphas[3] = 0f;
-                alphas[4] = 0f;
-                break;
-            case BlankScenario.OneBlankTop:
-                alphas[2] = 0f;
-                break;
-            case BlankScenario.OneBlankBottom:
-                alphas[4] = 0f;
-                break;
-        }
-        return alphas;
-    }
-
-    /// <summary>
-    /// Returns the reel Y position target based on the blank scenario.
-    /// Scenario 8 (OneBlankMiddle) shifts the reel down so only indices 2 and 3 are visible.
-    /// </summary>
-    private float GetTargetYForScenario(BlankScenario scenario)
-    {
-        switch (scenario)
-        {
-            case BlankScenario.OneBlankMiddle:
-                return middlePosition + blankMiddleYOffset;
-            default:
-                return middlePosition;
-        }
+        SetImageAlpha(columnIndex, 5, 0f);
+        SetImageAlpha(columnIndex, 6, 0f);
     }
 
     /// <summary>
@@ -1309,107 +1239,8 @@ public class SlotView : MonoBehaviour
         if (img != null)
         {
             Color c = img.color;
-            img.color = new Color(c.r, c.g, c.b, 1f); // Bypass alpha changes (transparent sprites handle blanks)
+            img.color = new Color(c.r, c.g, c.b, alpha);
         }
-    }
-
-    /// <summary>
-    /// Returns a random non-blank sprite for filling blank positions in Scenario 5.
-    /// </summary>
-    private Sprite GetRandomNonBlankSprite()
-    {
-        List<int> nonBlankIds = new List<int>();
-        for (int i = 0; i < symbolSprites.Length; i++)
-        {
-            if (i != blankSymbolId && symbolSprites[i] != null)
-            {
-                nonBlankIds.Add(i);
-            }
-        }
-
-        if (nonBlankIds.Count == 0) return symbolSprites[0];
-        return symbolSprites[nonBlankIds[Random.Range(0, nonBlankIds.Count)]];
-    }
-
-    /// <summary>
-    /// Resets all reels to default state: full alpha, default spacing, middlePosition Y.
-    /// Called at the start of each spin.
-    /// </summary>
-    private void ResetBlankScenarios()
-    {
-        int cols = reelImagesList.Count;
-        for (int col = 0; col < cols; col++)
-        {
-            if (col >= reelTransforms.Length) continue;
-
-            // Reset Y position
-            Transform slotTransform = reelTransforms[col];
-            slotTransform.localPosition = new Vector3(
-                slotTransform.localPosition.x,
-                middlePosition,
-                0
-            );
-
-            // Reset spacing
-            if (reelLayoutGroups != null && col < reelLayoutGroups.Length && reelLayoutGroups[col] != null)
-            {
-                reelLayoutGroups[col].spacing = defaultSpacing;
-            }
-
-            // Reset all image alphas to 1
-            var reel = reelImagesList[col];
-            if (reel.images != null)
-            {
-                for (int i = 0; i < reel.images.Count; i++)
-                {
-                    if (reel.images[i] != null)
-                    {
-                        Color c = reel.images[i].color;
-                        reel.images[i].color = new Color(c.r, c.g, c.b, 1f);
-                    }
-                }
-            }
-
-            // Reset tracked scenario
-            if (currentBlankScenarios != null && col < currentBlankScenarios.Length)
-            {
-                currentBlankScenarios[col] = BlankScenario.NoBlanks;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Re-applies blank scenarios for all reels. Called after win animations restore alphas.
-    /// </summary>
-    private void ReapplyCurrentBlankScenarios()
-    {
-        if (currentBlankScenarios == null || currentDisplayMatrix == null) return;
-        for (int col = 0; col < currentBlankScenarios.Length && col < currentDisplayMatrix.Count; col++)
-        {
-            if (currentBlankScenarios[col] != BlankScenario.NoBlanks)
-            {
-                ApplyBlankScenario(col, currentBlankScenarios[col], currentDisplayMatrix[col]);
-            }
-            else
-            {
-                // Even for NoBlanks, re-apply buffer alpha 0
-                SetImageAlpha(col, 0, 0f);
-                SetImageAlpha(col, 1, 0f);
-                SetImageAlpha(col, 5, 0f);
-                SetImageAlpha(col, 6, 0f);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Re-applies blank alpha for a single column. Called after ResetSymbolScale restores alpha.
-    /// </summary>
-    private void ReapplyBlankAlphaForColumn(int columnIndex)
-    {
-        if (currentBlankScenarios == null || columnIndex >= currentBlankScenarios.Length) return;
-        if (currentDisplayMatrix == null || columnIndex >= currentDisplayMatrix.Count) return;
-
-        ApplyBlankScenario(columnIndex, currentBlankScenarios[columnIndex], currentDisplayMatrix[columnIndex]);
     }
 
     #endregion

@@ -10,11 +10,18 @@ public class GameManager : MonoBehaviour
 
     [Header("Spin Settings")]
     [SerializeField] private float normalSpinDuration = 2.0f;
-    [SerializeField] private double bigWinThreshold = 10;
+    [UnityEngine.Serialization.FormerlySerializedAs("quickSpinDuration")]
+    [SerializeField] private float fastSpinDuration = 0.75f;
 
-    internal GameConfig gameConfig;
+    internal StPatricksGoldGameConfig stPatricksGoldConfig;
     internal PlayerData playerData;
-    internal SpinResult lastResult;
+    internal ServerSpinResponse latestServerSpinResponse { get; private set; }
+    internal string latestRawSpinResponse { get; private set; }
+    internal IReadOnlyList<int> latestWinningPaylineIndices => latestWinningPaylineIndicesInternal;
+
+    internal event System.Action<bool> SpinActivityChanged;
+    internal event System.Action<SpinSpeed> SpinSpeedChanged;
+    internal event System.Action GamePresentationChanged;
 
     internal GameState currentState;
     internal SpinSpeed currentSpinSpeed;
@@ -30,9 +37,13 @@ public class GameManager : MonoBehaviour
     internal bool initializationFailed;
 
     private Coroutine spinCoroutine;
-    private bool stopRequested;
-    private bool waitingForSpecialWin;
-    internal bool WaitingForSpecialWin => waitingForSpecialWin;
+    private List<List<int>> pendingResultMatrix;
+    private bool manualStopRequested;
+    private double displayedWinAmount;
+    private double pendingWinAmount;
+    private double? pendingBalance;
+    private readonly List<int> latestWinningPaylineIndicesInternal = new List<int>();
+    private List<int> pendingWinningPaylineIndices = new List<int>();
 
     #region Initialization
 
@@ -44,9 +55,9 @@ public class GameManager : MonoBehaviour
         initializationFailed = false;
     }
 
-    internal void OnInitDataReceived(GameConfig config, PlayerData player, List<List<int>> initialMatrix)
+    internal void OnStPatricksGoldConfigReceived(StPatricksGoldGameConfig config, PlayerData player, List<List<int>> initialMatrix)
     {
-        gameConfig = config;
+        stPatricksGoldConfig = config;
         playerData = player;
         currentBetIndex = playerData.currentBetIndex;
         UpdateBetAmount();
@@ -58,6 +69,13 @@ public class GameManager : MonoBehaviour
 
         isInitialized = true;
         currentState = GameState.Idle;
+        displayedWinAmount = 0;
+        pendingWinAmount = 0;
+        pendingBalance = null;
+        latestWinningPaylineIndicesInternal.Clear();
+        pendingWinningPaylineIndices.Clear();
+        SpinActivityChanged?.Invoke(false);
+        GamePresentationChanged?.Invoke();
 
         Debug.Log("[GameManager] Game initialized.");
     }
@@ -66,246 +84,458 @@ public class GameManager : MonoBehaviour
 
     #region Bet Management
 
-    internal void IncreaseBet()
+    internal bool IncreaseBet()
     {
-        if (currentState != GameState.Idle || isAutoPlaying) return;
-        SetBetIndex((currentBetIndex + 1) % gameConfig.availableBets.Count);
+        if (!CanIncreaseBet()) return false;
+
+        SetBetIndex(currentBetIndex + 1);
+        return true;
     }
 
-    internal void DecreaseBet()
+    internal bool DecreaseBet()
     {
-        if (currentState != GameState.Idle || isAutoPlaying) return;
-        SetBetIndex((currentBetIndex - 1 + gameConfig.availableBets.Count) % gameConfig.availableBets.Count);
+        if (!CanDecreaseBet()) return false;
+
+        SetBetIndex(currentBetIndex - 1);
+        return true;
     }
 
     internal void SetBetIndex(int index)
     {
-        currentBetIndex = index;
+        if (stPatricksGoldConfig?.availableBets == null || stPatricksGoldConfig.availableBets.Count == 0)
+        {
+            Debug.LogError("[GameManager] Cannot select a bet because the server supplied no bet values.");
+            return;
+        }
+
+        currentBetIndex = Mathf.Clamp(index, 0, stPatricksGoldConfig.availableBets.Count - 1);
         UpdateBetAmount();
+        GamePresentationChanged?.Invoke();
     }
 
     private void UpdateBetAmount()
     {
-        currentBetAmount = gameConfig.availableBets[currentBetIndex];
+        currentBetAmount = stPatricksGoldConfig.availableBets[currentBetIndex];
+    }
+
+    internal bool CanIncreaseBet()
+    {
+        return CanChangeBet() && currentBetIndex < stPatricksGoldConfig.availableBets.Count - 1;
+    }
+
+    internal bool CanDecreaseBet()
+    {
+        return CanChangeBet() && currentBetIndex > 0;
+    }
+
+    private bool CanChangeBet()
+    {
+        return isInitialized &&
+               currentState == GameState.Idle &&
+               !isAutoPlaying &&
+               stPatricksGoldConfig?.availableBets != null &&
+               stPatricksGoldConfig.availableBets.Count > 0;
     }
 
     #endregion
 
     #region Spin Control
     
-    internal void RequestSpin()
+    internal bool RequestSpin()
     {
-        if (currentState != GameState.Idle) return;
-        if (!socketManager.isConnected) return;
-
-        double totalBet = currentBetAmount * (gameConfig != null ? gameConfig.betMultiplier : 1);
-        if (playerData.balance < totalBet)
+        if (currentState != GameState.Idle)
         {
-            Debug.LogWarning("[GameManager] Insufficient funds.");
-            return;
+            Debug.LogWarning($"[GameManager] Spin ignored because the game state is {currentState}.");
+            return false;
         }
 
-        StartSpin();
+        if (!isInitialized || stPatricksGoldConfig == null)
+        {
+            Debug.LogError("[GameManager] Spin rejected because the game is not initialized.");
+            return false;
+        }
+
+        if (socketManager == null || !socketManager.isConnected)
+        {
+            Debug.LogError("[GameManager] Spin rejected because the socket is not connected.");
+            return false;
+        }
+
+        if (slotView == null)
+        {
+            Debug.LogError("[GameManager] Spin rejected because SlotView is not assigned.");
+            return false;
+        }
+
+        if (slotView.IsSpinning())
+        {
+            Debug.LogWarning("[GameManager] Spin ignored because SlotView is already spinning.");
+            return false;
+        }
+
+        if (!CanAffordBet())
+        {
+            Debug.LogWarning(
+                $"[GameManager] Spin rejected because balance {GetDisplayedBalance():0.00} " +
+                $"is lower than total bet {GetDisplayedTotalBetAmount():0.00}.");
+            return false;
+        }
+
+        return StartSpin();
     }
 
-    internal void RequestStop()
+    internal bool RequestStop()
     {
-        if (currentState == GameState.Spinning)
+        if (!CanRequestStop())
         {
-            if (isAutoPlaying)
-            {
-                StopAutoPlay();
-            }
-            else
-            {
-                stopRequested = true;
-            }
+            Debug.LogWarning($"[GameManager] Stop ignored because the game state is {currentState} or a stop is already pending.");
+            return false;
         }
+
+        manualStopRequested = true;
+
+        if (isAutoPlaying)
+        {
+            StopAutoPlay();
+        }
+
+        Debug.Log("[GameManager] Manual stop requested. Reels will stop as soon as valid server data is available.");
+        return true;
     }
 
-    private void StartSpin()
+    private bool StartSpin()
     {
-        if (lastResult != null)
-        {
-            ProcessSpinResult();
-        }
-
-        lastResult = null;
+        pendingResultMatrix = null;
+        manualStopRequested = false;
+        displayedWinAmount = 0;
+        pendingWinAmount = 0;
+        pendingBalance = null;
+        latestWinningPaylineIndicesInternal.Clear();
+        pendingWinningPaylineIndices.Clear();
         currentState = GameState.Spinning;
-        stopRequested = false;
 
-        if (slotView != null)
-        {
-            slotView.StartSpin();
-        }
-
-        socketManager.SendSpinRequest(currentBetIndex);
+        slotView.StartSpin(currentSpinSpeed);
+        SpinActivityChanged?.Invoke(true);
+        GamePresentationChanged?.Invoke();
 
         if (spinCoroutine != null)
             StopCoroutine(spinCoroutine);
         spinCoroutine = StartCoroutine(SpinRoutine());
+
+        if (!socketManager.SendSpinRequest(currentBetIndex))
+        {
+            FailActiveSpin("The spin request could not be sent.");
+            return false;
+        }
+
+        return true;
     }
 
     private IEnumerator SpinRoutine()
     {
-        float spinDuration = GetSpinDuration();
-        float elapsed = 0f;
+        float normalStopReadyTime = Time.time + GetSpinDuration();
 
-        while (elapsed < spinDuration && !stopRequested)
+        while (true)
         {
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
+            if (currentState != GameState.Spinning)
+            {
+                yield break;
+            }
 
-        // Player pressed Stop manually — hold for 0.5s so the reels keep
-        // spinning briefly before snapping, giving clear visual feedback.
-        if (stopRequested)
-        {
-            yield return new WaitForSeconds(0.5f);
-        }
+            bool stopTimeReached = manualStopRequested || Time.time >= normalStopReadyTime;
 
-        while (lastResult == null)
-        {
+            if (stopTimeReached && pendingResultMatrix != null)
+            {
+                break;
+            }
+
             yield return null;
         }
 
         currentState = GameState.Stopping;
+        List<List<int>> resultMatrix = pendingResultMatrix;
+        bool showResultImmediately = currentSpinSpeed == SpinSpeed.SkipSpin;
+        bool useFastStop = manualStopRequested || currentSpinSpeed == SpinSpeed.FastSpin;
+        spinCoroutine = null;
 
-        if (slotView != null && lastResult.resultMatrix != null)
+        if (showResultImmediately)
         {
-            if (currentSpinSpeed == SpinSpeed.QuickSpin || stopRequested)
-            {
-                slotView.QuickStop(lastResult.resultMatrix);
-
-                // Wait for the snap animation to settle before processing result
-                float quickStopWaitTime = 0.5f;
-                yield return new WaitForSeconds(quickStopWaitTime);
-
-                OnReelsStoppedComplete();
-            }
-            else
-            {
-                slotView.StopSpin(lastResult.resultMatrix, OnReelsStoppedComplete);
-            }
+            slotView.ShowServerResultImmediately(resultMatrix, OnReelsStoppedComplete);
+        }
+        else if (useFastStop)
+        {
+            slotView.QuickStop(resultMatrix, OnReelsStoppedComplete);
         }
         else
         {
-            OnReelsStoppedComplete();
+            slotView.StopSpin(resultMatrix, OnReelsStoppedComplete);
         }
     }
 
     private void OnReelsStoppedComplete()
     {
-        SpinResult resultToUse = lastResult;
-        if (resultToUse == null) return;
+        pendingResultMatrix = null;
+        manualStopRequested = false;
 
-        if (resultToUse.winAmount > 0 && resultToUse.winLines != null && resultToUse.winLines.Count > 0)
+        displayedWinAmount = pendingWinAmount;
+        if (pendingBalance.HasValue && playerData != null)
         {
-            double totalBet = currentBetAmount * (gameConfig != null ? gameConfig.betMultiplier : 1);
-            double multiplier = totalBet > 0 ? (resultToUse.winAmount / totalBet) : 0;
-
-            if (multiplier >= bigWinThreshold)
-            {
-                currentState = GameState.Idle;
-                waitingForSpecialWin = true;
-            }
-            else
-            {
-                currentState = GameState.Idle;
-            }
-
-            slotView.ShowWinLineAnimation(resultToUse.winLines, OnWinAnimationComplete);
+            playerData.balance = pendingBalance.Value;
         }
-        else
-        {
-            currentState = GameState.Idle;
-            OnWinAnimationComplete();
-        }
-    }
-
-    private void OnWinAnimationComplete()
-    {
-        waitingForSpecialWin = false;
+        pendingWinAmount = 0;
+        pendingBalance = null;
+        latestWinningPaylineIndicesInternal.Clear();
+        latestWinningPaylineIndicesInternal.AddRange(pendingWinningPaylineIndices);
+        pendingWinningPaylineIndices.Clear();
 
         if (isAutoPlaying)
         {
-            StartCoroutine(DelayBeforeNextRound());
-        }
-        else
-        {
-            ProcessSpinResult();
-        }
-    }
-
-    private IEnumerator DelayBeforeNextRound()
-    {
-        float delayTime = currentSpinSpeed == SpinSpeed.QuickSpin ? 0.3f : 0.5f;
-        yield return new WaitForSeconds(delayTime);
-
-        while (waitingForSpecialWin)
-        {
-            yield return null;
+            StopAutoPlay();
         }
 
-        ProcessSpinResult();
+        currentState = GameState.Idle;
+        SpinActivityChanged?.Invoke(false);
+        GamePresentationChanged?.Invoke();
+        Debug.Log("[GameManager] Reels stopped on the server matrix. Round returned to Idle.");
     }
 
     private float GetSpinDuration()
     {
-        return normalSpinDuration;
-    }
-
-    internal void OnSpinResultReceived(SpinResult result)
-    {
-        lastResult = result;
-    }
-
-    private void ProcessSpinResult()
-    {
-        playerData = lastResult.playerData;
-
-        lastResult = null;
-
-        if (isAutoPlaying)
+        switch (currentSpinSpeed)
         {
-            autoPlayRemainingRounds--;
+            case SpinSpeed.FastSpin:
+                return Mathf.Max(0f, fastSpinDuration);
+            case SpinSpeed.SkipSpin:
+                return 0f;
+            default:
+                return Mathf.Max(0f, normalSpinDuration);
+        }
+    }
 
-            if (autoPlayRemainingRounds <= 0)
+    internal bool CanRequestSpin()
+    {
+        return isInitialized &&
+               currentState == GameState.Idle &&
+               !isAutoPlaying &&
+               socketManager != null &&
+               socketManager.isConnected &&
+               slotView != null &&
+               !slotView.IsSpinning() &&
+               CanAffordBet();
+    }
+
+    internal bool CanRequestStop()
+    {
+        return currentState == GameState.Spinning &&
+               !manualStopRequested &&
+               slotView != null &&
+               slotView.IsSpinning();
+    }
+
+    internal bool IsSpinRoundActive()
+    {
+        return IsSpinning();
+    }
+
+    internal void OnSpinResponseReceived(
+        ServerSpinResponse serverResponse,
+        string rawJson,
+        List<List<int>> resultMatrix)
+    {
+        StoreLatestSpinResponse(serverResponse, rawJson);
+
+        if (currentState != GameState.Spinning)
+        {
+            Debug.LogWarning($"[GameManager] Stored a spin response while the game state was {currentState}; it will not affect the reels.");
+            return;
+        }
+
+        if (resultMatrix == null)
+        {
+            FailActiveSpin("The server result matrix is null.");
+            return;
+        }
+
+        if (slotView == null)
+        {
+            FailActiveSpin("The server result cannot be displayed because SlotView is not assigned.");
+            return;
+        }
+
+        if (!slotView.TryValidateResultMatrix(resultMatrix, out string validationError))
+        {
+            FailActiveSpin($"The server result cannot be displayed: {validationError}");
+            return;
+        }
+
+        pendingWinAmount = GetServerWinAmount(serverResponse);
+        pendingBalance = serverResponse.player != null
+            ? serverResponse.player.balance
+            : null;
+        pendingWinningPaylineIndices = GetConfiguredWinningPaylineIndices(serverResponse);
+        pendingResultMatrix = resultMatrix;
+    }
+
+    private double GetServerWinAmount(ServerSpinResponse serverResponse)
+    {
+        if (serverResponse?.payload == null)
+        {
+            return 0;
+        }
+
+        return serverResponse.payload.winAmount != 0
+            ? serverResponse.payload.winAmount
+            : serverResponse.payload.totalWin;
+    }
+
+    private List<int> GetConfiguredWinningPaylineIndices(ServerSpinResponse serverResponse)
+    {
+        var result = new List<int>();
+        List<ServerWinLine> serverWins = null;
+
+        if (serverResponse?.payload?.lineWins != null && serverResponse.payload.lineWins.Count > 0)
+        {
+            serverWins = serverResponse.payload.lineWins;
+        }
+        else if (serverResponse?.payload?.winningLines != null)
+        {
+            serverWins = serverResponse.payload.winningLines;
+        }
+
+        if (serverWins == null || stPatricksGoldConfig?.paylines == null)
+        {
+            return result;
+        }
+
+        var uniqueIndices = new HashSet<int>();
+        foreach (ServerWinLine serverWin in serverWins)
+        {
+            if (serverWin == null) continue;
+
+            int lineIndex = serverWin.lineIndex;
+            if (lineIndex < 0 || lineIndex >= stPatricksGoldConfig.paylines.Count)
             {
-                currentState = GameState.Idle;
-                StopAutoPlay();
+                Debug.LogWarning(
+                    $"[GameManager] Ignoring server winning line index {lineIndex}; " +
+                    $"configured range is 0-{stPatricksGoldConfig.paylines.Count - 1}.");
+                continue;
             }
-            else
+
+            if (uniqueIndices.Add(lineIndex))
             {
-                // Before requesting the next spin, verify the player can still afford it.
-                // If not, stop autoplay (restores all UI) then show the popup.
-                double totalBet = currentBetAmount * (gameConfig != null ? gameConfig.betMultiplier : 1);
-                if (playerData.balance < totalBet)
-                {
-                    currentState = GameState.Idle;
-                    StopAutoPlay();
-                    Debug.LogWarning("[GameManager] Insufficient funds.");
-                }
-                else
-                {
-                    currentState = GameState.Idle;
-                    RequestSpin();
-                }
+                result.Add(lineIndex);
             }
+        }
+
+        return result;
+    }
+
+    internal void OnSpinResponseInvalid(ServerSpinResponse serverResponse, string rawJson, string error)
+    {
+        StoreLatestSpinResponse(serverResponse, rawJson);
+
+        if (currentState == GameState.Spinning || currentState == GameState.Stopping)
+        {
+            FailActiveSpin(error);
         }
         else
         {
-            currentState = GameState.Idle;
+            Debug.LogError($"[GameManager] Invalid spin response received while no round was active: {error}");
         }
+    }
+
+    private void StoreLatestSpinResponse(ServerSpinResponse serverResponse, string rawJson)
+    {
+        latestServerSpinResponse = serverResponse;
+        latestRawSpinResponse = rawJson;
+    }
+
+    private void FailActiveSpin(string error)
+    {
+        Debug.LogError($"[GameManager] Spin cancelled: {error}");
+
+        if (spinCoroutine != null)
+        {
+            StopCoroutine(spinCoroutine);
+            spinCoroutine = null;
+        }
+
+        pendingResultMatrix = null;
+        manualStopRequested = false;
+        pendingWinAmount = 0;
+        pendingBalance = null;
+        pendingWinningPaylineIndices.Clear();
+        slotView?.CancelSpin();
+
+        if (isAutoPlaying)
+        {
+            StopAutoPlay();
+        }
+
+        currentState = GameState.Idle;
+        SpinActivityChanged?.Invoke(false);
+        GamePresentationChanged?.Invoke();
     }
 
     #endregion
 
     #region Spin Speed Control
 
-    internal void SetSpinSpeed(SpinSpeed speed)
+    internal bool SetSpinSpeed(SpinSpeed speed)
     {
+        if (IsSpinRoundActive() || isAutoPlaying)
+        {
+            Debug.LogWarning("[GameManager] Spin mode cannot be changed during an active round or autoplay.");
+            return false;
+        }
+
+        if (speed != SpinSpeed.Normal &&
+            speed != SpinSpeed.FastSpin &&
+            speed != SpinSpeed.SkipSpin)
+        {
+            Debug.LogWarning($"[GameManager] Unsupported spin mode requested: {speed}.");
+            return false;
+        }
+
         currentSpinSpeed = speed;
+        SpinSpeedChanged?.Invoke(currentSpinSpeed);
+        Debug.Log($"[GameManager] Spin mode selected: {currentSpinSpeed}.");
+        return true;
+    }
+
+    internal SpinSpeed GetSpinSpeed()
+    {
+        return currentSpinSpeed;
+    }
+
+    internal int GetDisplayedPaylineCount()
+    {
+        return stPatricksGoldConfig != null
+            ? stPatricksGoldConfig.paylineCount
+            : 0;
+    }
+
+    internal double GetDisplayedWinAmount()
+    {
+        return displayedWinAmount;
+    }
+
+    internal double GetDisplayedBalance()
+    {
+        return playerData != null ? playerData.balance : 0;
+    }
+
+    internal double GetDisplayedBetAmount()
+    {
+        return currentBetAmount;
+    }
+
+    internal double GetDisplayedTotalBetAmount()
+    {
+        double multiplier = stPatricksGoldConfig != null
+            ? stPatricksGoldConfig.betMultiplier
+            : 1;
+        return currentBetAmount * multiplier;
     }
 
     #endregion
@@ -317,8 +547,7 @@ public class GameManager : MonoBehaviour
         if (currentState != GameState.Idle) return;
 
         // Check balance BEFORE locking any UI — if insufficient, show popup and bail.
-        double totalBet = currentBetAmount * (gameConfig != null ? gameConfig.betMultiplier : 1);
-        if (playerData.balance < totalBet)
+        if (!CanAffordBet())
         {
             Debug.LogWarning("[GameManager] Insufficient funds.");
             return;
@@ -355,7 +584,15 @@ public class GameManager : MonoBehaviour
             StopAutoPlay();
         }
 
+        pendingResultMatrix = null;
+        manualStopRequested = false;
+        pendingWinAmount = 0;
+        pendingBalance = null;
+        pendingWinningPaylineIndices.Clear();
+        slotView?.CancelSpin();
         currentState = GameState.Idle;
+        SpinActivityChanged?.Invoke(false);
+        GamePresentationChanged?.Invoke();
         // Note: The disconnection popup is shown by SocketIOManager.OnSocketDisconnected()
         // to avoid duplicates. GameManager only cleans up state here.
     }
@@ -371,8 +608,7 @@ public class GameManager : MonoBehaviour
 
     internal bool CanAffordBet()
     {
-        double totalBet = currentBetAmount * (gameConfig != null ? gameConfig.betMultiplier : 1);
-        return playerData.balance >= totalBet;
+        return playerData != null && playerData.balance >= GetDisplayedTotalBetAmount();
     }
 
     internal bool IsSpinning()

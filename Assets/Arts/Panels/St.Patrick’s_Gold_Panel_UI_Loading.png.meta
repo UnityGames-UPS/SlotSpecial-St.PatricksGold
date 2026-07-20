@@ -142,10 +142,10 @@ TextureImporter:
       name: "St.Patrick\u2019s_Gold_Panel_UI_Loading_0"
       rect:
         serializedVersion: 2
-        x: 0
-        y: 0
-        width: 2342
-        height: 141
+        x: 18
+        y: 19
+        width: 2305
+        height: 103
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
