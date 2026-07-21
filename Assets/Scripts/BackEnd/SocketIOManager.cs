@@ -866,6 +866,121 @@ public class SocketIOManager : MonoBehaviour
         {
             serverResponse.payload.totalWin = totalWin;
         }
+
+        HydrateServerWinLines(payload, serverResponse.payload);
+    }
+
+    private void HydrateServerWinLines(
+        IDictionary<string, object> payload,
+        ServerPayload serverPayload)
+    {
+        if (TryReadServerWinLines(payload, "lineWins", out List<ServerWinLine> lineWins))
+        {
+            serverPayload.lineWins = lineWins;
+        }
+
+        if (TryReadServerWinLines(payload, "winningLines", out List<ServerWinLine> winningLines))
+        {
+            serverPayload.winningLines = winningLines;
+        }
+    }
+
+    private bool TryReadServerWinLines(
+        IDictionary<string, object> payload,
+        string key,
+        out List<ServerWinLine> winLines)
+    {
+        winLines = null;
+        if (!payload.TryGetValue(key, out object rawLinesValue) || !(rawLinesValue is IList rawLines))
+        {
+            return false;
+        }
+
+        winLines = new List<ServerWinLine>(rawLines.Count);
+        for (int lineIndex = 0; lineIndex < rawLines.Count; lineIndex++)
+        {
+            if (!(rawLines[lineIndex] is IDictionary<string, object> rawLine))
+            {
+                continue;
+            }
+
+            var serverLine = new ServerWinLine
+            {
+                lineIndex = ReadJsonInt(rawLine, "lineIndex"),
+                symbolName = ReadJsonString(rawLine, "symbolName"),
+                matchCount = ReadJsonInt(rawLine, "matchCount"),
+                wildMultiplier = ReadJsonInt(rawLine, "wildMultiplier"),
+                positions = new List<string>(),
+                normalizedPositions = new List<List<int>>(),
+                wildDetails = new List<WildDetail>()
+            };
+
+            object symbolIdValue = null;
+            if (!rawLine.TryGetValue("winningSymbolId", out symbolIdValue))
+            {
+                rawLine.TryGetValue("symbolId", out symbolIdValue);
+            }
+
+            if (symbolIdValue != null)
+            {
+                serverLine.symbolId = Convert.ToString(symbolIdValue, CultureInfo.InvariantCulture);
+            }
+
+            if (TryReadJsonDouble(rawLine, "basePayout", out double basePayout))
+            {
+                serverLine.basePayout = basePayout;
+            }
+
+            if (TryReadJsonDouble(rawLine, "payout", out double payout))
+            {
+                serverLine.payout = payout;
+            }
+
+            if (TryReadJsonDouble(rawLine, "winAmount", out double winAmount))
+            {
+                serverLine.winAmount = winAmount;
+            }
+
+            if (rawLine.TryGetValue("positions", out object positionsValue) && positionsValue is IList rawPositions)
+            {
+                for (int positionIndex = 0; positionIndex < rawPositions.Count; positionIndex++)
+                {
+                    object rawPosition = rawPositions[positionIndex];
+                    if (rawPosition is IList coordinate && coordinate.Count >= 2)
+                    {
+                        serverLine.normalizedPositions.Add(new List<int>
+                        {
+                            Convert.ToInt32(coordinate[0], CultureInfo.InvariantCulture),
+                            Convert.ToInt32(coordinate[1], CultureInfo.InvariantCulture)
+                        });
+                    }
+                    else if (rawPosition != null)
+                    {
+                        serverLine.positions.Add(Convert.ToString(rawPosition, CultureInfo.InvariantCulture));
+                    }
+                }
+            }
+
+            if (rawLine.TryGetValue("wildDetails", out object wildDetailsValue) &&
+                wildDetailsValue is IList rawWildDetails)
+            {
+                for (int wildIndex = 0; wildIndex < rawWildDetails.Count; wildIndex++)
+                {
+                    if (!(rawWildDetails[wildIndex] is IDictionary<string, object> rawWild)) continue;
+
+                    serverLine.wildDetails.Add(new WildDetail
+                    {
+                        col = ReadJsonInt(rawWild, "col"),
+                        row = ReadJsonInt(rawWild, "row"),
+                        multiplier = ReadJsonInt(rawWild, "multiplier")
+                    });
+                }
+            }
+
+            winLines.Add(serverLine);
+        }
+
+        return true;
     }
 
     private bool TryReadJsonDouble(

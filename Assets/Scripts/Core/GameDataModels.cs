@@ -190,7 +190,6 @@ public class ServerSpinResponse
     public List<List<string>> matrix;
     public ServerPlayerBalance player;
     public ServerPayload payload;
-    public ServerFeaturesResult features;
 }
 
 [Serializable]
@@ -209,20 +208,6 @@ public class ServerPayload
     public double winAmount;                 // Alternate server total-win field
     public int scatterCount;
     public bool scatterTriggered;
-    public ServerFreeSpinState freeSpinState; // Can be null
-    public bool isRoundOver;                 // True when free spin round is over
-    public double totalRoundWin;             // Total round win (at payload level when isRoundOver)
-}
-
-[Serializable]
-public class ServerFreeSpinState
-{
-    public bool isActive;
-    public int spinsRemaining;
-    public int spinsUsed;
-    public double totalRoundWin;
-    public bool isBought;
-    public Dictionary<string, int> stickyWilds;
 }
 
 [Serializable]
@@ -238,6 +223,10 @@ public class ServerWinLine
     public double winAmount;
     public int wildMultiplier;
     public List<WildDetail> wildDetails;
+
+    // Normalized [row, column] coordinates populated by SocketIOManager.
+    // The live server sends nested numeric arrays while older responses used strings.
+    [NonSerialized] public List<List<int>> normalizedPositions;
 }
 
 [Serializable]
@@ -246,34 +235,6 @@ public class WildDetail
     public int col;
     public int row;
     public int multiplier;
-}
-
-[Serializable]
-public class ServerFeaturesResult
-{
-    public ServerFreeSpinResult freeSpins;
-}
-
-[Serializable]
-public class ServerFreeSpinResult
-{
-    public bool triggered;
-    public int spinsAwarded;
-    public bool isFreeSpin;
-    public bool isRoundOver;
-    public int spinsRemaining;
-    public int spinsUsed;  // Added: Server sends this in features.freeSpins
-    public int stickyWildsCount;
-    public ServerOverlayScatter overlayScatter;
-}
-
-[Serializable]
-public class ServerOverlayScatter
-{
-    public bool isTriggered;
-    public int count;
-    public int extraSpins;
-    public List<List<int>> positions;
 }
 
 // ============================================================================
@@ -339,6 +300,9 @@ public class StPatricksGoldSymbolInfo
     public bool isScatter;
     public int wildMultiplier;
     public double payout;
+    public double payout3x;
+    public double payout4x;
+    public double payout5x;
 }
 
 #endregion
@@ -359,16 +323,7 @@ public class SpinResult
     public double winAmount;
     public List<WinLine> winLines;
     public PlayerData playerData;
-    public FreeSpinData freeSpinData;
     public ScatterData scatterData;
-    public OverlayScatterData overlayScatterData;
-    public Dictionary<string, int> stickyWilds;
-
-    // Server-authoritative free spin state
-    public int serverSpinsRemaining;
-    public int serverSpinsUsed;
-    public double serverTotalRoundWin;
-    public bool isRoundOver;
 }
 
 [Serializable]
@@ -381,29 +336,11 @@ public class WinLine
 }
 
 [Serializable]
-public class FreeSpinData
-{
-    public bool isTriggered;
-    public int spinsAwarded;
-    public int remainingSpins;
-    public bool isBought;
-}
-
-[Serializable]
 public class ScatterData
 {
     public bool isTriggered;
     public int scatterCount;
     public double winAmount;
-}
-
-[Serializable]
-public class OverlayScatterData
-{
-    public bool isTriggered;
-    public int count;
-    public int extraSpins;
-    public List<List<int>> positions;
 }
 
 #endregion
@@ -428,8 +365,7 @@ public enum GameState
     Idle,
     Spinning,
     Stopping,
-    ShowingWin,
-    FreeSpinMode
+    ShowingWin
 }
 
 public enum SpinSpeed
@@ -484,7 +420,10 @@ public static class GameDataConverter
                     isWild = IsSymbolType(serverSymbol, "wild"),
                     isScatter = IsSymbolType(serverSymbol, "scatter"),
                     wildMultiplier = 1,
-                    payout = 0
+                    payout = 0,
+                    payout3x = serverSymbol.payout3x,
+                    payout4x = serverSymbol.payout4x,
+                    payout5x = serverSymbol.payout5x
                 };
 
                 config.symbols.Add(symbolInfo);
@@ -682,9 +621,14 @@ public static class GameDataConverter
     /// <summary>
     /// CRITICAL: Converts server response to client SpinResult
     /// Handles string-to-int conversion, matrix transposition, and wild multiplier mapping
-    /// Server sends [row][col] (4 rows x 5 cols), Client needs [col][row] (5 cols x 4 rows)
+    /// Server sends [row][col], while SlotView needs [column][row].
     /// </summary>
-    internal static SpinResult ConvertServerResponseToSpinResult(ServerSpinResponse serverResponse, double currentBalance, double betAmount, StPatricksGoldGameConfig gameConfig)
+    internal static SpinResult ConvertServerResponseToSpinResult(
+        ServerSpinResponse serverResponse,
+        double currentBalance,
+        double totalBetAmount,
+        int currentBetIndex,
+        StPatricksGoldGameConfig gameConfig)
     {
         double totalWinAmount = 0;
         if (serverResponse.payload != null)
@@ -692,19 +636,18 @@ public static class GameDataConverter
             totalWinAmount = serverResponse.payload.winAmount > 0 ? serverResponse.payload.winAmount : serverResponse.payload.totalWin;
         }
 
-        double newBalance = serverResponse.player?.balance ?? CalculateNewBalance(currentBalance, betAmount, totalWinAmount);
+        double newBalance = serverResponse.player?.balance ??
+                            CalculateNewBalance(currentBalance, totalBetAmount, totalWinAmount);
 
-        // Get server free spin state values
-        int spinsRemaining = serverResponse.features?.freeSpins?.spinsRemaining ?? serverResponse.payload?.freeSpinState?.spinsRemaining ?? 0;
-        int spinsUsed = serverResponse.features?.freeSpins?.spinsUsed ?? serverResponse.payload?.freeSpinState?.spinsUsed ?? 0;
-        double totalRoundWin = (serverResponse.payload != null && serverResponse.payload.totalRoundWin > 0)
-            ? serverResponse.payload.totalRoundWin
-            : (serverResponse.payload?.freeSpinState?.totalRoundWin ?? 0);
-        bool isRoundOver = serverResponse.features?.freeSpins?.isRoundOver ?? (serverResponse.payload != null && serverResponse.payload.isRoundOver);
-
-        var stickyWilds = serverResponse.payload?.freeSpinState?.stickyWilds;
-
-        var winsSource = serverResponse.payload?.lineWins ?? serverResponse.payload?.winningLines;
+        List<ServerWinLine> winsSource = null;
+        if (serverResponse.payload?.lineWins != null && serverResponse.payload.lineWins.Count > 0)
+        {
+            winsSource = serverResponse.payload.lineWins;
+        }
+        else if (serverResponse.payload?.winningLines != null)
+        {
+            winsSource = serverResponse.payload.winningLines;
+        }
 
         if (!TryConvertServerMatrix(serverResponse, gameConfig, out List<List<int>> convertedMatrix, out string matrixError))
         {
@@ -725,19 +668,8 @@ public static class GameDataConverter
             playerData = new PlayerData
             {
                 balance = newBalance,
-                currentBetIndex = 0 // Will be set by GameManager
+                currentBetIndex = currentBetIndex
             },
-
-            // Convert free spin data
-            freeSpinData = serverResponse.features?.freeSpins != null && serverResponse.features.freeSpins.triggered
-                ? new FreeSpinData
-                {
-                    isTriggered = true,
-                    spinsAwarded = serverResponse.features.freeSpins.spinsAwarded,
-                    remainingSpins = 0,
-                    isBought = serverResponse.payload?.freeSpinState?.isBought ?? false
-                }
-                : null,
 
             // Convert scatter data
             scatterData = (serverResponse.payload != null && serverResponse.payload.scatterTriggered)
@@ -747,25 +679,7 @@ public static class GameDataConverter
                     scatterCount = serverResponse.payload.scatterCount,
                     winAmount = 0 // Calculate if needed
                 }
-                : null,
-
-            overlayScatterData = serverResponse.features?.freeSpins?.overlayScatter != null && serverResponse.features.freeSpins.overlayScatter.isTriggered
-                ? new OverlayScatterData
-                {
-                    isTriggered = true,
-                    count = serverResponse.features.freeSpins.overlayScatter.count,
-                    extraSpins = serverResponse.features.freeSpins.overlayScatter.extraSpins,
-                    positions = serverResponse.features.freeSpins.overlayScatter.positions
-                }
-                : null,
-
-            stickyWilds = serverResponse.payload?.freeSpinState?.stickyWilds,
-
-            // Server-authoritative free spin state
-            serverSpinsRemaining = spinsRemaining,
-            serverSpinsUsed = spinsUsed,
-            serverTotalRoundWin = totalRoundWin,
-            isRoundOver = isRoundOver
+                : null
         };
 
         return result;
@@ -886,6 +800,7 @@ public static class GameDataConverter
         if (serverWinLines == null) return winLines;
 
         int cols = gameConfig != null ? gameConfig.reelCount : StPatricksGoldDefinition.ReelCount;
+        int rows = gameConfig != null ? gameConfig.rowCount : StPatricksGoldDefinition.RowCount;
 
         foreach (var serverLine in serverWinLines)
         {
@@ -917,7 +832,20 @@ public static class GameDataConverter
 
             var flatPositions = new List<int>();
 
-            if (serverLine.positions != null && serverLine.positions.Count > 0)
+            if (serverLine.normalizedPositions != null && serverLine.normalizedPositions.Count > 0)
+            {
+                foreach (List<int> coordinate in serverLine.normalizedPositions)
+                {
+                    if (coordinate == null || coordinate.Count < 2) continue;
+
+                    int row = coordinate[0];
+                    int col = coordinate[1];
+                    if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
+
+                    flatPositions.Add(row * cols + col);
+                }
+            }
+            else if (serverLine.positions != null && serverLine.positions.Count > 0)
             {
                 // Server positions are coordinate strings.
                 foreach (var posStr in serverLine.positions)
@@ -968,9 +896,9 @@ public static class GameDataConverter
         return winLines;
     }
 
-    private static double CalculateNewBalance(double currentBalance, double betAmount, double winAmount)
+    private static double CalculateNewBalance(double currentBalance, double totalBetAmount, double winAmount)
     {
-        return currentBalance - betAmount + winAmount;
+        return currentBalance - totalBetAmount + winAmount;
     }
 }
 
