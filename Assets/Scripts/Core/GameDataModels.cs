@@ -842,7 +842,11 @@ public static class GameDataConverter
                     int col = coordinate[1];
                     if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
 
-                    flatPositions.Add(row * cols + col);
+                    int flatIndex = row * cols + col;
+                    if (!flatPositions.Contains(flatIndex))
+                    {
+                        flatPositions.Add(flatIndex);
+                    }
                 }
             }
             else if (serverLine.positions != null && serverLine.positions.Count > 0)
@@ -855,8 +859,14 @@ public static class GameDataConverter
                         int.TryParse(parts[0], out int row) &&
                         int.TryParse(parts[1], out int col))
                     {
-                        int flatIndex = row * cols + col;
-                        flatPositions.Add(flatIndex);
+                        if (row >= 0 && row < rows && col >= 0 && col < cols)
+                        {
+                            int flatIndex = row * cols + col;
+                            if (!flatPositions.Contains(flatIndex))
+                            {
+                                flatPositions.Add(flatIndex);
+                            }
+                        }
                     }
                     else
                     {
@@ -877,6 +887,37 @@ public static class GameDataConverter
                     {
                         int row = payline[col];
                         flatPositions.Add(row * cols + col);
+                    }
+                }
+            }
+
+            // Some older/reskinned responses contain fewer coordinates than
+            // matchCount. Complete only the missing matched positions from the
+            // configured payline so every symbol that contributed is animated.
+            int expectedMatchCount = Math.Min(cols, Math.Max(0, serverLine.matchCount));
+            if (expectedMatchCount > 0 && flatPositions.Count > expectedMatchCount)
+            {
+                // Some responses send all five coordinates that draw the
+                // payline. Only the first matchCount positions contributed to
+                // the left-to-right win and should receive a symbol pulse.
+                flatPositions = flatPositions.Take(expectedMatchCount).ToList();
+            }
+
+            if (flatPositions.Count < expectedMatchCount &&
+                gameConfig?.paylines != null &&
+                serverLine.lineIndex >= 0 &&
+                serverLine.lineIndex < gameConfig.paylines.Count)
+            {
+                List<int> payline = gameConfig.paylines[serverLine.lineIndex];
+                for (int col = 0; col < expectedMatchCount && col < payline.Count; col++)
+                {
+                    int row = payline[col];
+                    if (row < 0 || row >= rows) continue;
+
+                    int flatIndex = row * cols + col;
+                    if (!flatPositions.Contains(flatIndex))
+                    {
+                        flatPositions.Add(flatIndex);
                     }
                 }
             }

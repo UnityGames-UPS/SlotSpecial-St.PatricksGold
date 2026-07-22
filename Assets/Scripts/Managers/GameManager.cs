@@ -334,11 +334,26 @@ public class GameManager : MonoBehaviour
 
         SpinActivityChanged?.Invoke(false);
         GamePresentationChanged?.Invoke();
+
+        // The server win lines have already been converted to flat positions
+        // for the visible 5x3 grid. Start their symbol animation only after all
+        // reels have settled so the pulse is applied to the displayed result.
+        bool hasWinLines = slotView != null &&
+                           completedResult.winLines != null &&
+                           completedResult.winLines.Count > 0;
+        if (hasWinLines)
+        {
+            slotView.ShowWinLineAnimation(
+                completedResult.winLines,
+                shouldContinueAutoPlay ? QueueNextAutoPlaySpin : null
+            );
+        }
+
         Debug.Log("[GameManager] SpinResult applied. Round returned to Idle.");
 
-        if (shouldContinueAutoPlay && isAutoPlaying && autoPlayCoroutine == null)
+        if (!hasWinLines && shouldContinueAutoPlay)
         {
-            autoPlayCoroutine = StartCoroutine(StartNextAutoPlaySpin());
+            QueueNextAutoPlaySpin();
         }
     }
 
@@ -617,6 +632,13 @@ public class GameManager : MonoBehaviour
     internal bool CanStartAutoPlay()
     {
         return !isAutoPlaying && CanRequestSpin();
+    }
+
+    private void QueueNextAutoPlaySpin()
+    {
+        if (!isAutoPlaying || autoPlayCoroutine != null) return;
+
+        autoPlayCoroutine = StartCoroutine(StartNextAutoPlaySpin());
     }
 
     private IEnumerator StartNextAutoPlaySpin()

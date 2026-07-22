@@ -527,19 +527,19 @@ MonoBehaviour:
     - {fileID: 1378111887}
   symbolHeight: 205
   spinSpeed: 0.05
-  reelSpeedMultiplier: 0.7
-  fastSpinReelSpeedMultiplier: 1
-  reelStopStagger: 0.45
-  anticipationUpDistance: 30
-  anticipationUpDuration: 0.15
-  stopOvershootDistance: 75
-  stopOvershootDuration: 0.2
-  stopBounceBackDuration: 0.4
+  reelSpeedMultiplier: 0.55
+  fastSpinReelSpeedMultiplier: 0.7
+  reelStartStagger: 0.08
+  reelStopStagger: 0.12
+  finalStopDurationMultiplier: 3
+  stopBounceDistance: 10
+  stopBounceReturnDuration: 0.16
   quickStopStagger: 0.06
-  quickStopOvershoot: 20
   quickStopDuration: 0.2
-  minSpinCyclesBeforeStop: 3
+  minSpinCyclesBeforeStop: 2
   winSymbolLoopDuration: 1.5
+  winSymbolMinScale: 0.92
+  winSymbolMaxScale: 1.1
   defaultSpacing: 0
 --- !u!1 &108890111
 GameObject:
@@ -855,7 +855,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f521a04de7f494272a617b2719edd271, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SocketIOManager
-  testToken: 6ca7fc48f6fe49e8a1a91bff486e56ad
+  testToken: c811e9f683bf411e8ba937cd9c019b1d
   gameManager: {fileID: 1660987171}
   JSManager: {fileID: 2001094553}
   RaycastBlocker: {fileID: 0}
@@ -4528,9 +4528,9 @@ RectTransform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 1030988831}
   - {fileID: 1902571911}
   - {fileID: 2139623803}
-  - {fileID: 1030988831}
   - {fileID: 464282336}
   - {fileID: 913979658}
   - {fileID: 165714084}
@@ -11334,6 +11334,12 @@ MonoBehaviour:
   autoPlayStopButton: {fileID: 2139623804}
   autoPlayCountText: {fileID: 1954463277}
   autoPlayHoldDuration: 0.75
+  autoPlayPanelSlideDistance: 40
+  autoPlayPanelSlideDuration: 0.45
+  hamburgerMenuPanel: {fileID: 1595160937}
+  hamburgerMenuButton: {fileID: 1520760165}
+  hamburgerMenuDownButton: {fileID: 2094861888}
+  hamburgerMenuFadeDuration: 0.3
 --- !u!4 &1784191471
 Transform:
   m_ObjectHideFlags: 0
@@ -13210,7 +13216,7 @@ Transform:
   m_GameObject: {fileID: 2080039315}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 935.13544, y: 497.69998, z: 0}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

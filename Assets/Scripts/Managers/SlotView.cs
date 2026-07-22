@@ -34,33 +34,33 @@ public class SlotView : MonoBehaviour
     [SerializeField] private List<ReelImages> reelImagesList;
 
     [Header("Spin Settings")]
-    [SerializeField] private float symbolHeight = 100f;
+    [SerializeField] private float symbolHeight = 205f;
     [Tooltip("Base duration in seconds for a reel to move by one symbol height.")]
     [SerializeField] private float spinSpeed = 0.05f;
-    [Tooltip("Multiplier for the visible reel travel speed. Lower values produce a slower, more readable spin.")]
-    [SerializeField, Range(0.25f, 1f)] private float reelSpeedMultiplier = 0.6f;
+    [Tooltip("Multiplier for the visible reel travel speed. A value of 1 matches the Wild West spin timing.")]
+    [SerializeField, Range(0.25f, 1f)] private float reelSpeedMultiplier = 0.55f;
     [Tooltip("Visible reel travel multiplier used while Fast or Skip Spin is selected.")]
     [UnityEngine.Serialization.FormerlySerializedAs("quickSpinReelSpeedMultiplier")]
     [SerializeField, Range(0.25f, 2f)] private float fastSpinReelSpeedMultiplier = 1f;
+    [Tooltip("Delay between each reel beginning its start animation.")]
+    [SerializeField] private float reelStartStagger = 0.08f;
     [SerializeField] private float reelStopStagger = 0.12f;
 
-    [Header("Start Animation Settings")]
-    [SerializeField] private float anticipationUpDistance = 30f;
-    [SerializeField] private float anticipationUpDuration = 0.15f;
-
     [Header("Stop Animation Settings")]
-    [SerializeField] private float stopOvershootDistance = 50f;
-    [SerializeField] private float stopOvershootDuration = 0.15f;
-    [SerializeField] private float stopBounceBackDuration = 0.25f;
+    [Tooltip("Duration multiplier for the final decelerating symbol cycle. A value of 3 preserves the incoming speed with OutCubic easing.")]
+    [SerializeField, Range(2f, 5f)] private float finalStopDurationMultiplier = 3f;
+    [SerializeField] private float stopBounceDistance = 10f;
+    [SerializeField] private float stopBounceReturnDuration = 0.16f;
 
     [Header("Quick Spin Settings")]
     [SerializeField] private float quickStopStagger = 0.06f;
-    [SerializeField] private float quickStopOvershoot = 20f;
     [SerializeField] private float quickStopDuration = 0.2f;
     [SerializeField] private int minSpinCyclesBeforeStop = 3;
 
     [Header("Win Animation Settings")]
     [SerializeField] private float winSymbolLoopDuration = 1.5f;
+    [SerializeField, Range(0.8f, 1f)] private float winSymbolMinScale = 0.92f;
+    [SerializeField, Range(1f, 1.25f)] private float winSymbolMaxScale = 1.1f;
 
     [Header("Reel Layout Settings")]
     [SerializeField] private float defaultSpacing = 0f;
@@ -73,19 +73,10 @@ public class SlotView : MonoBehaviour
 
     private List<Tween> spinTweens = new List<Tween>();
     private List<Tween> winTweens = new List<Tween>();
-    private List<Tween> spacingTweens = new List<Tween>();
     private List<int> reelCycleCount = new List<int>();
     private Coroutine winAnimationCoroutine;
     private Coroutine stopSpinCoroutine;
     private VerticalLayoutGroup[] reelLayoutGroups;
-    private float[] startSpinYPositions;
-    private float[] reelCycleProgress;
-    private float[] reelAnticipationOffset;
-
-    private bool[] isPreparingToStop;
-    private List<int>[] reelTargetSymbols;
-    private float[] reelTargetYPositions;
-    private bool[] reelIsQuickStop;
 
 
     internal List<List<int>> currentDisplayMatrix;
@@ -151,18 +142,8 @@ public class SlotView : MonoBehaviour
 
         // Cache VerticalLayoutGroup references from reel containers
         reelLayoutGroups = new VerticalLayoutGroup[reelTransforms.Length];
-        startSpinYPositions = new float[reelTransforms.Length];
-        reelCycleProgress = new float[reelTransforms.Length];
-        reelAnticipationOffset = new float[reelTransforms.Length];
-        
-        isPreparingToStop = new bool[reelTransforms.Length];
-        reelTargetSymbols = new List<int>[reelTransforms.Length];
-        reelTargetYPositions = new float[reelTransforms.Length];
-        reelIsQuickStop = new bool[reelTransforms.Length];
-        spacingTweens.Clear();
         for (int i = 0; i < reelTransforms.Length; i++)
         {
-            spacingTweens.Add(null);
             if (reelTransforms[i] != null)
             {
                 reelLayoutGroups[i] = reelTransforms[i].GetComponent<VerticalLayoutGroup>();
@@ -257,17 +238,17 @@ public class SlotView : MonoBehaviour
             ? gameManager.stPatricksGoldConfig.symbols.Count
             : StPatricksGoldDefinition.SymbolCount;
 
-        int topSpriteId = GetRandomSpinSymbolId(symbolCount);
-
         // Fill 2 buffer images above the visible area (indices 0 and 1)
-        reel.images[0].sprite = GetSymbolSprite(topSpriteId);
-        reel.images[1].sprite = GetSymbolSprite(topSpriteId);
-
-        int bottomSpriteId = GetRandomSpinSymbolId(symbolCount);
+        for (int imageIndex = 0; imageIndex < 2; imageIndex++)
+        {
+            reel.images[imageIndex].sprite = GetSymbolSprite(GetRandomSpinSymbolId(symbolCount));
+        }
 
         // Fill 2 buffer images below the visible area (indices 5 and 6)
-        reel.images[5].sprite = GetSymbolSprite(bottomSpriteId);
-        reel.images[6].sprite = GetSymbolSprite(bottomSpriteId);
+        for (int imageIndex = 5; imageIndex < 7; imageIndex++)
+        {
+            reel.images[imageIndex].sprite = GetSymbolSprite(GetRandomSpinSymbolId(symbolCount));
+        }
 
         if (isInitial && reelTransforms[columnIndex] != null)
         {
@@ -309,29 +290,17 @@ public class SlotView : MonoBehaviour
         isSpinning = true;
         KillAllTweens();
 
-        for (int i = 0; i < reelTransforms.Length; i++)
+        for (int i = 0; i < reelCycleCount.Count; i++)
         {
-            if (i < reelCycleCount.Count) reelCycleCount[i] = 0;
-            if (isPreparingToStop != null && i < isPreparingToStop.Length) isPreparingToStop[i] = false;
+            reelCycleCount[i] = 0;
         }
 
-        int cols = currentDisplayMatrix != null ? currentDisplayMatrix.Count : 3;
-        int maxSymbolId = gameManager?.stPatricksGoldConfig != null
-            ? gameManager.stPatricksGoldConfig.symbols.Count
-            : StPatricksGoldDefinition.SymbolCount;
+        int cols = currentDisplayMatrix != null
+            ? currentDisplayMatrix.Count
+            : StPatricksGoldDefinition.ReelCount;
 
         for (int col = 0; col < cols; col++)
         {
-            // Record current stopped Y position as the starting Y position for this spin
-            if (col < reelTransforms.Length && reelTransforms[col] != null)
-            {
-                startSpinYPositions[col] = reelTransforms[col].localPosition.y;
-            }
-            else
-            {
-                startSpinYPositions[col] = 0f;
-            }
-
             // Buffer images (0, 1, 5, 6) already hold valid sprites from the end of the previous spin.
             // Keeping them as-is prevents visual popping/glitches when the spin starts.
 
@@ -341,43 +310,33 @@ public class SlotView : MonoBehaviour
                 SetImageAlpha(col, i, 1f);
             }
 
-            InitializeTweening(col);
+            StartReelCycleWithDelay(col, col * reelStartStagger);
         }
     }
 
-    private void InitializeTweening(int columnIndex)
+    private void StartReelCycleWithDelay(int columnIndex, float delay)
     {
         if (columnIndex >= reelTransforms.Length) return;
-
-        Transform slotTransform = reelTransforms[columnIndex];
-        reelAnticipationOffset[columnIndex] = 0f;
 
         while (spinTweens.Count <= columnIndex) spinTweens.Add(null);
         if (spinTweens[columnIndex] != null) { spinTweens[columnIndex].Kill(); spinTweens[columnIndex] = null; }
 
-        // Quick 2-step bounce relative to the dynamically updating startSpinYPositions
-        Sequence startSeq = DOTween.Sequence();
-        startSeq.Append(
-            DOTween.To(() => reelAnticipationOffset[columnIndex], x => reelAnticipationOffset[columnIndex] = x, anticipationUpDistance, anticipationUpDuration)
-                .SetEase(Ease.OutQuad)
-        );
-        startSeq.Append(
-            DOTween.To(() => reelAnticipationOffset[columnIndex], x => reelAnticipationOffset[columnIndex] = x, 0f, anticipationUpDuration * 0.5f)
-                .SetEase(Ease.InQuad)
-        );
-        startSeq.OnUpdate(() => {
-            if (slotTransform != null)
+        // Begin the reel motion cleanly without an opposite-direction wind-up.
+        // The small left-to-right delay retains the mechanical reel cascade.
+        if (delay <= 0f)
+        {
+            StartReelCycle(columnIndex);
+            return;
+        }
+
+        Tween startDelayTween = DOVirtual.DelayedCall(delay, () =>
+        {
+            if (isSpinning)
             {
-                slotTransform.localPosition = new Vector3(
-                    slotTransform.localPosition.x,
-                    startSpinYPositions[columnIndex] + reelAnticipationOffset[columnIndex],
-                    0
-                );
+                StartReelCycle(columnIndex);
             }
         });
-        startSeq.OnComplete(() => { if (isSpinning) StartReelCycle(columnIndex); });
-        spinTweens[columnIndex] = startSeq;
-        startSeq.Play();
+        spinTweens[columnIndex] = startDelayTween;
     }
 
     private void StartReelCycle(int columnIndex)
@@ -386,10 +345,14 @@ public class SlotView : MonoBehaviour
         if (!isSpinning) return;
 
         Transform slotTransform = reelTransforms[columnIndex];
-        
-        reelCycleProgress[columnIndex] = 0f;
 
-        const float defaultSpeedMultiplier = 0.6f;
+        slotTransform.localPosition = new Vector3(
+            slotTransform.localPosition.x,
+            middlePosition,
+            0f
+        );
+
+        const float defaultSpeedMultiplier = 1f;
         float configuredSpeedMultiplier = activeSpinSpeed != SpinSpeed.Normal
             ? fastSpinReelSpeedMultiplier
             : reelSpeedMultiplier;
@@ -400,72 +363,28 @@ public class SlotView : MonoBehaviour
 
         Sequence cycleSequence = DOTween.Sequence();
 
-        // Tween reelCycleProgress from 0 to -cycleDistance, updating position using current startSpinYPositions
         cycleSequence.Append(
-            DOTween.To(() => reelCycleProgress[columnIndex], x => reelCycleProgress[columnIndex] = x, -cycleDistance, symbolCycleDuration)
+            slotTransform.DOLocalMoveY(middlePosition - cycleDistance, symbolCycleDuration)
                 .SetEase(Ease.Linear)
-                .OnUpdate(() => {
-                    if (slotTransform != null)
-                    {
-                        slotTransform.localPosition = new Vector3(
-                            slotTransform.localPosition.x,
-                            startSpinYPositions[columnIndex] + reelCycleProgress[columnIndex],
-                            0
-                        );
-                    }
-                })
         );
 
         cycleSequence.OnComplete(() => {
             if (isSpinning)
             {
+                CycleReelSymbols(columnIndex);
+
+                slotTransform.localPosition = new Vector3(
+                    slotTransform.localPosition.x,
+                    middlePosition,
+                    0f
+                );
+
                 if (columnIndex < reelCycleCount.Count)
                 {
                     reelCycleCount[columnIndex]++;
                 }
 
-                if (isPreparingToStop[columnIndex])
-                {
-                    isPreparingToStop[columnIndex] = false;
-                    TriggerActualReelStop(columnIndex);
-                }
-                else
-                {
-                    // Wrap the reel and its symbol strip in the same DOTween callback.
-                    // Without this explicit reset, the completed reel remains one full
-                    // symbol below its origin until the next tween update, producing a
-                    // visible one-frame flash after the sprites have already shifted.
-                    CycleReelSymbols(columnIndex);
-                    reelCycleProgress[columnIndex] = 0f;
-                    slotTransform.localPosition = new Vector3(
-                        slotTransform.localPosition.x,
-                        startSpinYPositions[columnIndex],
-                        0f
-                    );
-
-                    // Smoothly transition layout group spacing and Y offset to 0f after the first cycle completes
-                    // (occurs in mid-spin at top speed, making the transition completely invisible)
-                    if (reelCycleCount[columnIndex] == 1)
-                    {
-                        var layoutGroup = reelLayoutGroups[columnIndex];
-                        if (layoutGroup != null)
-                        {
-                            if (spacingTweens[columnIndex] != null)
-                            {
-                                spacingTweens[columnIndex].Kill();
-                            }
-                            
-                            int colIndex = columnIndex;
-                            Sequence seq = DOTween.Sequence();
-                            seq.Join(DOTween.To(() => layoutGroup.spacing, x => layoutGroup.spacing = x, 0f, 0.3f));
-                            seq.Join(DOTween.To(() => startSpinYPositions[colIndex], x => startSpinYPositions[colIndex] = x, 0f, 0.3f));
-                            seq.SetEase(Ease.OutQuad);
-                            spacingTweens[columnIndex] = seq;
-                        }
-                    }
-
-                    StartReelCycle(columnIndex);
-                }
+                StartReelCycle(columnIndex);
             }
         });
 
@@ -477,7 +396,7 @@ public class SlotView : MonoBehaviour
             spinTweens[columnIndex] = cycleSequence;
     }
 
-    private void CycleReelSymbols(int columnIndex)
+    private void CycleReelSymbols(int columnIndex, int forcedTopSymbolId = -1)
     {
         var reel = reelImagesList[columnIndex];
         if (reel.images == null || reel.images.Count != 7) return;
@@ -491,10 +410,10 @@ public class SlotView : MonoBehaviour
             ? gameManager.stPatricksGoldConfig.symbols.Count
             : StPatricksGoldDefinition.SymbolCount;
         
-        // Always pick a random non-blank symbol during active spin cycle
-        int randomSymbolId = GetRandomSpinSymbolId(maxSymbolId);
-
-        reel.images[0].sprite = GetSymbolSprite(randomSymbolId);
+        int nextSymbolId = forcedTopSymbolId >= 0
+            ? forcedTopSymbolId
+            : GetRandomSpinSymbolId(maxSymbolId);
+        reel.images[0].sprite = GetSymbolSprite(nextSymbolId);
     }
 
     private int GetRandomSpinSymbolId(int symbolCount)
@@ -566,26 +485,25 @@ public class SlotView : MonoBehaviour
         }
 
         float stagger = isQuickStop ? quickStopStagger : reelStopStagger;
+        int stoppedReels = 0;
 
         // Start stopping each reel with stagger
         for (int col = 0; col < cols; col++)
         {
             float delay = col * stagger;
-            StartCoroutine(StopSingleReel(col, resultMatrix[col], delay, isQuickStop));
+            StartCoroutine(StopSingleReel(
+                col,
+                resultMatrix[col],
+                delay,
+                isQuickStop,
+                () => stoppedReels++
+            ));
         }
 
-        // Calculate longest stop time
-        float longestStopTime;
-        if (isQuickStop)
+        while (stoppedReels < cols)
         {
-            longestStopTime = ((cols - 1) * stagger) + quickStopDuration;
+            yield return null;
         }
-        else
-        {
-            longestStopTime = ((cols - 1) * stagger) + stopOvershootDuration + stopBounceBackDuration;
-        }
-
-        yield return new WaitForSeconds(longestStopTime);
 
         isSpinning = false;
         stopSpinCoroutine = null;
@@ -593,32 +511,17 @@ public class SlotView : MonoBehaviour
         onComplete?.Invoke();
     }
 
-    private IEnumerator StopSingleReel(int columnIndex, List<int> targetSymbols, float delay, bool isQuickStop)
+    private IEnumerator StopSingleReel(
+        int columnIndex,
+        List<int> targetSymbols,
+        float delay,
+        bool isQuickStop,
+        System.Action onStopped)
     {
-        if (delay > 0)
+        if (delay > 0f)
         {
             yield return new WaitForSeconds(delay);
         }
-
-        // Apply stopped spacing IMMEDIATELY while spinning (one cycle before bounce).
-        // Since it happens while spinning at top speed, the layout adjustment is completely invisible to the user.
-        var layoutGroup = reelLayoutGroups[columnIndex];
-        if (layoutGroup != null)
-        {
-            layoutGroup.spacing = defaultSpacing;
-        }
-        startSpinYPositions[columnIndex] = middlePosition;
-
-        // Store stopping parameters for the actual stop trigger on cycle complete
-        reelTargetSymbols[columnIndex] = targetSymbols;
-        reelTargetYPositions[columnIndex] = middlePosition;
-        reelIsQuickStop[columnIndex] = isQuickStop;
-        isPreparingToStop[columnIndex] = true;
-    }
-
-    private void TriggerActualReelStop(int columnIndex)
-    {
-        if (columnIndex >= reelTransforms.Length) return;
 
         if (columnIndex < spinTweens.Count && spinTweens[columnIndex] != null)
         {
@@ -626,59 +529,96 @@ public class SlotView : MonoBehaviour
         }
 
         Transform slotTransform = reelTransforms[columnIndex];
+        float configuredSpeedMultiplier = activeSpinSpeed != SpinSpeed.Normal
+            ? fastSpinReelSpeedMultiplier
+            : reelSpeedMultiplier;
+        float speedMultiplier = Mathf.Clamp(configuredSpeedMultiplier, 0.25f, 2f);
+        float cycleDuration = Mathf.Max(0.01f, spinSpeed) / speedMultiplier;
 
-        var targetSymbols = reelTargetSymbols[columnIndex];
-        var isQuickStop = reelIsQuickStop[columnIndex];
-        float targetY = reelTargetYPositions[columnIndex];
+        // Finish the currently visible cycle instead of replacing the visible
+        // symbols. The bottom result symbol enters through the hidden top buffer.
+        float currentY = slotTransform.localPosition.y;
+        float progress = Mathf.Clamp01(
+            (middlePosition - currentY) / Mathf.Max(0.01f, cycleDistance)
+        );
+        float remainingDuration = cycleDuration * (1f - progress);
+        if (remainingDuration > 0.001f)
+        {
+            Tween finishCurrentCycle = slotTransform
+                .DOLocalMoveY(middlePosition - cycleDistance, remainingDuration)
+                .SetEase(Ease.Linear);
+            spinTweens[columnIndex] = finishCurrentCycle;
+            yield return finishCurrentCycle.WaitForCompletion();
+        }
 
-        // Load the exact final result symbols supplied by the server.
-        SetReelSymbols(columnIndex, targetSymbols, false);
-        ApplyStoppedReelLayout(columnIndex);
-
-        // Snap to target position (visually identical since cycle completes at -cycleDistance phase)
+        CycleReelSymbols(columnIndex, targetSymbols[targetSymbols.Count - 1]);
         slotTransform.localPosition = new Vector3(
             slotTransform.localPosition.x,
-            targetY,
-            0
+            middlePosition,
+            0f
         );
 
-        // ── Play reel-stop sound immediately when symbols lock in ──────────
-
-
-        // ──────────────────────────────────────────────────────────────────
-
-        if (isQuickStop)
+        // Feed the remaining result symbols from bottom to top, then add two
+        // hidden fillers. The supplied result reaches indices 2, 3 and 4 through
+        // actual reel movement rather than appearing there in a single frame.
+        int landingCycles = targetSymbols.Count + 1;
+        float bounceSpeedFactor = isQuickStop ? 0.7f : 1f;
+        float bounceDistance = Mathf.Max(0f, stopBounceDistance) * bounceSpeedFactor;
+        for (int cycle = 0; cycle < landingCycles; cycle++)
         {
-            Sequence quickStopSequence = DOTween.Sequence();
+            bool isFinalCycle = cycle == landingCycles - 1;
+            float movementDuration = isFinalCycle
+                ? (isQuickStop
+                    ? Mathf.Max(0.01f, quickStopDuration)
+                    : cycleDuration * Mathf.Max(2f, finalStopDurationMultiplier))
+                : cycleDuration;
+            Ease movementEase = isFinalCycle ? Ease.OutCubic : Ease.Linear;
+            float movementTargetY = middlePosition - cycleDistance;
+            if (isFinalCycle)
+            {
+                movementTargetY -= bounceDistance;
+            }
 
-            quickStopSequence.Append(
-                slotTransform.DOLocalMoveY(targetY - quickStopOvershoot, quickStopDuration * 0.3f)
-                    .SetEase(Ease.OutQuad)
+            Tween landingCycle = slotTransform
+                .DOLocalMoveY(movementTargetY, movementDuration)
+                .SetEase(movementEase);
+            spinTweens[columnIndex] = landingCycle;
+            yield return landingCycle.WaitForCompletion();
+
+            int targetIndex = targetSymbols.Count - 2 - cycle;
+            int forcedSymbolId = targetIndex >= 0 ? targetSymbols[targetIndex] : -1;
+            CycleReelSymbols(columnIndex, forcedSymbolId);
+            slotTransform.localPosition = new Vector3(
+                slotTransform.localPosition.x,
+                isFinalCycle ? middlePosition - bounceDistance : middlePosition,
+                0f
             );
-
-            quickStopSequence.Append(
-                slotTransform.DOLocalMoveY(targetY, quickStopDuration * 0.7f)
-                    .SetEase(Ease.OutQuad)
-            );
-
-            spinTweens[columnIndex] = quickStopSequence;
         }
-        else
-        {
-            Sequence stopSequence = DOTween.Sequence();
 
-            stopSequence.Append(
-                slotTransform.DOLocalMoveY(targetY - stopOvershootDistance, stopOvershootDuration)
-                    .SetEase(Ease.OutQuad)
-            );
+        Sequence stopPop = CreateStopPop(columnIndex, isQuickStop);
+        spinTweens[columnIndex] = stopPop;
+        yield return stopPop.WaitForCompletion();
 
-            stopSequence.Append(
-                slotTransform.DOLocalMoveY(targetY, stopBounceBackDuration)
-                    .SetEase(Ease.OutQuad)
-            );
+        ApplyStoppedReelLayout(columnIndex);
+        onStopped?.Invoke();
+    }
 
-            spinTweens[columnIndex] = stopSequence;
-        }
+    private Sequence CreateStopPop(int columnIndex, bool isQuickStop)
+    {
+        Transform reelTransform = reelTransforms[columnIndex];
+        Sequence stopPop = DOTween.Sequence();
+        float speedFactor = isQuickStop ? 0.7f : 1f;
+        float returnDuration = Mathf.Max(0.01f, stopBounceReturnDuration * speedFactor);
+
+        // The final cycle already travelled past the result position. This is
+        // only the rebound, so the reel never stops and then dips a second time.
+        stopPop.Append(
+            reelTransform
+                .DOLocalMoveY(middlePosition, returnDuration)
+                .SetEase(Ease.OutBounce)
+        );
+
+        return stopPop;
     }
 
     #endregion
@@ -704,14 +644,6 @@ public class SlotView : MonoBehaviour
 
         currentDisplayMatrix = resultMatrix;
         isSpinning = false;
-
-        if (isPreparingToStop != null)
-        {
-            for (int index = 0; index < isPreparingToStop.Length; index++)
-            {
-                isPreparingToStop[index] = false;
-            }
-        }
 
         for (int column = 0; column < resultMatrix.Count; column++)
         {
@@ -784,6 +716,26 @@ public class SlotView : MonoBehaviour
 
         bool isAuto = (gameManager != null && gameManager.isAutoPlaying);
 
+        // First celebrate the complete result: every unique symbol that
+        // contributes to any returned win line pulses together once.
+        HashSet<int> allWinningPositions = new HashSet<int>();
+        foreach (WinLine winLine in winLines)
+        {
+            if (winLine?.positions == null) continue;
+
+            foreach (int flatIndex in winLine.positions)
+            {
+                allWinningPositions.Add(flatIndex);
+            }
+        }
+
+        if (allWinningPositions.Count > 0)
+        {
+            AnimateWinPositions(allWinningPositions);
+            yield return new WaitForSeconds(Mathf.Max(0.3f, winSymbolLoopDuration));
+            KillWinTweens(false);
+        }
+
         if (isAuto)
         {
             // Autoplay: 1 loop per win line, all win lines played exactly once, then call onComplete
@@ -806,16 +758,7 @@ public class SlotView : MonoBehaviour
                 float singleDuration = GetWinLineAnimationDuration(winLine);
                 float lineDuration = skipScreen ? 0.5f : singleDuration;
 
-                foreach (int flatIndex in winLine.positions)
-                {
-                    int cols = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.reelCount : StPatricksGoldDefinition.ReelCount;
-                    int rows = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.rowCount : StPatricksGoldDefinition.RowCount;
-                    int row = flatIndex / cols;
-                    int col = flatIndex % cols;
-
-                    if (col < 0 || col >= cols || row < 0 || row >= rows) continue;
-                    AnimateWinSymbol(col, row);
-                }
+                AnimateWinPositions(winLine.positions);
 
                 prevPositions = new List<int>(winLine.positions);
                 yield return new WaitForSeconds(lineDuration);
@@ -835,16 +778,7 @@ public class SlotView : MonoBehaviour
                 var winLine = winLines[0];
                 if (winLine.positions != null && winLine.positions.Count > 0)
                 {
-                    foreach (int flatIndex in winLine.positions)
-                    {
-                        int cols = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.reelCount : StPatricksGoldDefinition.ReelCount;
-                        int rows = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.rowCount : StPatricksGoldDefinition.RowCount;
-                        int row = flatIndex / cols;
-                        int col = flatIndex % cols;
-
-                        if (col < 0 || col >= cols || row < 0 || row >= rows) continue;
-                        AnimateWinSymbol(col, row);
-                    }
+                    AnimateWinPositions(winLine.positions);
                 }
 
                 while (true)
@@ -877,16 +811,7 @@ public class SlotView : MonoBehaviour
                         float singleDuration = GetWinLineAnimationDuration(winLine);
                         float lineDuration = skipScreen ? 0.5f : singleDuration * 3f;
 
-                        foreach (int flatIndex in winLine.positions)
-                        {
-                            int cols = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.reelCount : StPatricksGoldDefinition.ReelCount;
-                            int rows = gameManager?.stPatricksGoldConfig != null ? gameManager.stPatricksGoldConfig.rowCount : StPatricksGoldDefinition.RowCount;
-                            int row = flatIndex / cols;
-                            int col = flatIndex % cols;
-
-                            if (col < 0 || col >= cols || row < 0 || row >= rows) continue;
-                            AnimateWinSymbol(col, row);
-                        }
+                        AnimateWinPositions(winLine.positions);
 
                         prevPositions = new List<int>(winLine.positions);
                         yield return new WaitForSeconds(lineDuration);
@@ -900,6 +825,30 @@ public class SlotView : MonoBehaviour
                     }
                 }
             }
+        }
+    }
+
+    private void AnimateWinPositions(IEnumerable<int> flatPositions)
+    {
+        if (flatPositions == null) return;
+
+        int cols = gameManager?.stPatricksGoldConfig != null
+            ? gameManager.stPatricksGoldConfig.reelCount
+            : StPatricksGoldDefinition.ReelCount;
+        int rows = gameManager?.stPatricksGoldConfig != null
+            ? gameManager.stPatricksGoldConfig.rowCount
+            : StPatricksGoldDefinition.RowCount;
+        HashSet<int> animatedPositions = new HashSet<int>();
+
+        foreach (int flatIndex in flatPositions)
+        {
+            if (!animatedPositions.Add(flatIndex)) continue;
+
+            int row = flatIndex / cols;
+            int col = flatIndex % cols;
+            if (col < 0 || col >= cols || row < 0 || row >= rows) continue;
+
+            AnimateWinSymbol(col, row);
         }
     }
 
@@ -997,20 +946,40 @@ public class SlotView : MonoBehaviour
     {
         if (symbolImage == null) return;
 
-        symbolImage.DOKill();
+        symbolImage.transform.DOKill();
         symbolImage.transform.localScale = Vector3.one;
-        Tween tween = symbolImage.transform
-            .DOScale(1.12f, 0.35f)
-            .SetEase(Ease.InOutSine)
-            .SetLoops(-1, LoopType.Yoyo);
-        winTweens.Add(tween);
+
+        float loopDuration = Mathf.Max(0.3f, winSymbolLoopDuration);
+        float minScale = Mathf.Clamp(winSymbolMinScale, 0.8f, 1f);
+        float maxScale = Mathf.Max(1f, winSymbolMaxScale);
+
+        Sequence pulse = DOTween.Sequence();
+        pulse.Append(
+            symbolImage.transform
+                .DOScale(minScale, loopDuration * 0.2f)
+                .SetEase(Ease.InOutSine)
+        );
+        pulse.Append(
+            symbolImage.transform
+                .DOScale(maxScale, loopDuration * 0.3f)
+                .SetEase(Ease.InOutSine)
+        );
+        pulse.Append(
+            symbolImage.transform
+                .DOScale(1f, loopDuration * 0.2f)
+                .SetEase(Ease.InOutSine)
+        );
+        pulse.AppendInterval(loopDuration * 0.3f);
+        pulse.SetLoops(-1, LoopType.Restart);
+
+        winTweens.Add(pulse);
     }
 
     private void ResetSymbolAnimation(Image symbolImage, int col, int row)
     {
         if (symbolImage == null) return;
 
-        symbolImage.DOKill();
+        symbolImage.transform.DOKill();
         symbolImage.transform.localScale = Vector3.one;
         Color c = symbolImage.color;
         symbolImage.color = new Color(c.r, c.g, c.b, 1f);
@@ -1147,14 +1116,6 @@ public class SlotView : MonoBehaviour
         winAnimationCoroutine = null;
         KillAllTweens();
 
-        if (isPreparingToStop != null)
-        {
-            for (int i = 0; i < isPreparingToStop.Length; i++)
-            {
-                isPreparingToStop[i] = false;
-            }
-        }
-
         if (!TryValidateResultMatrix(currentDisplayMatrix, out string error))
         {
             Debug.LogError($"[SlotView] Could not restore the previous matrix after cancelling the spin: {error}");
@@ -1185,15 +1146,6 @@ public class SlotView : MonoBehaviour
             tween?.Kill();
         }
         spinTweens.Clear();
-
-        foreach (var tween in spacingTweens)
-        {
-            tween?.Kill();
-        }
-        for (int i = 0; i < spacingTweens.Count; i++)
-        {
-            spacingTweens[i] = null;
-        }
 
         KillWinTweens();
     }
