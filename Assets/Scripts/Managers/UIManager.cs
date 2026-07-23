@@ -14,6 +14,10 @@ public class UIManager : MonoBehaviour
     [SerializeField] private Button spinButton;
     [SerializeField] private Button stopButton;
 
+    [Header("Ultra Slot")]
+    [Tooltip("Shown only after the server or parse sheet unlocks the Ultra slot.")]
+    [SerializeField] private Button ultraStartButton;
+
     [Header("Spin Mode Cycle Buttons")]
     [SerializeField] private Button normalSpinButton;
     [UnityEngine.Serialization.FormerlySerializedAs("quickSpinButton")]
@@ -87,6 +91,17 @@ public class UIManager : MonoBehaviour
         if (stopButton == null)
         {
             Debug.LogError("[UIManager] Stop Button is not assigned.");
+        }
+
+        if (ultraStartButton == null)
+        {
+            ultraStartButton = FindButtonByName("Start");
+        }
+
+        if (ultraStartButton == null)
+        {
+            Debug.LogError(
+                "[UIManager] Ultra Start Button is not assigned and no scene Button named 'Start' was found.");
         }
 
         if (normalSpinButton == null)
@@ -203,6 +218,25 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    private static Button FindButtonByName(string buttonName)
+    {
+        Button[] sceneButtons = FindObjectsByType<Button>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        foreach (Button sceneButton in sceneButtons)
+        {
+            if (sceneButton != null &&
+                sceneButton.gameObject.scene.IsValid() &&
+                string.Equals(sceneButton.name, buttonName, System.StringComparison.Ordinal))
+            {
+                return sceneButton;
+            }
+        }
+
+        return null;
+    }
+
     private void OnEnable()
     {
         RegisterSpinHoldEvents();
@@ -215,6 +249,11 @@ public class UIManager : MonoBehaviour
         if (stopButton != null)
         {
             stopButton.onClick.AddListener(OnStopButtonClicked);
+        }
+
+        if (ultraStartButton != null)
+        {
+            ultraStartButton.onClick.AddListener(OnUltraStartButtonClicked);
         }
 
         if (normalSpinButton != null)
@@ -292,6 +331,11 @@ public class UIManager : MonoBehaviour
         if (stopButton != null)
         {
             stopButton.onClick.RemoveListener(OnStopButtonClicked);
+        }
+
+        if (ultraStartButton != null)
+        {
+            ultraStartButton.onClick.RemoveListener(OnUltraStartButtonClicked);
         }
 
         if (normalSpinButton != null)
@@ -392,6 +436,21 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    private void OnUltraStartButtonClicked()
+    {
+        if (gameManager == null)
+        {
+            Debug.LogError("[UIManager] Cannot start the Ultra slot because GameManager is not assigned.");
+            RefreshSpinControls();
+            return;
+        }
+
+        if (!gameManager.RequestUltraSlotStart())
+        {
+            RefreshSpinControls();
+        }
+    }
+
     private void OnSpinActivityChanged(bool isRoundActive)
     {
         if (!isRoundActive)
@@ -431,6 +490,7 @@ public class UIManager : MonoBehaviour
         RefreshGameTexts();
         RefreshBetControls();
         RefreshSpinControls();
+        RefreshSpinModeButtons();
         RefreshAutoPlayControls();
     }
 
@@ -966,11 +1026,14 @@ public class UIManager : MonoBehaviour
     private void ApplySpinControlState(bool isRoundActive)
     {
         bool isAutoPlaying = gameManager != null && gameManager.isAutoPlaying;
+        bool isUltraUnlocked = gameManager != null && gameManager.IsUltraSlotUnlocked();
         bool showPendingSpinButton = isWaitingForStoppedAutoPlayRound &&
                                      isRoundActive &&
-                                     !isAutoPlaying;
+                                     !isAutoPlaying &&
+                                     !isUltraUnlocked;
         bool showSpinButton = (!isRoundActive && !isAutoPlaying) ||
                               showPendingSpinButton;
+        showSpinButton = showSpinButton && !isUltraUnlocked;
 
         if (spinButton != null)
         {
@@ -983,20 +1046,33 @@ public class UIManager : MonoBehaviour
 
         if (stopButton != null)
         {
-            stopButton.gameObject.SetActive(isRoundActive &&
+            stopButton.gameObject.SetActive(!isUltraUnlocked &&
+                                            isRoundActive &&
                                             !isAutoPlaying &&
                                             !showPendingSpinButton);
-            stopButton.interactable = isRoundActive &&
+            stopButton.interactable = !isUltraUnlocked &&
+                                      isRoundActive &&
                                       !isAutoPlaying &&
                                       !showPendingSpinButton &&
                                       gameManager != null &&
                                       gameManager.CanRequestStop();
         }
+
+        if (ultraStartButton != null)
+        {
+            bool showUltraStart = isUltraUnlocked &&
+                                  gameManager != null &&
+                                  gameManager.ShouldShowUltraStartButton();
+            ultraStartButton.gameObject.SetActive(showUltraStart);
+            ultraStartButton.interactable = showUltraStart &&
+                                            gameManager.CanStartUltraSlot();
+        }
     }
 
     private void RefreshSpinModeButtons()
     {
-        bool canChangeMode = gameManager != null;
+        bool canChangeMode = gameManager != null &&
+                             !gameManager.IsUltraSlotUnlocked();
         SpinSpeed selectedMode = gameManager != null
             ? gameManager.GetSpinSpeed()
             : SpinSpeed.Normal;
@@ -1075,8 +1151,11 @@ public class UIManager : MonoBehaviour
     private void RefreshAutoPlayControls()
     {
         bool isAutoPlaying = gameManager != null && gameManager.isAutoPlaying;
+        bool isUltraUnlocked = gameManager != null && gameManager.IsUltraSlotUnlocked();
         bool canStartAutoPlay = gameManager != null && gameManager.CanStartAutoPlay();
-        bool shouldShowAutoPlayPanel = isAutoPlayPanelOpen && !isAutoPlaying;
+        bool shouldShowAutoPlayPanel = isAutoPlayPanelOpen &&
+                                       !isAutoPlaying &&
+                                       !isUltraUnlocked;
 
         if (autoPlayPanel != null)
         {

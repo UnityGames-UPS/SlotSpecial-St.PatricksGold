@@ -431,6 +431,13 @@ public class SocketIOManager : MonoBehaviour
             configResponse.features.totalLines = ReadJsonInt(configFields, "totalLines");
         }
 
+        if (TryReadJsonBool(configFields, "isSpecial", out bool isSpecial) ||
+            (!ReferenceEquals(configFields, root) &&
+             TryReadJsonBool(root, "isSpecial", out isSpecial)))
+        {
+            configResponse.isSpecial = isSpecial;
+        }
+
         if (root.TryGetValue("player", out object playerValue) &&
             playerValue is IDictionary<string, object> player &&
             player.TryGetValue("balance", out object balanceValue) &&
@@ -868,6 +875,7 @@ public class SocketIOManager : MonoBehaviour
         }
 
         HydrateServerWinLines(payload, serverResponse.payload);
+        HydrateUltraBonus(payload, serverResponse.payload);
     }
 
     private void HydrateServerWinLines(
@@ -981,6 +989,161 @@ public class SocketIOManager : MonoBehaviour
         }
 
         return true;
+    }
+
+    private void HydrateUltraBonus(
+        IDictionary<string, object> payload,
+        ServerPayload serverPayload)
+    {
+        if (payload.TryGetValue("ultraBonus", out object ultraBonusValue) &&
+            ultraBonusValue is IDictionary<string, object> rawUltraBonus)
+        {
+            var ultraBonus = new ServerUltraBonus
+            {
+                triggerPositions = new List<ServerGridPosition>(),
+                reelResults = new List<ServerUltraReelResult>(),
+                activeWheels = new List<ServerUltraActiveWheel>()
+            };
+
+            if (TryReadJsonBool(rawUltraBonus, "isTriggered", out bool isTriggered))
+            {
+                ultraBonus.isTriggered = isTriggered;
+            }
+
+            if (TryReadJsonDouble(rawUltraBonus, "totalAward", out double totalAward))
+            {
+                ultraBonus.totalAward = totalAward;
+            }
+
+            if (rawUltraBonus.TryGetValue("triggerPositions", out object positionsValue) &&
+                positionsValue is IList rawPositions)
+            {
+                for (int index = 0; index < rawPositions.Count; index++)
+                {
+                    if (!(rawPositions[index] is IDictionary<string, object> rawPosition))
+                    {
+                        continue;
+                    }
+
+                    ultraBonus.triggerPositions.Add(new ServerGridPosition
+                    {
+                        row = ReadJsonInt(rawPosition, "row"),
+                        col = ReadJsonInt(rawPosition, "col")
+                    });
+                }
+            }
+
+            if (rawUltraBonus.TryGetValue("reelResults", out object reelResultsValue) &&
+                reelResultsValue is IList rawReelResults)
+            {
+                for (int index = 0; index < rawReelResults.Count; index++)
+                {
+                    if (!(rawReelResults[index] is IDictionary<string, object> rawReelResult))
+                    {
+                        continue;
+                    }
+
+                    ultraBonus.reelResults.Add(new ServerUltraReelResult
+                    {
+                        reelIndex = ReadJsonInt(rawReelResult, "reelIndex"),
+                        bonusWheelStopIndex = ReadJsonInt(rawReelResult, "bonusWheelStopIndex"),
+                        wheelState = ReadJsonString(rawReelResult, "wheelState"),
+                        assignedWheelIndex = ReadJsonInt(rawReelResult, "assignedWheelIndex")
+                    });
+                }
+            }
+
+            if (rawUltraBonus.TryGetValue("activeWheels", out object activeWheelsValue) &&
+                activeWheelsValue is IList rawActiveWheels)
+            {
+                for (int index = 0; index < rawActiveWheels.Count; index++)
+                {
+                    if (!(rawActiveWheels[index] is IDictionary<string, object> rawActiveWheel))
+                    {
+                        continue;
+                    }
+
+                    var activeWheel = new ServerUltraActiveWheel
+                    {
+                        wheelIndex = ReadJsonInt(rawActiveWheel, "wheelIndex"),
+                        stopIndex = ReadJsonInt(rawActiveWheel, "stopIndex"),
+                        multiplier = ReadJsonInt(rawActiveWheel, "multiplier")
+                    };
+
+                    if (TryReadJsonDouble(rawActiveWheel, "baseAward", out double baseAward))
+                    {
+                        activeWheel.baseAward = baseAward;
+                    }
+
+                    if (TryReadJsonDouble(rawActiveWheel, "finalAward", out double finalAward))
+                    {
+                        activeWheel.finalAward = finalAward;
+                    }
+
+                    ultraBonus.activeWheels.Add(activeWheel);
+                }
+            }
+
+            serverPayload.ultraBonus = ultraBonus;
+        }
+
+        if (!payload.TryGetValue("features", out object featuresValue) ||
+            !(featuresValue is IDictionary<string, object> rawFeatures) ||
+            !rawFeatures.TryGetValue("ultraWheel", out object ultraWheelValue) ||
+            !(ultraWheelValue is IDictionary<string, object> rawUltraWheel) ||
+            !TryReadJsonBool(rawUltraWheel, "triggered", out bool featureTriggered))
+        {
+            return;
+        }
+
+        if (serverPayload.features == null)
+        {
+            serverPayload.features = new ServerSpinFeatures();
+        }
+
+        if (serverPayload.features.ultraWheel == null)
+        {
+            serverPayload.features.ultraWheel = new ServerFeatureTrigger();
+        }
+
+        serverPayload.features.ultraWheel.triggered = featureTriggered;
+    }
+
+    private bool TryReadJsonBool(
+        IDictionary<string, object> values,
+        string key,
+        out bool result)
+    {
+        result = false;
+        if (!values.TryGetValue(key, out object value) || value == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (value is bool boolValue)
+            {
+                result = boolValue;
+                return true;
+            }
+
+            if (bool.TryParse(
+                    Convert.ToString(value, CultureInfo.InvariantCulture),
+                    out bool parsedBool))
+            {
+                result = parsedBool;
+                return true;
+            }
+
+            result = Convert.ToInt32(value, CultureInfo.InvariantCulture) != 0;
+            return true;
+        }
+        catch (Exception)
+        {
+            Debug.LogWarning($"[SocketIO] Field '{key}' is not a boolean.");
+            return false;
+        }
     }
 
     private bool TryReadJsonDouble(

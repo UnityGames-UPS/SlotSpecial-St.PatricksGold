@@ -1,0 +1,1006 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using DG.Tweening;
+using UnityEngine;
+using UnityEngine.UI;
+
+/// <summary>
+/// Controls the three-reel, three-row slot shown before the Ultra Wheel feature.
+/// Results are row-major and contain nine values:
+/// 0 (or -1) = empty, 1 = coin one, 2 = coin two, 3 = coin three.
+/// </summary>
+public class UltraSlotView : MonoBehaviour
+{
+    public const int ReelCount = 3;
+    public const int RowCount = 3;
+    public const int ResultCellCount = ReelCount * RowCount;
+    public const int CenterRowIndex = 1;
+    public const int EmptySymbolId = 0;
+    public const int CoinOneSymbolId = 1;
+    public const int CoinTwoSymbolId = 2;
+    public const int CoinThreeSymbolId = 3;
+
+    private const int ImagesPerReel = 5;
+    private const int FirstVisibleImageIndex = 1;
+    private const int LastVisibleImageIndex = FirstVisibleImageIndex + RowCount - 1;
+
+    [Header("Ultra Symbols")]
+    [SerializeField] private Sprite spriteCoinOne;
+    [SerializeField] private Sprite spriteCoinTwo;
+    [SerializeField] private Sprite spriteCoinThree;
+
+    [Header("Reels")]
+    [Tooltip("Optional parent whose first three children are the ultra reels.")]
+    [SerializeField] private Transform reelsRoot;
+    [SerializeField] private Transform[] reelTransforms = new Transform[ReelCount];
+    [SerializeField] private List<UltraReelImages> reelImagesList = new List<UltraReelImages>(ReelCount);
+
+    [Header("Initial Result")]
+    [Tooltip("Nine row-major values for the 3x3 result. Use 0 for empty and 1, 2, or 3 for a coin.")]
+    [SerializeField] private int[] initialResult =
+    {
+        CoinOneSymbolId,
+        CoinTwoSymbolId,
+        CoinThreeSymbolId,
+        CoinTwoSymbolId,
+        CoinThreeSymbolId,
+        CoinOneSymbolId,
+        CoinThreeSymbolId,
+        CoinOneSymbolId,
+        CoinTwoSymbolId
+    };
+
+    [Header("Spin Strip")]
+    [Tooltip("Values used only while spinning. Repeated values control their visual frequency.")]
+    [SerializeField] private int[] spinStrip =
+    {
+        EmptySymbolId,
+        CoinOneSymbolId,
+        EmptySymbolId,
+        CoinTwoSymbolId,
+        EmptySymbolId,
+        CoinThreeSymbolId
+    };
+
+    [Header("Spin Settings")]
+    [Tooltip("Distance between adjacent reel images, including layout spacing.")]
+    [SerializeField, Min(1f)] private float symbolStep = 421f;
+    [Tooltip("Seconds for a reel to travel by one symbol at normal speed.")]
+    [SerializeField, Min(0.01f)] private float spinCycleDuration = 0.12f;
+    [SerializeField, Range(0.25f, 2f)] private float normalSpeedMultiplier = 1f;
+    [SerializeField, Range(0.25f, 2f)] private float fastSpeedMultiplier = 1.5f;
+    [SerializeField, Min(0f)] private float reelStartStagger = 0.08f;
+    [SerializeField, Min(0f)] private float reelStopStagger = 0.12f;
+    [SerializeField, Min(0)] private int minimumCyclesBeforeStop = 3;
+
+    [Header("Stop Settings")]
+    [SerializeField, Range(2f, 5f)] private float finalStopDurationMultiplier = 3f;
+    [SerializeField, Min(0f)] private float stopBounceDistance = 12f;
+    [SerializeField, Min(0.01f)] private float stopBounceReturnDuration = 0.16f;
+    [SerializeField, Min(0f)] private float quickStopStagger = 0.05f;
+    [SerializeField, Min(0.01f)] private float quickStopDuration = 0.18f;
+
+    [Header("Result Animation")]
+    [SerializeField, Min(0.1f)] private float resultAnimationDuration = 0.9f;
+    [SerializeField, Range(0.8f, 1f)] private float resultAnimationMinScale = 0.9f;
+    [SerializeField, Range(1f, 1.3f)] private float resultAnimationMaxScale = 1.12f;
+
+    public event Action<IReadOnlyList<int>> SpinCompleted;
+
+    public bool IsSpinning => isSpinning;
+    public IReadOnlyList<int> CurrentResult => currentResult;
+
+    private readonly List<int> currentResult = new List<int>(ResultCellCount);
+    private readonly List<List<int>> reelBufferSymbols = new List<List<int>>(ReelCount);
+    private readonly List<int> reelCycleCounts = new List<int>(ReelCount);
+    private readonly List<Tween> reelTweens = new List<Tween>(ReelCount);
+    private readonly List<Tween> resultTweens = new List<Tween>(ResultCellCount);
+
+    private Coroutine stopCoroutine;
+    private bool isSpinning;
+    private bool isStopping;
+    private SpinSpeed activeSpinSpeed = SpinSpeed.Normal;
+    private float restingY;
+
+    private void Awake()
+    {
+        TryBuildReelReferencesFromRoot();
+        InitializeState();
+
+        var startResult = new List<int>(ResultCellCount);
+        for (int cell = 0; cell < ResultCellCount; cell++)
+        {
+            int symbolId = initialResult != null && cell < initialResult.Length
+                ? NormalizeSymbolId(initialResult[cell])
+                : EmptySymbolId;
+            startResult.Add(symbolId);
+        }
+
+        if (!SetInitialResult(startResult))
+        {
+            Debug.LogError("[UltraSlotView] The ultra slot could not be initialized. Check its Inspector references.");
+        }
+    }
+
+    /// <summary>
+    /// Sets the stopped 3x3 result without playing a spin.
+    /// </summary>
+    public bool SetInitialResult(IList<int> result)
+    {
+        if (!TryValidateResult(result, out string error))
+        {
+            Debug.LogError($"[UltraSlotView] Invalid initial result: {error}");
+            return false;
+        }
+
+        KillReelTweens();
+        KillResultAnimations();
+        isSpinning = false;
+        isStopping = false;
+        StoreCurrentResult(result);
+
+        for (int reel = 0; reel < ReelCount; reel++)
+        {
+            FillReelAroundResult(reel);
+            ResetReelPosition(reel);
+            ApplyStoppedReelVisibility(reel);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Starts all three reels. Call StopSpin, QuickStop, or ShowResultImmediately
+    /// once the nine-cell result is available.
+    /// </summary>
+    public bool StartSpin(SpinSpeed speed = SpinSpeed.Normal)
+    {
+        if (isSpinning)
+        {
+            return false;
+        }
+
+        if (!TryValidateSetup(out string error))
+        {
+            Debug.LogError($"[UltraSlotView] Cannot start: {error}");
+            return false;
+        }
+
+        KillReelTweens();
+        KillResultAnimations();
+        activeSpinSpeed = speed;
+        isSpinning = true;
+        isStopping = false;
+
+        for (int reel = 0; reel < ReelCount; reel++)
+        {
+            reelCycleCounts[reel] = 0;
+            RenderReel(reel, false);
+            StartReelWithDelay(reel, reel * reelStartStagger);
+        }
+
+        return true;
+    }
+
+    public void StopSpin(IList<int> result, Action onComplete = null)
+    {
+        BeginStop(result, false, onComplete);
+    }
+
+    public void QuickStop(IList<int> result, Action onComplete = null)
+    {
+        BeginStop(result, true, onComplete);
+    }
+
+    public void ShowResultImmediately(IList<int> result, Action onComplete = null)
+    {
+        if (!TryValidateResult(result, out string error))
+        {
+            Debug.LogError($"[UltraSlotView] Cannot show result: {error}");
+            CancelSpin();
+            onComplete?.Invoke();
+            return;
+        }
+
+        if (stopCoroutine != null)
+        {
+            StopCoroutine(stopCoroutine);
+            stopCoroutine = null;
+        }
+
+        StopAllCoroutines();
+        KillReelTweens();
+        isSpinning = false;
+        isStopping = false;
+        StoreCurrentResult(result);
+
+        for (int reel = 0; reel < ReelCount; reel++)
+        {
+            FillReelAroundResult(reel);
+            ResetReelPosition(reel);
+            ApplyStoppedReelVisibility(reel);
+        }
+
+        PlayResultAnimation();
+        SpinCompleted?.Invoke(CurrentResult);
+        onComplete?.Invoke();
+    }
+
+    /// <summary>
+    /// Converts a row-major 3x3 server result into nine symbol IDs.
+    /// Empty, blank, null, 0, and -1 values are all treated as empty positions.
+    /// </summary>
+    public bool TryParseServerResult(
+        IList<string> serverResult,
+        out List<int> parsedResult,
+        out string error)
+    {
+        parsedResult = null;
+        error = null;
+
+        if (serverResult == null || serverResult.Count != ResultCellCount)
+        {
+            error = $"Ultra result must contain exactly {ResultCellCount} values for a 3x3 grid.";
+            return false;
+        }
+
+        var converted = new List<int>(ResultCellCount);
+        for (int cell = 0; cell < ResultCellCount; cell++)
+        {
+            string value = serverResult[cell];
+            if (string.IsNullOrWhiteSpace(value) ||
+                string.Equals(value, "empty", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "blank", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "null", StringComparison.OrdinalIgnoreCase))
+            {
+                converted.Add(EmptySymbolId);
+                continue;
+            }
+
+            if (!int.TryParse(value, out int symbolId))
+            {
+                error = $"Ultra result value '{value}' at cell {cell} is not valid.";
+                return false;
+            }
+
+            symbolId = NormalizeSymbolId(symbolId);
+            if (!IsKnownSymbol(symbolId))
+            {
+                error = $"Ultra result symbol {symbolId} at cell {cell} must be empty, 1, 2, or 3.";
+                return false;
+            }
+
+            converted.Add(symbolId);
+        }
+
+        parsedResult = converted;
+        return true;
+    }
+
+    public bool TryValidateResult(IList<int> result, out string error)
+    {
+        if (!TryValidateSetup(out error))
+        {
+            return false;
+        }
+
+        if (result == null || result.Count != ResultCellCount)
+        {
+            error = $"Ultra result must contain exactly {ResultCellCount} values for a 3x3 grid.";
+            return false;
+        }
+
+        for (int cell = 0; cell < ResultCellCount; cell++)
+        {
+            int symbolId = NormalizeSymbolId(result[cell]);
+            if (!IsKnownSymbol(symbolId))
+            {
+                error = $"Ultra result symbol {result[cell]} at cell {cell} must be empty, 1, 2, or 3.";
+                return false;
+            }
+
+            if (symbolId != EmptySymbolId && GetSymbolSprite(symbolId) == null)
+            {
+                error = $"The sprite for ultra symbol {symbolId} is not assigned.";
+                return false;
+            }
+        }
+
+        error = null;
+        return true;
+    }
+
+    public void CancelSpin()
+    {
+        if (stopCoroutine != null)
+        {
+            StopCoroutine(stopCoroutine);
+            stopCoroutine = null;
+        }
+
+        StopAllCoroutines();
+        KillReelTweens();
+        KillResultAnimations();
+        isSpinning = false;
+        isStopping = false;
+
+        if (currentResult.Count != ResultCellCount || !TryValidateSetup(out _))
+        {
+            return;
+        }
+
+        for (int reel = 0; reel < ReelCount; reel++)
+        {
+            FillReelAroundResult(reel);
+            ResetReelPosition(reel);
+            ApplyStoppedReelVisibility(reel);
+        }
+    }
+
+    [ContextMenu("Auto Assign Reels From Root")]
+    private void AutoAssignReelsFromRoot()
+    {
+        if (!TryBuildReelReferencesFromRoot())
+        {
+            Debug.LogWarning("[UltraSlotView] Assign the Slots object to Reels Root first.");
+        }
+    }
+
+    private void InitializeState()
+    {
+        currentResult.Clear();
+        reelBufferSymbols.Clear();
+        reelCycleCounts.Clear();
+        reelTweens.Clear();
+
+        for (int cell = 0; cell < ResultCellCount; cell++)
+        {
+            currentResult.Add(EmptySymbolId);
+        }
+
+        for (int reel = 0; reel < ReelCount; reel++)
+        {
+            reelCycleCounts.Add(0);
+            reelTweens.Add(null);
+
+            var buffer = new List<int>(ImagesPerReel);
+            for (int image = 0; image < ImagesPerReel; image++)
+            {
+                buffer.Add(EmptySymbolId);
+            }
+            reelBufferSymbols.Add(buffer);
+        }
+
+        restingY = reelTransforms != null &&
+                   reelTransforms.Length > 0 &&
+                   reelTransforms[0] != null
+            ? reelTransforms[0].localPosition.y
+            : 0f;
+    }
+
+    private bool TryBuildReelReferencesFromRoot()
+    {
+        if (reelsRoot == null || reelsRoot.childCount < ReelCount)
+        {
+            return false;
+        }
+
+        bool needsTransforms = reelTransforms == null || reelTransforms.Length != ReelCount;
+        if (!needsTransforms)
+        {
+            for (int reel = 0; reel < ReelCount; reel++)
+            {
+                if (reelTransforms[reel] == null)
+                {
+                    needsTransforms = true;
+                    break;
+                }
+            }
+        }
+
+        if (needsTransforms)
+        {
+            reelTransforms = new Transform[ReelCount];
+            for (int reel = 0; reel < ReelCount; reel++)
+            {
+                reelTransforms[reel] = reelsRoot.GetChild(reel);
+            }
+        }
+
+        bool needsImages = reelImagesList == null || reelImagesList.Count != ReelCount;
+        if (!needsImages)
+        {
+            for (int reel = 0; reel < ReelCount; reel++)
+            {
+                if (reelImagesList[reel] == null ||
+                    reelImagesList[reel].images == null ||
+                    reelImagesList[reel].images.Count != ImagesPerReel)
+                {
+                    needsImages = true;
+                    break;
+                }
+            }
+        }
+
+        if (needsImages)
+        {
+            reelImagesList = new List<UltraReelImages>(ReelCount);
+            for (int reel = 0; reel < ReelCount; reel++)
+            {
+                var group = new UltraReelImages();
+                Transform reelTransform = reelTransforms[reel];
+                for (int image = 0; image < reelTransform.childCount && group.images.Count < ImagesPerReel; image++)
+                {
+                    Image childImage = reelTransform.GetChild(image).GetComponent<Image>();
+                    if (childImage != null)
+                    {
+                        group.images.Add(childImage);
+                    }
+                }
+                reelImagesList.Add(group);
+            }
+        }
+
+        return true;
+    }
+
+    private bool TryValidateSetup(out string error)
+    {
+        if (reelTransforms == null || reelTransforms.Length != ReelCount)
+        {
+            error = $"Assign exactly {ReelCount} reel transforms.";
+            return false;
+        }
+
+        if (reelImagesList == null || reelImagesList.Count != ReelCount)
+        {
+            error = $"Assign exactly {ReelCount} reel image groups.";
+            return false;
+        }
+
+        for (int reel = 0; reel < ReelCount; reel++)
+        {
+            if (reelTransforms[reel] == null)
+            {
+                error = $"Reel transform {reel} is not assigned.";
+                return false;
+            }
+
+            UltraReelImages reelImages = reelImagesList[reel];
+            if (reelImages == null ||
+                reelImages.images == null ||
+                reelImages.images.Count != ImagesPerReel)
+            {
+                error = $"Ultra reel {reel} must have exactly {ImagesPerReel} images.";
+                return false;
+            }
+
+            for (int image = 0; image < ImagesPerReel; image++)
+            {
+                if (reelImages.images[image] == null)
+                {
+                    error = $"Image {image} on ultra reel {reel} is not assigned.";
+                    return false;
+                }
+            }
+        }
+
+        if (spriteCoinOne == null || spriteCoinTwo == null || spriteCoinThree == null)
+        {
+            error = "Assign the Coin 1, Coin 2, and Coin 3 sprites.";
+            return false;
+        }
+
+        if (spinStrip == null || spinStrip.Length == 0)
+        {
+            error = "The spin strip is empty.";
+            return false;
+        }
+
+        for (int index = 0; index < spinStrip.Length; index++)
+        {
+            if (!IsKnownSymbol(NormalizeSymbolId(spinStrip[index])))
+            {
+                error = $"Spin Strip value {spinStrip[index]} at index {index} is invalid.";
+                return false;
+            }
+        }
+
+        error = null;
+        return true;
+    }
+
+    private void BeginStop(IList<int> result, bool quickStop, Action onComplete)
+    {
+        if (!TryValidateResult(result, out string error))
+        {
+            Debug.LogError($"[UltraSlotView] Cannot stop: {error}");
+            CancelSpin();
+            onComplete?.Invoke();
+            return;
+        }
+
+        if (!isSpinning)
+        {
+            ShowResultImmediately(result, onComplete);
+            return;
+        }
+
+        if (isStopping)
+        {
+            Debug.LogWarning("[UltraSlotView] A stop is already in progress.");
+            return;
+        }
+
+        var safeResult = new List<int>(ResultCellCount);
+        for (int cell = 0; cell < ResultCellCount; cell++)
+        {
+            safeResult.Add(NormalizeSymbolId(result[cell]));
+        }
+
+        isStopping = true;
+        stopCoroutine = StartCoroutine(StopSequence(safeResult, quickStop, onComplete));
+    }
+
+    private IEnumerator StopSequence(List<int> result, bool quickStop, Action onComplete)
+    {
+        while (true)
+        {
+            bool ready = true;
+            for (int reel = 0; reel < ReelCount; reel++)
+            {
+                if (reelCycleCounts[reel] < minimumCyclesBeforeStop)
+                {
+                    ready = false;
+                    break;
+                }
+            }
+
+            if (ready)
+            {
+                break;
+            }
+            yield return null;
+        }
+
+        int stoppedReels = 0;
+        float stagger = quickStop ? quickStopStagger : reelStopStagger;
+        for (int reel = 0; reel < ReelCount; reel++)
+        {
+            StartCoroutine(StopSingleReel(
+                reel,
+                GetResultColumn(result, reel),
+                reel * stagger,
+                quickStop,
+                () => stoppedReels++));
+        }
+
+        while (stoppedReels < ReelCount)
+        {
+            yield return null;
+        }
+
+        StoreCurrentResult(result);
+        isSpinning = false;
+        isStopping = false;
+        stopCoroutine = null;
+
+        PlayResultAnimation();
+        SpinCompleted?.Invoke(CurrentResult);
+        onComplete?.Invoke();
+    }
+
+    private IEnumerator StopSingleReel(
+        int reel,
+        IReadOnlyList<int> targetColumn,
+        float delay,
+        bool quickStop,
+        Action onStopped)
+    {
+        if (delay > 0f)
+        {
+            yield return new WaitForSeconds(delay);
+        }
+
+        KillReelTween(reel);
+
+        Transform reelTransform = reelTransforms[reel];
+        float cycleDuration = GetCycleDuration();
+        float currentY = reelTransform.localPosition.y;
+        float progress = Mathf.Clamp01(
+            (restingY - currentY) / Mathf.Max(1f, symbolStep));
+        float remainingDuration = cycleDuration * (1f - progress);
+
+        if (remainingDuration > 0.001f)
+        {
+            Tween finishCycle = reelTransform
+                .DOLocalMoveY(restingY - symbolStep, remainingDuration)
+                .SetEase(Ease.Linear);
+            reelTweens[reel] = finishCycle;
+            yield return finishCycle.WaitForCompletion();
+        }
+
+        // Insert the bottom, middle, and top results in reverse order. After
+        // the landing cycles they line up at visible buffer indices 1, 2, 3.
+        CycleReel(reel, targetColumn[RowCount - 1]);
+        ResetReelPosition(reel);
+
+        int landingCycleCount = FirstVisibleImageIndex + RowCount - 1;
+        for (int cycle = 0; cycle < landingCycleCount; cycle++)
+        {
+            bool finalCycle = cycle == landingCycleCount - 1;
+            float bounceDistance = Mathf.Max(0f, stopBounceDistance) * (quickStop ? 0.7f : 1f);
+            float targetY = restingY - symbolStep - (finalCycle ? bounceDistance : 0f);
+            float duration = finalCycle
+                ? (quickStop
+                    ? quickStopDuration
+                    : cycleDuration * Mathf.Max(2f, finalStopDurationMultiplier))
+                : cycleDuration;
+
+            Tween landingTween = reelTransform
+                .DOLocalMoveY(targetY, duration)
+                .SetEase(finalCycle ? Ease.OutCubic : Ease.Linear);
+            reelTweens[reel] = landingTween;
+            yield return landingTween.WaitForCompletion();
+
+            int targetRow = RowCount - 2 - cycle;
+            int? forcedTopSymbol = targetRow >= 0
+                ? targetColumn[targetRow]
+                : null;
+            CycleReel(reel, forcedTopSymbol);
+            reelTransform.localPosition = new Vector3(
+                reelTransform.localPosition.x,
+                finalCycle ? restingY - bounceDistance : restingY,
+                reelTransform.localPosition.z);
+        }
+
+        Tween reboundTween = reelTransform
+            .DOLocalMoveY(
+                restingY,
+                Mathf.Max(0.01f, stopBounceReturnDuration * (quickStop ? 0.7f : 1f)))
+            .SetEase(Ease.OutBounce);
+        reelTweens[reel] = reboundTween;
+        yield return reboundTween.WaitForCompletion();
+
+        ApplyStoppedReelVisibility(reel);
+        onStopped?.Invoke();
+    }
+
+    private void StartReelWithDelay(int reel, float delay)
+    {
+        if (delay <= 0f)
+        {
+            StartReelCycle(reel);
+            return;
+        }
+
+        reelTweens[reel] = DOVirtual.DelayedCall(delay, () =>
+        {
+            if (isSpinning)
+            {
+                StartReelCycle(reel);
+            }
+        });
+    }
+
+    private void StartReelCycle(int reel)
+    {
+        if (!isSpinning)
+        {
+            return;
+        }
+
+        Transform reelTransform = reelTransforms[reel];
+        ResetReelPosition(reel);
+
+        Tween cycleTween = reelTransform
+            .DOLocalMoveY(restingY - symbolStep, GetCycleDuration())
+            .SetEase(Ease.Linear)
+            .OnComplete(() =>
+            {
+                if (!isSpinning)
+                {
+                    return;
+                }
+
+                CycleReel(reel, null);
+                ResetReelPosition(reel);
+                reelCycleCounts[reel]++;
+                StartReelCycle(reel);
+            });
+
+        reelTweens[reel] = cycleTween;
+    }
+
+    private float GetCycleDuration()
+    {
+        float multiplier = activeSpinSpeed == SpinSpeed.Normal
+            ? normalSpeedMultiplier
+            : fastSpeedMultiplier;
+        return Mathf.Max(0.01f, spinCycleDuration) / Mathf.Clamp(multiplier, 0.25f, 2f);
+    }
+
+    private void FillReelAroundResult(int reel)
+    {
+        List<int> buffer = reelBufferSymbols[reel];
+        for (int image = 0; image < ImagesPerReel; image++)
+        {
+            buffer[image] = GetRandomSpinSymbol();
+        }
+
+        for (int row = 0; row < RowCount; row++)
+        {
+            buffer[FirstVisibleImageIndex + row] =
+                NormalizeSymbolId(currentResult[GetResultIndex(row, reel)]);
+        }
+        RenderReel(reel, false);
+    }
+
+    /// <param name="forcedTopSymbol">
+    /// Null selects a random strip value. A value of 0 explicitly inserts a blank.
+    /// </param>
+    private void CycleReel(int reel, int? forcedTopSymbol)
+    {
+        List<int> buffer = reelBufferSymbols[reel];
+        for (int image = ImagesPerReel - 1; image > 0; image--)
+        {
+            buffer[image] = buffer[image - 1];
+        }
+
+        buffer[0] = forcedTopSymbol.HasValue
+            ? NormalizeSymbolId(forcedTopSymbol.Value)
+            : GetRandomSpinSymbol();
+        RenderReel(reel, false);
+    }
+
+    private void RenderReel(int reel, bool stopped)
+    {
+        List<Image> images = reelImagesList[reel].images;
+        List<int> buffer = reelBufferSymbols[reel];
+
+        for (int image = 0; image < ImagesPerReel; image++)
+        {
+            int symbolId = NormalizeSymbolId(buffer[image]);
+            bool isVisibleBufferPosition =
+                !stopped ||
+                (image >= FirstVisibleImageIndex && image <= LastVisibleImageIndex);
+            SetImageSymbol(images[image], symbolId, isVisibleBufferPosition);
+        }
+    }
+
+    private void ApplyStoppedReelVisibility(int reel)
+    {
+        RenderReel(reel, true);
+    }
+
+    private void SetImageSymbol(Image image, int symbolId, bool positionVisible)
+    {
+        bool hasSymbol = symbolId != EmptySymbolId;
+        image.sprite = hasSymbol ? GetSymbolSprite(symbolId) : null;
+
+        Color color = image.color;
+        image.color = new Color(
+            color.r,
+            color.g,
+            color.b,
+            positionVisible && hasSymbol ? 1f : 0f);
+
+        // Keep the Image enabled so a transparent blank still occupies its
+        // normal VerticalLayoutGroup position.
+        image.enabled = true;
+    }
+
+    private Sprite GetSymbolSprite(int symbolId)
+    {
+        switch (NormalizeSymbolId(symbolId))
+        {
+            case CoinOneSymbolId:
+                return spriteCoinOne;
+            case CoinTwoSymbolId:
+                return spriteCoinTwo;
+            case CoinThreeSymbolId:
+                return spriteCoinThree;
+            default:
+                return null;
+        }
+    }
+
+    private int GetRandomSpinSymbol()
+    {
+        if (spinStrip == null || spinStrip.Length == 0)
+        {
+            return EmptySymbolId;
+        }
+
+        return NormalizeSymbolId(spinStrip[UnityEngine.Random.Range(0, spinStrip.Length)]);
+    }
+
+    private static int NormalizeSymbolId(int symbolId)
+    {
+        return symbolId <= EmptySymbolId ? EmptySymbolId : symbolId;
+    }
+
+    private static bool IsKnownSymbol(int symbolId)
+    {
+        return symbolId == EmptySymbolId ||
+               symbolId == CoinOneSymbolId ||
+               symbolId == CoinTwoSymbolId ||
+               symbolId == CoinThreeSymbolId;
+    }
+
+    private void StoreCurrentResult(IList<int> result)
+    {
+        currentResult.Clear();
+        for (int cell = 0; cell < ResultCellCount; cell++)
+        {
+            currentResult.Add(NormalizeSymbolId(result[cell]));
+        }
+    }
+
+    public static List<int> CreateEmptyResult()
+    {
+        var result = new List<int>(ResultCellCount);
+        for (int cell = 0; cell < ResultCellCount; cell++)
+        {
+            result.Add(EmptySymbolId);
+        }
+
+        return result;
+    }
+
+    public static List<int> CreateDefaultInitialResult()
+    {
+        return new List<int>
+        {
+            CoinOneSymbolId,
+            CoinTwoSymbolId,
+            CoinThreeSymbolId,
+            CoinTwoSymbolId,
+            CoinThreeSymbolId,
+            CoinOneSymbolId,
+            CoinThreeSymbolId,
+            CoinOneSymbolId,
+            CoinTwoSymbolId
+        };
+    }
+
+    public static int GetResultIndex(int row, int reel)
+    {
+        return row * ReelCount + reel;
+    }
+
+    private static List<int> GetResultColumn(IReadOnlyList<int> result, int reel)
+    {
+        var column = new List<int>(RowCount);
+        for (int row = 0; row < RowCount; row++)
+        {
+            column.Add(NormalizeSymbolId(result[GetResultIndex(row, reel)]));
+        }
+
+        return column;
+    }
+
+    private void PlayResultAnimation()
+    {
+        KillResultAnimations();
+
+        float loopDuration = Mathf.Max(0.1f, resultAnimationDuration);
+        float minScale = Mathf.Clamp(resultAnimationMinScale, 0.8f, 1f);
+        float maxScale = Mathf.Clamp(resultAnimationMaxScale, 1f, 1.3f);
+
+        for (int row = 0; row < RowCount; row++)
+        {
+            for (int reel = 0; reel < ReelCount; reel++)
+            {
+                int resultIndex = GetResultIndex(row, reel);
+                if (currentResult[resultIndex] == EmptySymbolId)
+                {
+                    continue;
+                }
+
+                int imageIndex = FirstVisibleImageIndex + row;
+                Image resultImage = reelImagesList[reel].images[imageIndex];
+                if (resultImage == null)
+                {
+                    continue;
+                }
+
+                resultImage.transform.localScale = Vector3.one;
+                Sequence pulse = DOTween.Sequence()
+                    .SetUpdate(true)
+                    .Append(
+                        resultImage.transform
+                            .DOScale(minScale, loopDuration * 0.2f)
+                            .SetEase(Ease.InOutSine))
+                    .Append(
+                        resultImage.transform
+                            .DOScale(maxScale, loopDuration * 0.3f)
+                            .SetEase(Ease.InOutSine))
+                    .Append(
+                        resultImage.transform
+                            .DOScale(1f, loopDuration * 0.2f)
+                            .SetEase(Ease.InOutSine))
+                    .AppendInterval(loopDuration * 0.3f)
+                    .SetLoops(-1, LoopType.Restart);
+
+                resultTweens.Add(pulse);
+            }
+        }
+    }
+
+    private void KillResultAnimations()
+    {
+        foreach (Tween resultTween in resultTweens)
+        {
+            resultTween?.Kill();
+        }
+        resultTweens.Clear();
+
+        if (reelImagesList == null)
+        {
+            return;
+        }
+
+        foreach (UltraReelImages reelImages in reelImagesList)
+        {
+            if (reelImages?.images == null)
+            {
+                continue;
+            }
+
+            foreach (Image image in reelImages.images)
+            {
+                if (image != null)
+                {
+                    image.transform.localScale = Vector3.one;
+                }
+            }
+        }
+    }
+
+    private void ResetReelPosition(int reel)
+    {
+        Transform reelTransform = reelTransforms[reel];
+        reelTransform.localPosition = new Vector3(
+            reelTransform.localPosition.x,
+            restingY,
+            reelTransform.localPosition.z);
+    }
+
+    private void KillReelTween(int reel)
+    {
+        if (reel < 0 || reel >= reelTweens.Count || reelTweens[reel] == null)
+        {
+            return;
+        }
+
+        reelTweens[reel].Kill();
+        reelTweens[reel] = null;
+    }
+
+    private void KillReelTweens()
+    {
+        for (int reel = 0; reel < reelTweens.Count; reel++)
+        {
+            KillReelTween(reel);
+        }
+    }
+
+    private void OnDisable()
+    {
+        CancelSpin();
+    }
+
+    private void OnDestroy()
+    {
+        KillReelTweens();
+        KillResultAnimations();
+    }
+}
+
+[Serializable]
+public class UltraReelImages
+{
+    public List<Image> images = new List<Image>(5);
+}

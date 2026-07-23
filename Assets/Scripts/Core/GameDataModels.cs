@@ -208,6 +208,57 @@ public class ServerPayload
     public double winAmount;                 // Alternate server total-win field
     public int scatterCount;
     public bool scatterTriggered;
+    public ServerUltraBonus ultraBonus;
+    public ServerSpinFeatures features;
+}
+
+[Serializable]
+public class ServerSpinFeatures
+{
+    public ServerFeatureTrigger scatterWheel;
+    public ServerFeatureTrigger ultraWheel;
+}
+
+[Serializable]
+public class ServerFeatureTrigger
+{
+    public bool triggered;
+}
+
+[Serializable]
+public class ServerUltraBonus
+{
+    public bool isTriggered;
+    public List<ServerGridPosition> triggerPositions;
+    public List<ServerUltraReelResult> reelResults;
+    public List<ServerUltraActiveWheel> activeWheels;
+    public double totalAward;
+}
+
+[Serializable]
+public class ServerGridPosition
+{
+    public int row;
+    public int col;
+}
+
+[Serializable]
+public class ServerUltraReelResult
+{
+    public int reelIndex;
+    public int bonusWheelStopIndex;
+    public string wheelState;
+    public int assignedWheelIndex;
+}
+
+[Serializable]
+public class ServerUltraActiveWheel
+{
+    public int wheelIndex;
+    public int stopIndex;
+    public double baseAward;
+    public int multiplier;
+    public double finalAward;
 }
 
 [Serializable]

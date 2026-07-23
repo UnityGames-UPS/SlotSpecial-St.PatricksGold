@@ -709,6 +709,49 @@ public class SlotView : MonoBehaviour
         winAnimationCoroutine = StartCoroutine(PlayWinLinesSequentially(winLines, onComplete));
     }
 
+    internal bool ShowPrioritySymbolAnimation(
+        IEnumerable<int> flatPositions,
+        float duration,
+        System.Action onComplete)
+    {
+        if (flatPositions == null)
+        {
+            return false;
+        }
+
+        var uniquePositions = new HashSet<int>(flatPositions);
+        if (uniquePositions.Count == 0)
+        {
+            return false;
+        }
+
+        KillWinTweens();
+        winAnimationCoroutine = StartCoroutine(
+            PlayPrioritySymbolAnimation(
+                uniquePositions,
+                Mathf.Max(0.1f, duration),
+                onComplete));
+        return true;
+    }
+
+    internal void CancelWinAnimation()
+    {
+        KillWinTweens();
+    }
+
+    private IEnumerator PlayPrioritySymbolAnimation(
+        IEnumerable<int> flatPositions,
+        float duration,
+        System.Action onComplete)
+    {
+        AnimateWinPositions(flatPositions);
+        yield return new WaitForSecondsRealtime(duration);
+
+        KillWinTweens(false);
+        winAnimationCoroutine = null;
+        onComplete?.Invoke();
+    }
+
     private IEnumerator PlayWinLinesSequentially(List<WinLine> winLines, System.Action onComplete)
     {
         bool skipScreen = false;
