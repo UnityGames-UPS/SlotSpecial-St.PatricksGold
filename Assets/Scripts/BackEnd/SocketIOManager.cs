@@ -1411,9 +1411,9 @@ public class SocketIOManager : MonoBehaviour
 
 
 [Serializable]
-public class AuthTokenData
+internal class AuthTokenData
 {
-    public string cookie;
-    public string socketURL;
-    public string nameSpace;
+    internal string cookie;
+    internal string socketURL;
+    internal string nameSpace;
 }

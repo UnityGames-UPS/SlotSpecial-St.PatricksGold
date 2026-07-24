@@ -429,11 +429,8 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        // Prevent repeated stop requests while the server result is being applied.
-        if (stopButton != null)
-        {
-            stopButton.interactable = false;
-        }
+        // The GameManager rejects repeated stop requests. Keep the visible
+        // button visually enabled so unavailable clicks simply do nothing.
     }
 
     private void OnUltraStartButtonClicked()
@@ -445,7 +442,7 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        if (!gameManager.RequestUltraSlotStart())
+        if (!gameManager.RequestUltraStart())
         {
             RefreshSpinControls();
         }
@@ -1038,24 +1035,17 @@ public class UIManager : MonoBehaviour
         if (spinButton != null)
         {
             spinButton.gameObject.SetActive(showSpinButton);
-            spinButton.interactable = !isRoundActive &&
-                                      !isAutoPlaying &&
-                                      gameManager != null &&
-                                      gameManager.CanRequestSpin();
+            spinButton.interactable = showSpinButton;
         }
 
         if (stopButton != null)
         {
-            stopButton.gameObject.SetActive(!isUltraUnlocked &&
-                                            isRoundActive &&
-                                            !isAutoPlaying &&
-                                            !showPendingSpinButton);
-            stopButton.interactable = !isUltraUnlocked &&
-                                      isRoundActive &&
-                                      !isAutoPlaying &&
-                                      !showPendingSpinButton &&
-                                      gameManager != null &&
-                                      gameManager.CanRequestStop();
+            bool showStopButton = !isUltraUnlocked &&
+                                  isRoundActive &&
+                                  !isAutoPlaying &&
+                                  !showPendingSpinButton;
+            stopButton.gameObject.SetActive(showStopButton);
+            stopButton.interactable = showStopButton;
         }
 
         if (ultraStartButton != null)
@@ -1064,15 +1054,13 @@ public class UIManager : MonoBehaviour
                                   gameManager != null &&
                                   gameManager.ShouldShowUltraStartButton();
             ultraStartButton.gameObject.SetActive(showUltraStart);
-            ultraStartButton.interactable = showUltraStart &&
-                                            gameManager.CanStartUltraSlot();
+            ultraStartButton.interactable = showUltraStart;
         }
     }
 
     private void RefreshSpinModeButtons()
     {
-        bool canChangeMode = gameManager != null &&
-                             !gameManager.IsUltraSlotUnlocked();
+        bool canChangeMode = gameManager != null;
         SpinSpeed selectedMode = gameManager != null
             ? gameManager.GetSpinSpeed()
             : SpinSpeed.Normal;

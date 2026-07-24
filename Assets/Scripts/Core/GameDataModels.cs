@@ -12,6 +12,7 @@ public static class StPatricksGoldDefinition
     public const int RowCount = 3;
     public const int SymbolCount = 13;
     public const int PaylineCount = 30;
+    public const int UltraWheelValueCount = 10;
 }
 
 public static class StPatricksGoldSymbolIds
@@ -505,6 +506,7 @@ public static class GameDataConverter
                 : (config.paylineCount > 0 ? config.paylineCount : 1);
 
             config.ultraWheel = serverData.features.ultraWheel;
+            PopulateCompactUltraWheelAwardTables(config.ultraWheel);
             config.scatterWheel = serverData.features.scatterWheel;
             config.templeRiches = serverData.features.templeRiches;
             config.wildMultiplierFeature = serverData.features.wildMultiplier;
@@ -518,6 +520,66 @@ public static class GameDataConverter
         }
 
         return config;
+    }
+
+    private static void PopulateCompactUltraWheelAwardTables(
+        UltraWheelConfig ultraWheel)
+    {
+        if (ultraWheel == null)
+        {
+            return;
+        }
+
+        // The compact live initData response omits the full award tables and
+        // exposes only their min/max ranges. These fallbacks are the exact
+        // values from the authoritative SL-SPG parse sheet. A complete table
+        // supplied by the server always takes priority.
+        if (!HasCompleteUltraWheelTable(ultraWheel.wheel1Awards) &&
+            MatchesRange(ultraWheel.wheel1Range, 180, 6000))
+        {
+            ultraWheel.wheel1Awards = new List<int>
+            {
+                180, 250, 350, 500, 750,
+                1000, 1500, 2000, 3000, 6000
+            };
+        }
+
+        if (!HasCompleteUltraWheelTable(ultraWheel.wheel2Awards) &&
+            MatchesRange(ultraWheel.wheel2Range, 90, 1500))
+        {
+            ultraWheel.wheel2Awards = new List<int>
+            {
+                90, 120, 150, 200, 300,
+                450, 600, 900, 1200, 1500
+            };
+        }
+
+        if (!HasCompleteUltraWheelTable(ultraWheel.wheel3Awards) &&
+            MatchesRange(ultraWheel.wheel3Range, 50, 300))
+        {
+            ultraWheel.wheel3Awards = new List<int>
+            {
+                50, 70, 90, 110, 140,
+                175, 210, 250, 280, 300
+            };
+        }
+    }
+
+    private static bool HasCompleteUltraWheelTable(List<int> values)
+    {
+        return values != null &&
+               values.Count == StPatricksGoldDefinition.UltraWheelValueCount;
+    }
+
+    private static bool MatchesRange(
+        List<int> range,
+        int expectedMinimum,
+        int expectedMaximum)
+    {
+        return range != null &&
+               range.Count >= 2 &&
+               range[0] == expectedMinimum &&
+               range[1] == expectedMaximum;
     }
 
     internal static PlayerData CreateInitialPlayerData(StPatricksGoldConfigResponse serverData, int defaultBetIndex = 0, double defaultBalance = 0)
