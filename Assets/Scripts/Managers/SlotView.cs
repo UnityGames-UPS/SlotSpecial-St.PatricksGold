@@ -784,38 +784,63 @@ public class SlotView : MonoBehaviour
     private IEnumerator PlayWinningSymbols(List<WinLine> winLines, System.Action onComplete)
     {
         bool isAuto = (gameManager != null && gameManager.isAutoPlaying);
+        float stageDuration = Mathf.Max(0.1f, winSymbolLoopDuration);
 
-        // Each winning position starts one frame sequence and keeps playing it.
+        // Celebrate the complete result first, then present each returned line
+        // separately so overlapping wins are still easy to read.
         HashSet<int> allWinningPositions = new HashSet<int>();
+        List<HashSet<int>> individualWinningLines = new List<HashSet<int>>();
         foreach (WinLine winLine in winLines)
         {
             if (winLine?.positions == null) continue;
 
-            foreach (int flatIndex in winLine.positions)
+            HashSet<int> linePositions = new HashSet<int>(winLine.positions);
+            if (linePositions.Count == 0) continue;
+
+            individualWinningLines.Add(linePositions);
+            foreach (int flatIndex in linePositions)
             {
                 allWinningPositions.Add(flatIndex);
             }
         }
 
-        if (allWinningPositions.Count > 0)
+        if (allWinningPositions.Count == 0)
         {
-            AnimateWinPositions(allWinningPositions);
-        }
-
-        if (isAuto)
-        {
-            yield return new WaitForSecondsRealtime(
-                Mathf.Max(0.1f, winSymbolLoopDuration));
-            StopWinAnimations(false);
             winAnimationCoroutine = null;
             onComplete?.Invoke();
             yield break;
         }
 
+        AnimateWinPositions(allWinningPositions);
+        yield return new WaitForSecondsRealtime(stageDuration);
+        StopWinAnimations(false);
+
+        if (isAuto)
+        {
+            // Autoplay shows every individual line once, then advances normally.
+            for (int lineIndex = 0; lineIndex < individualWinningLines.Count; lineIndex++)
+            {
+                AnimateWinPositions(individualWinningLines[lineIndex]);
+                yield return new WaitForSecondsRealtime(stageDuration);
+                StopWinAnimations(false);
+            }
+
+            winAnimationCoroutine = null;
+            onComplete?.Invoke();
+            yield break;
+        }
+
+        // Normal play stays idle while the individual lines repeat. Starting the
+        // next spin calls StopWinAnimations through KillAllTweens and ends this loop.
         onComplete?.Invoke();
         while (true)
         {
-            yield return null;
+            for (int lineIndex = 0; lineIndex < individualWinningLines.Count; lineIndex++)
+            {
+                AnimateWinPositions(individualWinningLines[lineIndex]);
+                yield return new WaitForSecondsRealtime(stageDuration);
+                StopWinAnimations(false);
+            }
         }
     }
 
