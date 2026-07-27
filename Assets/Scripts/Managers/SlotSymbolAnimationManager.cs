@@ -54,7 +54,11 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         StopAllAnimations();
     }
 
-    public bool PlayAnimation(int symbolId, Image baseImage, Image overlayImage)
+    public bool PlayAnimation(
+        int symbolId,
+        Image baseImage,
+        Image overlayImage,
+        float synchronizedLoopDuration = 0f)
     {
         if (baseImage == null || overlayImage == null)
         {
@@ -85,7 +89,11 @@ public class SlotSymbolAnimationManager : MonoBehaviour
 
         activeAnimations[overlayImage] = activeAnimation;
         activeAnimation.PlaybackRoutine =
-            StartCoroutine(PlayFrames(activeAnimation, frames));
+            StartCoroutine(
+                PlayFrames(
+                    activeAnimation,
+                    frames,
+                    GetLoopDuration(frames, synchronizedLoopDuration)));
         return true;
     }
 
@@ -183,7 +191,8 @@ public class SlotSymbolAnimationManager : MonoBehaviour
 
     private IEnumerator PlayFrames(
         ActiveSymbolAnimation activeAnimation,
-        Sprite[] frames)
+        Sprite[] frames,
+        float synchronizedLoopDuration)
     {
         if (startDelay > 0f)
         {
@@ -209,20 +218,28 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         int completedLoops = 0;
         while (loopCount == 0 || completedLoops < loopCount)
         {
-            for (int frameIndex = 0; frameIndex < frames.Length; frameIndex++)
+            float loopElapsed = 0f;
+            int displayedFrameIndex = -1;
+            while (loopElapsed < synchronizedLoopDuration)
             {
-                Sprite frame = frames[frameIndex];
-                if (frame != null)
+                float normalizedTime = loopElapsed / synchronizedLoopDuration;
+                int frameIndex = Mathf.Min(
+                    Mathf.FloorToInt(normalizedTime * frames.Length),
+                    frames.Length - 1);
+
+                if (frameIndex != displayedFrameIndex)
                 {
-                    overlayImage.sprite = frame;
+                    Sprite frame = frames[frameIndex];
+                    if (frame != null)
+                    {
+                        overlayImage.sprite = frame;
+                    }
+
+                    displayedFrameIndex = frameIndex;
                 }
 
-                float frameElapsed = 0f;
-                while (frameElapsed < frameDuration)
-                {
-                    frameElapsed += GetDeltaTime();
-                    yield return null;
-                }
+                loopElapsed += GetDeltaTime();
+                yield return null;
             }
 
             completedLoops++;
@@ -246,6 +263,16 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             SetAlpha(activeAnimation.BaseImage, 1f);
             SetAlpha(overlayImage, 0f);
         }
+    }
+
+    private float GetLoopDuration(Sprite[] frames, float synchronizedLoopDuration)
+    {
+        if (synchronizedLoopDuration > 0f)
+        {
+            return synchronizedLoopDuration;
+        }
+
+        return Mathf.Max(0.001f, frameDuration) * frames.Length;
     }
 
     private float GetDeltaTime()

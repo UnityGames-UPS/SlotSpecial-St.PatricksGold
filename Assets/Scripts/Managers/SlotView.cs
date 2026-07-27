@@ -59,7 +59,18 @@ public class SlotView : MonoBehaviour
     [SerializeField] private int minSpinCyclesBeforeStop = 3;
 
     [Header("Win Animation Settings")]
-    [SerializeField] private float winSymbolLoopDuration = 1.5f;
+    [SerializeField] private float winSymbolLoopDuration = 1.2f;
+    [SerializeField, Range(1, 4)] private int winSymbolCyclesPerStage = 3;
+    [SerializeField] private Color winFrameCoreColor =
+        new Color(0.55f, 1f, 0.18f, 1f);
+    [SerializeField] private Color winFrameInnerGlowColor =
+        new Color(0.05f, 1f, 0.05f, 0.5f);
+    [SerializeField] private Color winFrameOuterGlowColor =
+        new Color(0f, 1f, 0f, 0.18f);
+    [SerializeField, Min(1f)] private float winFrameCoreThickness = 3f;
+    [SerializeField, Min(1f)] private float winFrameInnerGlowThickness = 8f;
+    [SerializeField, Min(1f)] private float winFrameOuterGlowThickness = 14f;
+    [SerializeField, Min(0f)] private float winFrameInset = 2f;
 
     [Header("Reel Layout Settings")]
     [SerializeField] private float defaultSpacing = 0f;
@@ -75,6 +86,15 @@ public class SlotView : MonoBehaviour
     private Coroutine winAnimationCoroutine;
     private Coroutine stopSpinCoroutine;
     private VerticalLayoutGroup[] reelLayoutGroups;
+    private readonly Dictionary<Image, WinFrameVisual> winFrames =
+        new Dictionary<Image, WinFrameVisual>();
+
+    private sealed class WinFrameVisual
+    {
+        public GameObject Root;
+        public RectTransform RectTransform;
+        public CanvasGroup CanvasGroup;
+    }
 
 
     internal List<List<int>> currentDisplayMatrix;
@@ -773,7 +793,7 @@ public class SlotView : MonoBehaviour
         float duration,
         System.Action onComplete)
     {
-        AnimateWinPositions(flatPositions);
+        AnimateWinPositions(flatPositions, duration);
         yield return new WaitForSecondsRealtime(duration);
 
         StopWinAnimations(false);
@@ -784,7 +804,9 @@ public class SlotView : MonoBehaviour
     private IEnumerator PlayWinningSymbols(List<WinLine> winLines, System.Action onComplete)
     {
         bool isAuto = (gameManager != null && gameManager.isAutoPlaying);
-        float stageDuration = Mathf.Max(0.1f, winSymbolLoopDuration);
+        float cycleDuration = Mathf.Max(0.1f, winSymbolLoopDuration);
+        float stageDuration =
+            cycleDuration * Mathf.Max(1, winSymbolCyclesPerStage);
 
         // Celebrate the complete result first, then present each returned line
         // separately so overlapping wins are still easy to read.
@@ -811,7 +833,7 @@ public class SlotView : MonoBehaviour
             yield break;
         }
 
-        AnimateWinPositions(allWinningPositions);
+        AnimateWinPositions(allWinningPositions, cycleDuration);
         yield return new WaitForSecondsRealtime(stageDuration);
         StopWinAnimations(false);
 
@@ -820,7 +842,9 @@ public class SlotView : MonoBehaviour
             // Autoplay shows every individual line once, then advances normally.
             for (int lineIndex = 0; lineIndex < individualWinningLines.Count; lineIndex++)
             {
-                AnimateWinPositions(individualWinningLines[lineIndex]);
+                AnimateWinPositions(
+                    individualWinningLines[lineIndex],
+                    cycleDuration);
                 yield return new WaitForSecondsRealtime(stageDuration);
                 StopWinAnimations(false);
             }
@@ -837,14 +861,18 @@ public class SlotView : MonoBehaviour
         {
             for (int lineIndex = 0; lineIndex < individualWinningLines.Count; lineIndex++)
             {
-                AnimateWinPositions(individualWinningLines[lineIndex]);
+                AnimateWinPositions(
+                    individualWinningLines[lineIndex],
+                    cycleDuration);
                 yield return new WaitForSecondsRealtime(stageDuration);
                 StopWinAnimations(false);
             }
         }
     }
 
-    private void AnimateWinPositions(IEnumerable<int> flatPositions)
+    private void AnimateWinPositions(
+        IEnumerable<int> flatPositions,
+        float animationDuration)
     {
         if (flatPositions == null) return;
 
@@ -864,11 +892,14 @@ public class SlotView : MonoBehaviour
             int col = flatIndex % cols;
             if (col < 0 || col >= cols || row < 0 || row >= rows) continue;
 
-            AnimateWinSymbol(col, row);
+            AnimateWinSymbol(col, row, animationDuration);
         }
     }
 
-    private void AnimateWinSymbol(int column, int row)
+    private void AnimateWinSymbol(
+        int column,
+        int row,
+        float animationDuration)
     {
         if (column >= reelImagesList.Count)
         {
@@ -898,7 +929,7 @@ public class SlotView : MonoBehaviour
             return;
         }
 
-        PlaySymbolAnimation(column, imageIndex);
+        PlaySymbolAnimation(column, imageIndex, animationDuration);
     }
 
     private void StopWinAnimations(bool stopCoroutine = true)
@@ -999,7 +1030,10 @@ public class SlotView : MonoBehaviour
         return -1;
     }
 
-    private void PlaySymbolAnimation(int column, int imageIndex)
+    private void PlaySymbolAnimation(
+        int column,
+        int imageIndex,
+        float animationDuration)
     {
         Image symbolImage = GetSymbolImage(column, imageIndex);
         if (symbolImage == null)
@@ -1007,6 +1041,8 @@ public class SlotView : MonoBehaviour
             Debug.LogWarning($"[AnimateWinSymbol] Missing symbol Image for col {column}, imageIndex {imageIndex}");
             return;
         }
+
+        PlayWinFrame(symbolImage);
 
         if (symbolAnimationManager == null)
         {
@@ -1022,7 +1058,11 @@ public class SlotView : MonoBehaviour
         }
 
         int symbolId = GetSymbolId(symbolImage.sprite);
-        symbolAnimationManager.PlayAnimation(symbolId, symbolImage, animationImage);
+        symbolAnimationManager.PlayAnimation(
+            symbolId,
+            symbolImage,
+            animationImage,
+            animationDuration);
     }
 
     private void ResetSymbolAnimation(int column, int imageIndex)
@@ -1032,6 +1072,8 @@ public class SlotView : MonoBehaviour
         {
             return;
         }
+
+        StopWinFrame(symbolImage);
 
         Image animationImage = GetSymbolWinAnimationImage(column, imageIndex);
         if (symbolAnimationManager != null)
@@ -1051,6 +1093,190 @@ public class SlotView : MonoBehaviour
         Color c = symbolImage.color;
         symbolImage.color = new Color(c.r, c.g, c.b, 1f);
         symbolImage.enabled = true;
+    }
+
+    private void PlayWinFrame(Image symbolImage)
+    {
+        WinFrameVisual frame = GetOrCreateWinFrame(symbolImage);
+        if (frame == null)
+        {
+            return;
+        }
+
+        frame.Root.SetActive(true);
+        frame.RectTransform.SetAsLastSibling();
+        frame.RectTransform.localScale = Vector3.one;
+        frame.CanvasGroup.alpha = 1f;
+    }
+
+    private void StopWinFrame(Image symbolImage)
+    {
+        if (symbolImage == null ||
+            !winFrames.TryGetValue(symbolImage, out WinFrameVisual frame))
+        {
+            return;
+        }
+
+        frame.RectTransform.localScale = Vector3.one;
+        frame.CanvasGroup.alpha = 0f;
+        frame.Root.SetActive(false);
+    }
+
+    private WinFrameVisual GetOrCreateWinFrame(Image symbolImage)
+    {
+        if (symbolImage == null)
+        {
+            return null;
+        }
+
+        if (winFrames.TryGetValue(symbolImage, out WinFrameVisual existingFrame))
+        {
+            return existingFrame;
+        }
+
+        GameObject frameRoot = new GameObject(
+            "Animated Win Frame",
+            typeof(RectTransform),
+            typeof(CanvasGroup));
+        frameRoot.layer = symbolImage.gameObject.layer;
+
+        RectTransform frameRect = frameRoot.GetComponent<RectTransform>();
+        frameRect.SetParent(symbolImage.rectTransform, false);
+        frameRect.anchorMin = Vector2.zero;
+        frameRect.anchorMax = Vector2.one;
+        frameRect.offsetMin = Vector2.one * winFrameInset;
+        frameRect.offsetMax = Vector2.one * -winFrameInset;
+        frameRect.pivot = new Vector2(0.5f, 0.5f);
+        frameRect.localScale = Vector3.one;
+        frameRect.SetAsLastSibling();
+
+        CanvasGroup canvasGroup = frameRoot.GetComponent<CanvasGroup>();
+        canvasGroup.alpha = 0f;
+        canvasGroup.interactable = false;
+        canvasGroup.blocksRaycasts = false;
+
+        CreateWinFrameLayer(
+            frameRect,
+            "Outer Glow",
+            winFrameOuterGlowThickness,
+            winFrameOuterGlowColor);
+        CreateWinFrameLayer(
+            frameRect,
+            "Inner Glow",
+            winFrameInnerGlowThickness,
+            winFrameInnerGlowColor);
+        CreateWinFrameLayer(
+            frameRect,
+            "Neon Core",
+            winFrameCoreThickness,
+            winFrameCoreColor);
+
+        WinFrameVisual frame = new WinFrameVisual
+        {
+            Root = frameRoot,
+            RectTransform = frameRect,
+            CanvasGroup = canvasGroup
+        };
+
+        frameRoot.SetActive(false);
+        winFrames.Add(symbolImage, frame);
+        return frame;
+    }
+
+    private enum WinFrameSide
+    {
+        Top,
+        Bottom,
+        Left,
+        Right
+    }
+
+    private void CreateWinFrameLayer(
+        RectTransform frameRoot,
+        string layerName,
+        float thickness,
+        Color color)
+    {
+        CreateWinFrameSide(
+            frameRoot,
+            $"{layerName} Top",
+            WinFrameSide.Top,
+            thickness,
+            color);
+        CreateWinFrameSide(
+            frameRoot,
+            $"{layerName} Bottom",
+            WinFrameSide.Bottom,
+            thickness,
+            color);
+        CreateWinFrameSide(
+            frameRoot,
+            $"{layerName} Left",
+            WinFrameSide.Left,
+            thickness,
+            color);
+        CreateWinFrameSide(
+            frameRoot,
+            $"{layerName} Right",
+            WinFrameSide.Right,
+            thickness,
+            color);
+    }
+
+    private void CreateWinFrameSide(
+        RectTransform frameRoot,
+        string sideName,
+        WinFrameSide side,
+        float thickness,
+        Color color)
+    {
+        GameObject sideObject = new GameObject(
+            sideName,
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(Image));
+        sideObject.layer = frameRoot.gameObject.layer;
+
+        RectTransform sideRect = sideObject.GetComponent<RectTransform>();
+        sideRect.SetParent(frameRoot, false);
+
+        thickness = Mathf.Max(1f, thickness);
+        switch (side)
+        {
+            case WinFrameSide.Top:
+                sideRect.anchorMin = new Vector2(0f, 1f);
+                sideRect.anchorMax = new Vector2(1f, 1f);
+                sideRect.pivot = new Vector2(0.5f, 0.5f);
+                sideRect.anchoredPosition = Vector2.zero;
+                sideRect.sizeDelta = new Vector2(0f, thickness);
+                break;
+            case WinFrameSide.Bottom:
+                sideRect.anchorMin = new Vector2(0f, 0f);
+                sideRect.anchorMax = new Vector2(1f, 0f);
+                sideRect.pivot = new Vector2(0.5f, 0.5f);
+                sideRect.anchoredPosition = Vector2.zero;
+                sideRect.sizeDelta = new Vector2(0f, thickness);
+                break;
+            case WinFrameSide.Left:
+                sideRect.anchorMin = new Vector2(0f, 0f);
+                sideRect.anchorMax = new Vector2(0f, 1f);
+                sideRect.pivot = new Vector2(0.5f, 0.5f);
+                sideRect.anchoredPosition = Vector2.zero;
+                sideRect.sizeDelta = new Vector2(thickness, 0f);
+                break;
+            case WinFrameSide.Right:
+                sideRect.anchorMin = new Vector2(1f, 0f);
+                sideRect.anchorMax = new Vector2(1f, 1f);
+                sideRect.pivot = new Vector2(0.5f, 0.5f);
+                sideRect.anchoredPosition = Vector2.zero;
+                sideRect.sizeDelta = new Vector2(thickness, 0f);
+                break;
+        }
+
+        Image sideImage = sideObject.GetComponent<Image>();
+        sideImage.color = color;
+        sideImage.raycastTarget = false;
+        sideImage.maskable = true;
     }
 
     private int GetSymbolIdAt(int col, int row)
