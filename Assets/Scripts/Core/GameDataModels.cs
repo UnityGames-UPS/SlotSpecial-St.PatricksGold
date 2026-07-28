@@ -385,6 +385,8 @@ public class WinLine
     public int symbolId;
     public List<int> positions;  // Flat list: [0, 5, 10, 15, 20]
     public double winAmount;
+    public int wildMultiplier;
+    public List<WildDetail> wildDetails;
 }
 
 [Serializable]
@@ -1043,7 +1045,19 @@ public static class GameDataConverter
                 lineId = serverLine.lineIndex,
                 symbolId = symbolId,
                 positions = flatPositions,
-                winAmount = lineWin
+                winAmount = lineWin,
+                wildMultiplier = serverLine.wildMultiplier,
+                wildDetails = serverLine.wildDetails != null
+                    ? serverLine.wildDetails
+                        .Where(detail => detail != null)
+                        .Select(detail => new WildDetail
+                        {
+                            col = detail.col,
+                            row = detail.row,
+                            multiplier = detail.multiplier
+                        })
+                        .ToList()
+                    : new List<WildDetail>()
             });
         }
 

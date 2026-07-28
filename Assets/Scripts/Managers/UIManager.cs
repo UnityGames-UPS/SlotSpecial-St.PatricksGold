@@ -32,6 +32,40 @@ public class UIManager : MonoBehaviour
     [SerializeField] private TMP_Text balanceAmountText;
     [SerializeField] private TMP_Text betAmountText;
 
+    [Header("Total Win Animation")]
+    [Tooltip("Assign the TotalWin TMP text. If empty, a scene text named TotalWin is found automatically.")]
+    [SerializeField] private TMP_Text totalWinAmountText;
+    [SerializeField, Min(0.01f)] private float totalWinCountDuration = 1.2f;
+    [SerializeField, Min(1f)] private float totalWinPeakFontSize = 184f;
+    [SerializeField, Min(1f)] private float totalWinFinalFontSize = 148f;
+    [SerializeField, Min(0.01f)] private float totalWinSettleDuration = 0.25f;
+
+    [Header("Win Line Row Amounts")]
+    [Tooltip("The SlotView that presents individual winning lines. It is found automatically when left empty.")]
+    [SerializeField] private SlotView slotView;
+    [Tooltip("Amount shown when the winning line uses the top cell of the center reel.")]
+    [SerializeField] private TMP_Text topWinLineAmountText;
+    [Tooltip("Amount shown when the winning line uses the middle cell of the center reel. This row has priority.")]
+    [SerializeField] private TMP_Text middleWinLineAmountText;
+    [Tooltip("Amount shown when the winning line uses the bottom cell of the center reel.")]
+    [SerializeField] private TMP_Text bottomWinLineAmountText;
+
+    [Header("Wild Multiplier Icons")]
+    [Tooltip("Icon displayed on a winning Wild when the server returns a 2x multiplier.")]
+    [SerializeField] private Sprite wildMultiplier2xIcon;
+    [Tooltip("Icon displayed on a winning Wild when the server returns a 3x multiplier.")]
+    [SerializeField] private Sprite wildMultiplier3xIcon;
+    [Tooltip("Icon displayed on a winning Wild when the server returns a 4x multiplier.")]
+    [SerializeField] private Sprite wildMultiplier4xIcon;
+    [Tooltip("Icon displayed on a winning Wild when the server returns a 5x multiplier.")]
+    [SerializeField] private Sprite wildMultiplier5xIcon;
+    [Tooltip("Temporary scale used for the small pop during each shake.")]
+    [SerializeField, Min(1f)] private float wildMultiplierPopScale = 1.1f;
+    [Tooltip("Maximum left/right Z angle used by the multiplier shake. This does not perform a full rotation.")]
+    [SerializeField, Range(0f, 2f)] private float wildMultiplierShakeAngle = 2f;
+    [Tooltip("Number of complete left-right shakes during one Wild symbol animation loop.")]
+    [SerializeField, Min(1)] private int wildMultiplierShakesPerSymbolLoop = 4;
+
     [Header("Bet Buttons")]
     [SerializeField] private Button increaseBetButton;
     [SerializeField] private Button decreaseBetButton;
@@ -56,6 +90,11 @@ public class UIManager : MonoBehaviour
     [SerializeField] private Button hamburgerMenuDownButton;
     [SerializeField, Min(0.01f)] private float hamburgerMenuFadeDuration = 0.3f;
 
+    [Header("Info Page")]
+    [SerializeField] private GameObject infoPagePanel;
+    [SerializeField] private Button infoPageButton;
+    [SerializeField] private Button infoPageBackButton;
+
     private bool isAutoPlayPanelOpen;
     private bool isSpinPointerHeld;
     private bool suppressNextSpinClick;
@@ -76,6 +115,10 @@ public class UIManager : MonoBehaviour
     private CanvasGroup hamburgerMenuCanvasGroup;
     private Tween hamburgerMenuTween;
     private bool isHamburgerMenuOpen;
+    private Tween totalWinCountTween;
+    private Sequence totalWinFontSizeSequence;
+    private Sequence winLineAmountFontSizeSequence;
+    private double lastPresentedTotalWin;
 
     private void Awake()
     {
@@ -149,6 +192,36 @@ public class UIManager : MonoBehaviour
             Debug.LogError("[UIManager] Bet Amount Text is not assigned.");
         }
 
+        ResolveTotalWinText();
+        if (totalWinAmountText == null)
+        {
+            Debug.LogWarning(
+                "[UIManager] Total Win Amount Text is not assigned and no scene TMP text named 'TotalWin' was found.");
+        }
+        else
+        {
+            ResetTotalWinDisplay();
+        }
+
+        ResolveWinLineAmountReferences();
+        ResetWinLineAmountDisplay();
+        if (topWinLineAmountText == null ||
+            middleWinLineAmountText == null ||
+            bottomWinLineAmountText == null)
+        {
+            Debug.LogWarning(
+                "[UIManager] Assign the Top, Middle, and Bottom Win Line Amount Text fields under Win Line Row Amounts.");
+        }
+
+        if (wildMultiplier2xIcon == null ||
+            wildMultiplier3xIcon == null ||
+            wildMultiplier4xIcon == null ||
+            wildMultiplier5xIcon == null)
+        {
+            Debug.LogWarning(
+                "[UIManager] Assign the 2x, 3x, 4x, and 5x sprites under Wild Multiplier Icons.");
+        }
+
         if (increaseBetButton == null)
         {
             Debug.LogError("[UIManager] Increase Bet Button is not assigned.");
@@ -212,6 +285,19 @@ public class UIManager : MonoBehaviour
             ResetHamburgerMenu();
         }
 
+        ResolveInfoPageReferences();
+        if (infoPagePanel == null ||
+            infoPageButton == null ||
+            infoPageBackButton == null)
+        {
+            Debug.LogError(
+                "[UIManager] Info Page panel, Info button, and Back button must be assigned.");
+        }
+        else
+        {
+            ResetInfoPage();
+        }
+
         if (gameManager == null)
         {
             Debug.LogError("[UIManager] GameManager is not assigned.");
@@ -235,6 +321,60 @@ public class UIManager : MonoBehaviour
         }
 
         return null;
+    }
+
+    private static TMP_Text FindTextByName(string textName)
+    {
+        TMP_Text[] sceneTexts = FindObjectsByType<TMP_Text>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        foreach (TMP_Text sceneText in sceneTexts)
+        {
+            if (sceneText != null &&
+                sceneText.gameObject.scene.IsValid() &&
+                string.Equals(
+                    sceneText.name,
+                    textName,
+                    System.StringComparison.OrdinalIgnoreCase))
+            {
+                return sceneText;
+            }
+        }
+
+        return null;
+    }
+
+    internal Sprite GetWildMultiplierIcon(int multiplier)
+    {
+        switch (multiplier)
+        {
+            case 2:
+                return wildMultiplier2xIcon;
+            case 3:
+                return wildMultiplier3xIcon;
+            case 4:
+                return wildMultiplier4xIcon;
+            case 5:
+                return wildMultiplier5xIcon;
+            default:
+                return null;
+        }
+    }
+
+    internal float GetWildMultiplierPopScale()
+    {
+        return Mathf.Max(1f, wildMultiplierPopScale);
+    }
+
+    internal float GetWildMultiplierShakeAngle()
+    {
+        return Mathf.Clamp(wildMultiplierShakeAngle, 0f, 2f);
+    }
+
+    internal int GetWildMultiplierShakesPerSymbolLoop()
+    {
+        return Mathf.Max(1, wildMultiplierShakesPerSymbolLoop);
     }
 
     private void OnEnable()
@@ -299,6 +439,10 @@ public class UIManager : MonoBehaviour
             hamburgerMenuButton.onClick.AddListener(OpenHamburgerMenu);
         if (hamburgerMenuDownButton != null)
             hamburgerMenuDownButton.onClick.AddListener(CloseHamburgerMenu);
+        if (infoPageButton != null)
+            infoPageButton.onClick.AddListener(OpenInfoPage);
+        if (infoPageBackButton != null)
+            infoPageBackButton.onClick.AddListener(CloseInfoPage);
 
         if (gameManager != null)
         {
@@ -306,6 +450,12 @@ public class UIManager : MonoBehaviour
             gameManager.SpinSpeedChanged += OnSpinSpeedChanged;
             gameManager.GamePresentationChanged += OnGamePresentationChanged;
             gameManager.AutoPlayChanged += OnAutoPlayChanged;
+        }
+
+        if (slotView != null)
+        {
+            slotView.WinLineAmountPresentationChanged +=
+                OnWinLineAmountPresentationChanged;
         }
 
         RefreshSpinControls();
@@ -381,6 +531,10 @@ public class UIManager : MonoBehaviour
             hamburgerMenuButton.onClick.RemoveListener(OpenHamburgerMenu);
         if (hamburgerMenuDownButton != null)
             hamburgerMenuDownButton.onClick.RemoveListener(CloseHamburgerMenu);
+        if (infoPageButton != null)
+            infoPageButton.onClick.RemoveListener(OpenInfoPage);
+        if (infoPageBackButton != null)
+            infoPageBackButton.onClick.RemoveListener(CloseInfoPage);
 
         if (gameManager != null)
         {
@@ -389,6 +543,16 @@ public class UIManager : MonoBehaviour
             gameManager.GamePresentationChanged -= OnGamePresentationChanged;
             gameManager.AutoPlayChanged -= OnAutoPlayChanged;
         }
+
+        if (slotView != null)
+        {
+            slotView.WinLineAmountPresentationChanged -=
+                OnWinLineAmountPresentationChanged;
+        }
+
+        StopTotalWinAnimation(true);
+        ResetWinLineAmountDisplay();
+        lastPresentedTotalWin = double.NaN;
     }
 
     private void OnSpinButtonClicked()
@@ -1014,6 +1178,72 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    private void ResolveInfoPageReferences()
+    {
+        if (infoPagePanel == null)
+        {
+            infoPagePanel = FindGameObjectByName("InfoPage");
+        }
+
+        if (infoPageButton == null)
+        {
+            infoPageButton = FindButtonByName("Info");
+        }
+
+        if (infoPageBackButton == null)
+        {
+            infoPageBackButton = FindButtonByName("BackButton");
+        }
+    }
+
+    private static GameObject FindGameObjectByName(string objectName)
+    {
+        Transform[] sceneTransforms = FindObjectsByType<Transform>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        foreach (Transform sceneTransform in sceneTransforms)
+        {
+            if (sceneTransform != null &&
+                sceneTransform.gameObject.scene.IsValid() &&
+                string.Equals(
+                    sceneTransform.name,
+                    objectName,
+                    System.StringComparison.Ordinal))
+            {
+                return sceneTransform.gameObject;
+            }
+        }
+
+        return null;
+    }
+
+    private void OpenInfoPage()
+    {
+        if (infoPagePanel == null)
+        {
+            Debug.LogError("[UIManager] Cannot open Info Page because its panel is not assigned.");
+            return;
+        }
+
+        CloseAutoPlayPanel();
+        ResetHamburgerMenu();
+        infoPagePanel.SetActive(true);
+    }
+
+    private void CloseInfoPage()
+    {
+        if (infoPagePanel != null)
+        {
+            infoPagePanel.SetActive(false);
+        }
+    }
+
+    private void ResetInfoPage()
+    {
+        CloseInfoPage();
+    }
+
     private void RefreshSpinControls()
     {
         bool isRoundActive = gameManager != null && gameManager.IsSpinRoundActive();
@@ -1121,6 +1351,222 @@ public class UIManager : MonoBehaviour
         {
             betAmountText.text = gameManager.GetDisplayedTotalBetAmount().ToString("0.00");
         }
+
+        RefreshTotalWinDisplay(winAmount);
+    }
+
+    private void ResolveTotalWinText()
+    {
+        if (totalWinAmountText == null)
+        {
+            totalWinAmountText = FindTextByName("TotalWin");
+        }
+    }
+
+    private void ResolveWinLineAmountReferences()
+    {
+        if (slotView == null)
+        {
+            slotView = FindFirstObjectByType<SlotView>(
+                FindObjectsInactive.Include);
+        }
+    }
+
+    private void RefreshTotalWinDisplay(double winAmount)
+    {
+        if (totalWinAmountText == null)
+        {
+            return;
+        }
+
+        if (winAmount <= 0)
+        {
+            lastPresentedTotalWin = 0;
+            ResetTotalWinDisplay();
+            return;
+        }
+
+        if (System.Math.Abs(lastPresentedTotalWin - winAmount) < 0.0001)
+        {
+            return;
+        }
+
+        lastPresentedTotalWin = winAmount;
+        PlayTotalWinAnimation(winAmount);
+    }
+
+    private void PlayTotalWinAnimation(double totalWin)
+    {
+        StopTotalWinAnimation(true);
+
+        totalWinAmountText.gameObject.SetActive(true);
+        totalWinAmountText.text = "0.00";
+        totalWinAmountText.fontSize = 0f;
+
+        double animatedWin = 0;
+        float animationDuration = Mathf.Max(0.01f, totalWinCountDuration);
+        totalWinCountTween = DOTween
+            .To(
+                () => animatedWin,
+                value =>
+                {
+                    animatedWin = value;
+                    totalWinAmountText.text = value.ToString("0.00");
+                },
+                totalWin,
+                animationDuration)
+            .SetEase(Ease.OutCubic)
+            .SetUpdate(true)
+            .OnComplete(() =>
+            {
+                totalWinCountTween = null;
+                totalWinAmountText.text = totalWin.ToString("0.00");
+            });
+
+        float peakFontSize = Mathf.Max(1f, totalWinPeakFontSize);
+        float finalFontSize = Mathf.Clamp(
+            totalWinFinalFontSize,
+            1f,
+            peakFontSize);
+        totalWinFontSizeSequence = DOTween.Sequence()
+            .SetEase(Ease.OutCubic)
+            .SetUpdate(true)
+            .Append(
+                DOTween.To(
+                    () => totalWinAmountText.fontSize,
+                    value => totalWinAmountText.fontSize = value,
+                    peakFontSize,
+                    animationDuration)
+                    .SetEase(Ease.OutCubic))
+            .Append(
+                DOTween.To(
+                    () => totalWinAmountText.fontSize,
+                    value => totalWinAmountText.fontSize = value,
+                    finalFontSize,
+                    Mathf.Max(0.01f, totalWinSettleDuration))
+                    .SetEase(Ease.OutCubic))
+            .OnComplete(() =>
+            {
+                totalWinFontSizeSequence = null;
+                totalWinAmountText.fontSize = finalFontSize;
+            });
+    }
+
+    private void ResetTotalWinDisplay()
+    {
+        StopTotalWinAnimation(true);
+
+        if (totalWinAmountText != null)
+        {
+            totalWinAmountText.text = "0.00";
+            totalWinAmountText.gameObject.SetActive(false);
+        }
+    }
+
+    private void StopTotalWinAnimation(bool restoreFontSize)
+    {
+        totalWinCountTween?.Kill();
+        totalWinCountTween = null;
+
+        totalWinFontSizeSequence?.Kill();
+        totalWinFontSizeSequence = null;
+
+        if (restoreFontSize && totalWinAmountText != null)
+        {
+            totalWinAmountText.fontSize =
+                Mathf.Max(1f, totalWinFinalFontSize);
+        }
+    }
+
+    private void OnWinLineAmountPresentationChanged(int row, double winAmount)
+    {
+        ResetWinLineAmountDisplay();
+
+        if (row < 0 || winAmount <= 0)
+        {
+            return;
+        }
+
+        TMP_Text rowText = GetWinLineAmountText(row);
+        if (rowText == null)
+        {
+            return;
+        }
+
+        // Individual-line amounts replace the combined TotalWin presentation.
+        StopTotalWinAnimation(true);
+        if (totalWinAmountText != null)
+        {
+            totalWinAmountText.gameObject.SetActive(false);
+        }
+
+        rowText.text = winAmount.ToString("0.00");
+        rowText.fontSize = 0f;
+        rowText.gameObject.SetActive(true);
+
+        float peakFontSize = Mathf.Max(1f, totalWinPeakFontSize);
+        float finalFontSize = Mathf.Clamp(
+            totalWinFinalFontSize,
+            1f,
+            peakFontSize);
+
+        winLineAmountFontSizeSequence = DOTween.Sequence()
+            .SetUpdate(true)
+            .Append(
+                DOTween.To(
+                    () => rowText.fontSize,
+                    value => rowText.fontSize = value,
+                    peakFontSize,
+                    Mathf.Max(0.01f, totalWinCountDuration))
+                    .SetEase(Ease.OutCubic))
+            .Append(
+                DOTween.To(
+                    () => rowText.fontSize,
+                    value => rowText.fontSize = value,
+                    finalFontSize,
+                    Mathf.Max(0.01f, totalWinSettleDuration))
+                    .SetEase(Ease.OutCubic))
+            .OnComplete(() =>
+            {
+                winLineAmountFontSizeSequence = null;
+                rowText.fontSize = finalFontSize;
+            });
+    }
+
+    private TMP_Text GetWinLineAmountText(int row)
+    {
+        switch (row)
+        {
+            case 0:
+                return topWinLineAmountText;
+            case 1:
+                return middleWinLineAmountText;
+            case 2:
+                return bottomWinLineAmountText;
+            default:
+                return null;
+        }
+    }
+
+    private void ResetWinLineAmountDisplay()
+    {
+        winLineAmountFontSizeSequence?.Kill();
+        winLineAmountFontSizeSequence = null;
+
+        HideWinLineAmountText(topWinLineAmountText);
+        HideWinLineAmountText(middleWinLineAmountText);
+        HideWinLineAmountText(bottomWinLineAmountText);
+    }
+
+    private void HideWinLineAmountText(TMP_Text rowText)
+    {
+        if (rowText == null)
+        {
+            return;
+        }
+
+        rowText.fontSize = Mathf.Max(1f, totalWinFinalFontSize);
+        rowText.gameObject.SetActive(false);
     }
 
     private void RefreshBetControls()

@@ -9,6 +9,8 @@ public class SlotView : MonoBehaviour
     [Header("References")]
     [SerializeField] private GameManager gameManager;
     [SerializeField] private SlotSymbolAnimationManager symbolAnimationManager;
+    [Tooltip("Provides the configured 2x, 3x, 4x, and 5x Wild multiplier icons.")]
+    [SerializeField] private UIManager uiManager;
 
     [Header("St. Patrick's Gold Symbol Sprites")]
     [SerializeField] private Sprite spriteAce;                // ID: 0
@@ -35,6 +37,7 @@ public class SlotView : MonoBehaviour
     [SerializeField] private List<ReelImages> reelImagesList;
 
     [Header("Spin Settings")]
+    [Tooltip("Height of one symbol used only to calculate reel movement. Vertical Layout Group spacing is added automatically; symbol sizes are never changed.")]
     [SerializeField] private float symbolHeight = 205f;
     [Tooltip("Base duration in seconds for a reel to move by one symbol height.")]
     [SerializeField] private float spinSpeed = 0.05f;
@@ -59,41 +62,48 @@ public class SlotView : MonoBehaviour
     [SerializeField] private int minSpinCyclesBeforeStop = 3;
 
     [Header("Win Animation Settings")]
-    [SerializeField] private float winSymbolLoopDuration = 1.2f;
-    [SerializeField, Range(1, 4)] private int winSymbolCyclesPerStage = 3;
-    [SerializeField] private Color winFrameCoreColor =
-        new Color(0.55f, 1f, 0.18f, 1f);
-    [SerializeField] private Color winFrameInnerGlowColor =
-        new Color(0.05f, 1f, 0.05f, 0.5f);
-    [SerializeField] private Color winFrameOuterGlowColor =
-        new Color(0f, 1f, 0f, 0.18f);
-    [SerializeField, Min(1f)] private float winFrameCoreThickness = 3f;
-    [SerializeField, Min(1f)] private float winFrameInnerGlowThickness = 8f;
-    [SerializeField, Min(1f)] private float winFrameOuterGlowThickness = 14f;
-    [SerializeField, Min(0f)] private float winFrameInset = 2f;
-
-    [Header("Reel Layout Settings")]
-    [SerializeField] private float defaultSpacing = 0f;
-
-
-
-    private float middlePosition = 0f;
-    private float cycleDistance;
-
+    [Tooltip("Duration of one complete symbol loop at normal 1x playback speed.")]
+    [SerializeField] private float winSymbolLoopDuration = 1.6f;
+    [Tooltip("Playback-speed multiplier applied to every winning symbol except Wild.")]
+    [SerializeField, Min(0.01f)] private float nonWildWinAnimationSpeedMultiplier = 1f;
+    [Tooltip("Playback-speed multiplier applied to Wild winning symbols.")]
+    [SerializeField, Min(0.01f)] private float wildWinAnimationSpeedMultiplier = 1f;
+    [Tooltip("The next win stage starts after this many complete Wild animation loops.")]
+    [UnityEngine.Serialization.FormerlySerializedAs("winSymbolCyclesPerStage")]
+    [SerializeField, Min(1)] private int wildWinLoopsBeforeNextStage = 2;
 
     private List<Tween> spinTweens = new List<Tween>();
     private List<int> reelCycleCount = new List<int>();
     private Coroutine winAnimationCoroutine;
     private Coroutine stopSpinCoroutine;
     private VerticalLayoutGroup[] reelLayoutGroups;
-    private readonly Dictionary<Image, WinFrameVisual> winFrames =
-        new Dictionary<Image, WinFrameVisual>();
+    private Vector3[] reelRestingLocalPositions;
+    private readonly Dictionary<Image, GameObject> winIndicators =
+        new Dictionary<Image, GameObject>();
+    private readonly Dictionary<Image, Image> wildMultiplierIndicators =
+        new Dictionary<Image, Image>();
+    private readonly Dictionary<Image, Coroutine> wildMultiplierAnimations =
+        new Dictionary<Image, Coroutine>();
+    private readonly Dictionary<Image, WildMultiplierTransformState>
+        wildMultiplierTransformStates =
+            new Dictionary<Image, WildMultiplierTransformState>();
 
-    private sealed class WinFrameVisual
+    internal event System.Action<int, double> WinLineAmountPresentationChanged;
+
+    private sealed class WinningLinePresentation
     {
-        public GameObject Root;
-        public RectTransform RectTransform;
-        public CanvasGroup CanvasGroup;
+        public HashSet<int> Positions;
+        public int DisplayRow;
+        public double WinAmount;
+        public int WildMultiplier;
+        public List<WildDetail> WildDetails;
+    }
+
+    private sealed class WildMultiplierTransformState
+    {
+        public Vector2 AnchoredPosition;
+        public Quaternion LocalRotation;
+        public Vector3 LocalScale;
     }
 
 
@@ -106,6 +116,12 @@ public class SlotView : MonoBehaviour
 
     private void Start()
     {
+        if (uiManager == null)
+        {
+            uiManager = FindFirstObjectByType<UIManager>(
+                FindObjectsInactive.Include);
+        }
+
         BuildSymbolSpriteArray();
         InitializeReels();
     }
@@ -139,10 +155,6 @@ public class SlotView : MonoBehaviour
 
     private void InitializeReels()
     {
-        cycleDistance = symbolHeight;
-
-        middlePosition = 0f;
-
         currentDisplayMatrix = new List<List<int>>();
         int defaultCols = StPatricksGoldDefinition.ReelCount;
         int defaultRows = StPatricksGoldDefinition.RowCount;
@@ -160,15 +172,19 @@ public class SlotView : MonoBehaviour
 
         // Cache VerticalLayoutGroup references from reel containers
         reelLayoutGroups = new VerticalLayoutGroup[reelTransforms.Length];
+        reelRestingLocalPositions = new Vector3[reelTransforms.Length];
         for (int i = 0; i < reelTransforms.Length; i++)
         {
             if (reelTransforms[i] != null)
             {
                 reelLayoutGroups[i] = reelTransforms[i].GetComponent<VerticalLayoutGroup>();
+                reelRestingLocalPositions[i] = reelTransforms[i].localPosition;
             }
         }
 
         HideWinAnimationImages();
+        HideWinIndicators();
+        HideWildMultiplierIndicators();
     }
 
     private void HideWinAnimationImages()
@@ -200,6 +216,50 @@ public class SlotView : MonoBehaviour
         }
     }
 
+    private void HideWinIndicators()
+    {
+        if (reelImagesList == null)
+        {
+            return;
+        }
+
+        for (int column = 0; column < reelImagesList.Count; column++)
+        {
+            List<Image> symbolImages = reelImagesList[column]?.images;
+            if (symbolImages == null)
+            {
+                continue;
+            }
+
+            for (int imageIndex = 0; imageIndex < symbolImages.Count; imageIndex++)
+            {
+                SetWinIndicatorActive(symbolImages[imageIndex], false);
+            }
+        }
+    }
+
+    private void HideWildMultiplierIndicators()
+    {
+        if (reelImagesList == null)
+        {
+            return;
+        }
+
+        for (int column = 0; column < reelImagesList.Count; column++)
+        {
+            List<Image> symbolImages = reelImagesList[column]?.images;
+            if (symbolImages == null)
+            {
+                continue;
+            }
+
+            for (int imageIndex = 0; imageIndex < symbolImages.Count; imageIndex++)
+            {
+                HideWildMultiplierIndicator(symbolImages[imageIndex]);
+            }
+        }
+    }
+
     internal void SetInitialMatrix(List<List<int>> matrix)
     {
         if (matrix == null || matrix.Count == 0) return;
@@ -215,23 +275,8 @@ public class SlotView : MonoBehaviour
 
         for (int col = 0; col < cols; col++)
         {
-            SetReelSymbols(col, matrix[col], true);
-
-            // Override initial Y position to 0
-            if (col < reelTransforms.Length && reelTransforms[col] != null)
-            {
-                reelTransforms[col].localPosition = new Vector3(
-                    reelTransforms[col].localPosition.x,
-                    0f,
-                    0f
-                );
-            }
-
-            // Set layout group spacing to 0
-            if (reelLayoutGroups != null && col < reelLayoutGroups.Length && reelLayoutGroups[col] != null)
-            {
-                reelLayoutGroups[col].spacing = 0f;
-            }
+            SetReelSymbols(col, matrix[col]);
+            RestoreReelPosition(col);
 
             // Hide buffer images (indices 0, 1, 5, 6), and set visible images (2, 3, 4) to alpha 1
             SetImageAlpha(col, 0, 0f);
@@ -249,7 +294,7 @@ public class SlotView : MonoBehaviour
 
     #region Symbol Display
 
-    private void SetReelSymbols(int columnIndex, List<int> visibleSymbolIds, bool isInitial = false)
+    private void SetReelSymbols(int columnIndex, List<int> visibleSymbolIds)
     {
         if (columnIndex >= reelImagesList.Count)
         {
@@ -272,6 +317,11 @@ public class SlotView : MonoBehaviour
         {
             Debug.LogError($"SetReelSymbols: Reel {columnIndex} has invalid image count {reel.images?.Count}, expected 7");
             return;
+        }
+
+        for (int imageIndex = 0; imageIndex < reel.images.Count; imageIndex++)
+        {
+            HideWildMultiplierIndicator(reel.images[imageIndex]);
         }
 
         int visibleRows = visibleSymbolIds.Count;
@@ -299,14 +349,6 @@ public class SlotView : MonoBehaviour
             reel.images[imageIndex].sprite = GetSymbolSprite(GetRandomSpinSymbolId(symbolCount));
         }
 
-        if (isInitial && reelTransforms[columnIndex] != null)
-        {
-            reelTransforms[columnIndex].localPosition = new Vector3(
-                reelTransforms[columnIndex].localPosition.x,
-                middlePosition,
-                0
-            );
-        }
     }
 
     private Sprite GetSymbolSprite(int symbolId)
@@ -394,12 +436,9 @@ public class SlotView : MonoBehaviour
         if (!isSpinning) return;
 
         Transform slotTransform = reelTransforms[columnIndex];
-
-        slotTransform.localPosition = new Vector3(
-            slotTransform.localPosition.x,
-            middlePosition,
-            0f
-        );
+        Vector3 restingPosition = GetReelRestingPosition(columnIndex);
+        float cycleDistance = GetReelCycleDistance(columnIndex);
+        slotTransform.localPosition = restingPosition;
 
         const float defaultSpeedMultiplier = 1f;
         float configuredSpeedMultiplier = activeSpinSpeed != SpinSpeed.Normal
@@ -413,7 +452,7 @@ public class SlotView : MonoBehaviour
         Sequence cycleSequence = DOTween.Sequence();
 
         cycleSequence.Append(
-            slotTransform.DOLocalMoveY(middlePosition - cycleDistance, symbolCycleDuration)
+            slotTransform.DOLocalMoveY(restingPosition.y - cycleDistance, symbolCycleDuration)
                 .SetEase(Ease.Linear)
         );
 
@@ -422,11 +461,7 @@ public class SlotView : MonoBehaviour
             {
                 CycleReelSymbols(columnIndex);
 
-                slotTransform.localPosition = new Vector3(
-                    slotTransform.localPosition.x,
-                    middlePosition,
-                    0f
-                );
+                slotTransform.localPosition = restingPosition;
 
                 if (columnIndex < reelCycleCount.Count)
                 {
@@ -491,16 +526,9 @@ public class SlotView : MonoBehaviour
             int cols = resultMatrix.Count;
             for (int col = 0; col < cols; col++)
             {
-                SetReelSymbols(col, resultMatrix[col], false);
+                SetReelSymbols(col, resultMatrix[col]);
                 ApplyStoppedReelLayout(col);
-                if (col < reelTransforms.Length && reelTransforms[col] != null)
-                {
-                    reelTransforms[col].localPosition = new Vector3(
-                        reelTransforms[col].localPosition.x,
-                        middlePosition,
-                        0
-                    );
-                }
+                RestoreReelPosition(col);
             }
             
             onComplete?.Invoke();
@@ -578,6 +606,8 @@ public class SlotView : MonoBehaviour
         }
 
         Transform slotTransform = reelTransforms[columnIndex];
+        Vector3 restingPosition = GetReelRestingPosition(columnIndex);
+        float cycleDistance = GetReelCycleDistance(columnIndex);
         float configuredSpeedMultiplier = activeSpinSpeed != SpinSpeed.Normal
             ? fastSpinReelSpeedMultiplier
             : reelSpeedMultiplier;
@@ -588,24 +618,20 @@ public class SlotView : MonoBehaviour
         // symbols. The bottom result symbol enters through the hidden top buffer.
         float currentY = slotTransform.localPosition.y;
         float progress = Mathf.Clamp01(
-            (middlePosition - currentY) / Mathf.Max(0.01f, cycleDistance)
+            (restingPosition.y - currentY) / cycleDistance
         );
         float remainingDuration = cycleDuration * (1f - progress);
         if (remainingDuration > 0.001f)
         {
             Tween finishCurrentCycle = slotTransform
-                .DOLocalMoveY(middlePosition - cycleDistance, remainingDuration)
+                .DOLocalMoveY(restingPosition.y - cycleDistance, remainingDuration)
                 .SetEase(Ease.Linear);
             spinTweens[columnIndex] = finishCurrentCycle;
             yield return finishCurrentCycle.WaitForCompletion();
         }
 
         CycleReelSymbols(columnIndex, targetSymbols[targetSymbols.Count - 1]);
-        slotTransform.localPosition = new Vector3(
-            slotTransform.localPosition.x,
-            middlePosition,
-            0f
-        );
+        slotTransform.localPosition = restingPosition;
 
         // Feed the remaining result symbols from bottom to top, then add two
         // hidden fillers. The supplied result reaches indices 2, 3 and 4 through
@@ -622,7 +648,7 @@ public class SlotView : MonoBehaviour
                     : cycleDuration * Mathf.Max(2f, finalStopDurationMultiplier))
                 : cycleDuration;
             Ease movementEase = isFinalCycle ? Ease.OutCubic : Ease.Linear;
-            float movementTargetY = middlePosition - cycleDistance;
+            float movementTargetY = restingPosition.y - cycleDistance;
             if (isFinalCycle)
             {
                 movementTargetY -= bounceDistance;
@@ -638,9 +664,11 @@ public class SlotView : MonoBehaviour
             int forcedSymbolId = targetIndex >= 0 ? targetSymbols[targetIndex] : -1;
             CycleReelSymbols(columnIndex, forcedSymbolId);
             slotTransform.localPosition = new Vector3(
-                slotTransform.localPosition.x,
-                isFinalCycle ? middlePosition - bounceDistance : middlePosition,
-                0f
+                restingPosition.x,
+                isFinalCycle
+                    ? restingPosition.y - bounceDistance
+                    : restingPosition.y,
+                restingPosition.z
             );
         }
 
@@ -655,6 +683,7 @@ public class SlotView : MonoBehaviour
     private Sequence CreateStopPop(int columnIndex, bool isQuickStop)
     {
         Transform reelTransform = reelTransforms[columnIndex];
+        Vector3 restingPosition = GetReelRestingPosition(columnIndex);
         Sequence stopPop = DOTween.Sequence();
         float speedFactor = isQuickStop ? 0.7f : 1f;
         float returnDuration = Mathf.Max(0.01f, stopBounceReturnDuration * speedFactor);
@@ -663,7 +692,7 @@ public class SlotView : MonoBehaviour
         // only the rebound, so the reel never stops and then dips a second time.
         stopPop.Append(
             reelTransform
-                .DOLocalMoveY(middlePosition, returnDuration)
+                .DOLocalMoveY(restingPosition.y, returnDuration)
                 .SetEase(Ease.OutBounce)
         );
 
@@ -696,14 +725,9 @@ public class SlotView : MonoBehaviour
 
         for (int column = 0; column < resultMatrix.Count; column++)
         {
-            SetReelSymbols(column, resultMatrix[column], false);
+            SetReelSymbols(column, resultMatrix[column]);
             ApplyStoppedReelLayout(column);
-
-            reelTransforms[column].localPosition = new Vector3(
-                reelTransforms[column].localPosition.x,
-                middlePosition,
-                0f
-            );
+            RestoreReelPosition(column);
         }
 
         onComplete?.Invoke();
@@ -719,13 +743,9 @@ public class SlotView : MonoBehaviour
             {
                 if (col < reelTransforms.Length)
                 {
-                    SetReelSymbols(col, resultMatrix[col], false);
+                    SetReelSymbols(col, resultMatrix[col]);
                     ApplyStoppedReelLayout(col);
-                    reelTransforms[col].localPosition = new Vector3(
-                        reelTransforms[col].localPosition.x,
-                        middlePosition,
-                        0
-                    );
+                    RestoreReelPosition(col);
                 }
             }
             
@@ -805,13 +825,17 @@ public class SlotView : MonoBehaviour
     {
         bool isAuto = (gameManager != null && gameManager.isAutoPlaying);
         float cycleDuration = Mathf.Max(0.1f, winSymbolLoopDuration);
+        float wildLoopDuration =
+            cycleDuration /
+            Mathf.Max(0.01f, wildWinAnimationSpeedMultiplier);
         float stageDuration =
-            cycleDuration * Mathf.Max(1, winSymbolCyclesPerStage);
+            wildLoopDuration * Mathf.Max(1, wildWinLoopsBeforeNextStage);
 
         // Celebrate the complete result first, then present each returned line
         // separately so overlapping wins are still easy to read.
         HashSet<int> allWinningPositions = new HashSet<int>();
-        List<HashSet<int>> individualWinningLines = new List<HashSet<int>>();
+        List<WinningLinePresentation> individualWinningLines =
+            new List<WinningLinePresentation>();
         foreach (WinLine winLine in winLines)
         {
             if (winLine?.positions == null) continue;
@@ -819,7 +843,15 @@ public class SlotView : MonoBehaviour
             HashSet<int> linePositions = new HashSet<int>(winLine.positions);
             if (linePositions.Count == 0) continue;
 
-            individualWinningLines.Add(linePositions);
+            individualWinningLines.Add(new WinningLinePresentation
+            {
+                Positions = linePositions,
+                DisplayRow = GetPreferredCenterColumnRow(linePositions),
+                WinAmount = winLine.winAmount,
+                WildMultiplier = winLine.wildMultiplier,
+                WildDetails = winLine.wildDetails
+            });
+
             foreach (int flatIndex in linePositions)
             {
                 allWinningPositions.Add(flatIndex);
@@ -833,6 +865,9 @@ public class SlotView : MonoBehaviour
             yield break;
         }
 
+        // The separate TotalWin text remains visible for the complete-result
+        // celebration. Per-row amounts begin with the individual lines below.
+        WinLineAmountPresentationChanged?.Invoke(-1, 0);
         AnimateWinPositions(allWinningPositions, cycleDuration);
         yield return new WaitForSecondsRealtime(stageDuration);
         StopWinAnimations(false);
@@ -842,8 +877,13 @@ public class SlotView : MonoBehaviour
             // Autoplay shows every individual line once, then advances normally.
             for (int lineIndex = 0; lineIndex < individualWinningLines.Count; lineIndex++)
             {
+                WinningLinePresentation line = individualWinningLines[lineIndex];
+                WinLineAmountPresentationChanged?.Invoke(
+                    line.DisplayRow,
+                    line.WinAmount);
+                ShowWildMultiplierIcons(line, cycleDuration);
                 AnimateWinPositions(
-                    individualWinningLines[lineIndex],
+                    line.Positions,
                     cycleDuration);
                 yield return new WaitForSecondsRealtime(stageDuration);
                 StopWinAnimations(false);
@@ -861,13 +901,68 @@ public class SlotView : MonoBehaviour
         {
             for (int lineIndex = 0; lineIndex < individualWinningLines.Count; lineIndex++)
             {
+                WinningLinePresentation line = individualWinningLines[lineIndex];
+                WinLineAmountPresentationChanged?.Invoke(
+                    line.DisplayRow,
+                    line.WinAmount);
+                ShowWildMultiplierIcons(line, cycleDuration);
                 AnimateWinPositions(
-                    individualWinningLines[lineIndex],
+                    line.Positions,
                     cycleDuration);
                 yield return new WaitForSecondsRealtime(stageDuration);
                 StopWinAnimations(false);
             }
         }
+    }
+
+    private int GetPreferredCenterColumnRow(IEnumerable<int> flatPositions)
+    {
+        int cols = gameManager?.stPatricksGoldConfig != null
+            ? gameManager.stPatricksGoldConfig.reelCount
+            : StPatricksGoldDefinition.ReelCount;
+        int rows = gameManager?.stPatricksGoldConfig != null
+            ? gameManager.stPatricksGoldConfig.rowCount
+            : StPatricksGoldDefinition.RowCount;
+
+        if (cols <= 0 || rows <= 0 || flatPositions == null)
+        {
+            return -1;
+        }
+
+        int centerColumn = cols / 2;
+        bool hasTop = false;
+        bool hasMiddle = false;
+        bool hasBottom = false;
+
+        foreach (int flatIndex in flatPositions)
+        {
+            int row = flatIndex / cols;
+            int column = flatIndex % cols;
+            if (column != centerColumn || row < 0 || row >= rows)
+            {
+                continue;
+            }
+
+            if (row == 0)
+            {
+                hasTop = true;
+            }
+            else if (row == 1)
+            {
+                hasMiddle = true;
+            }
+            else if (row == 2)
+            {
+                hasBottom = true;
+            }
+        }
+
+        // The center text wins whenever the middle-center cell is part of the
+        // line, including top+middle and middle+bottom combinations.
+        if (hasMiddle) return 1;
+        if (hasTop) return 0;
+        if (hasBottom) return 2;
+        return -1;
     }
 
     private void AnimateWinPositions(
@@ -939,6 +1034,9 @@ public class SlotView : MonoBehaviour
             StopCoroutine(winAnimationCoroutine);
             winAnimationCoroutine = null;
         }
+
+        WinLineAmountPresentationChanged?.Invoke(-1, 0);
+
         // Restore all symbol images after win animations
         for (int col = 0; col < reelImagesList.Count; col++)
         {
@@ -1042,7 +1140,7 @@ public class SlotView : MonoBehaviour
             return;
         }
 
-        PlayWinFrame(symbolImage);
+        SetWinIndicatorActive(symbolImage, true);
 
         if (symbolAnimationManager == null)
         {
@@ -1058,11 +1156,18 @@ public class SlotView : MonoBehaviour
         }
 
         int symbolId = GetSymbolId(symbolImage.sprite);
+        float speedMultiplier =
+            symbolId == StPatricksGoldSymbolIds.Wild
+                ? wildWinAnimationSpeedMultiplier
+                : nonWildWinAnimationSpeedMultiplier;
+        float symbolLoopDuration =
+            animationDuration / Mathf.Max(0.01f, speedMultiplier);
+
         symbolAnimationManager.PlayAnimation(
             symbolId,
             symbolImage,
             animationImage,
-            animationDuration);
+            symbolLoopDuration);
     }
 
     private void ResetSymbolAnimation(int column, int imageIndex)
@@ -1073,7 +1178,8 @@ public class SlotView : MonoBehaviour
             return;
         }
 
-        StopWinFrame(symbolImage);
+        SetWinIndicatorActive(symbolImage, false);
+        HideWildMultiplierIndicator(symbolImage);
 
         Image animationImage = GetSymbolWinAnimationImage(column, imageIndex);
         if (symbolAnimationManager != null)
@@ -1095,188 +1201,394 @@ public class SlotView : MonoBehaviour
         symbolImage.enabled = true;
     }
 
-    private void PlayWinFrame(Image symbolImage)
+    private void SetWinIndicatorActive(Image symbolImage, bool isActive)
     {
-        WinFrameVisual frame = GetOrCreateWinFrame(symbolImage);
-        if (frame == null)
+        GameObject winIndicator = GetWinIndicator(symbolImage);
+        if (winIndicator != null)
         {
-            return;
+            winIndicator.SetActive(isActive);
         }
-
-        frame.Root.SetActive(true);
-        frame.RectTransform.SetAsLastSibling();
-        frame.RectTransform.localScale = Vector3.one;
-        frame.CanvasGroup.alpha = 1f;
     }
 
-    private void StopWinFrame(Image symbolImage)
-    {
-        if (symbolImage == null ||
-            !winFrames.TryGetValue(symbolImage, out WinFrameVisual frame))
-        {
-            return;
-        }
-
-        frame.RectTransform.localScale = Vector3.one;
-        frame.CanvasGroup.alpha = 0f;
-        frame.Root.SetActive(false);
-    }
-
-    private WinFrameVisual GetOrCreateWinFrame(Image symbolImage)
+    private GameObject GetWinIndicator(Image symbolImage)
     {
         if (symbolImage == null)
         {
             return null;
         }
 
-        if (winFrames.TryGetValue(symbolImage, out WinFrameVisual existingFrame))
+        if (winIndicators.TryGetValue(
+                symbolImage,
+                out GameObject cachedIndicator) &&
+            cachedIndicator != null)
         {
-            return existingFrame;
+            return cachedIndicator;
         }
 
-        GameObject frameRoot = new GameObject(
-            "Animated Win Frame",
-            typeof(RectTransform),
-            typeof(CanvasGroup));
-        frameRoot.layer = symbolImage.gameObject.layer;
+        Transform symbolTransform = symbolImage.transform;
+        Transform winTransform = symbolTransform.Find("Win");
 
-        RectTransform frameRect = frameRoot.GetComponent<RectTransform>();
-        frameRect.SetParent(symbolImage.rectTransform, false);
-        frameRect.anchorMin = Vector2.zero;
-        frameRect.anchorMax = Vector2.one;
-        frameRect.offsetMin = Vector2.one * winFrameInset;
-        frameRect.offsetMax = Vector2.one * -winFrameInset;
-        frameRect.pivot = new Vector2(0.5f, 0.5f);
-        frameRect.localScale = Vector3.one;
-        frameRect.SetAsLastSibling();
-
-        CanvasGroup canvasGroup = frameRoot.GetComponent<CanvasGroup>();
-        canvasGroup.alpha = 0f;
-        canvasGroup.interactable = false;
-        canvasGroup.blocksRaycasts = false;
-
-        CreateWinFrameLayer(
-            frameRect,
-            "Outer Glow",
-            winFrameOuterGlowThickness,
-            winFrameOuterGlowColor);
-        CreateWinFrameLayer(
-            frameRect,
-            "Inner Glow",
-            winFrameInnerGlowThickness,
-            winFrameInnerGlowColor);
-        CreateWinFrameLayer(
-            frameRect,
-            "Neon Core",
-            winFrameCoreThickness,
-            winFrameCoreColor);
-
-        WinFrameVisual frame = new WinFrameVisual
+        if (winTransform == null)
         {
-            Root = frameRoot,
-            RectTransform = frameRect,
-            CanvasGroup = canvasGroup
+            Transform[] descendants =
+                symbolTransform.GetComponentsInChildren<Transform>(true);
+            for (int index = 0; index < descendants.Length; index++)
+            {
+                Transform descendant = descendants[index];
+                if (descendant != null &&
+                    descendant != symbolTransform &&
+                    string.Equals(
+                        descendant.name,
+                        "Win",
+                        System.StringComparison.OrdinalIgnoreCase))
+                {
+                    winTransform = descendant;
+                    break;
+                }
+            }
+        }
+
+        GameObject winIndicator =
+            winTransform != null ? winTransform.gameObject : null;
+        if (winIndicator != null)
+        {
+            winIndicators[symbolImage] = winIndicator;
+        }
+
+        return winIndicator;
+    }
+
+    private void ShowWildMultiplierIcons(
+        WinningLinePresentation line,
+        float symbolLoopDuration)
+    {
+        if (line == null || uiManager == null)
+        {
+            return;
+        }
+
+        int cols = gameManager?.stPatricksGoldConfig != null
+            ? gameManager.stPatricksGoldConfig.reelCount
+            : StPatricksGoldDefinition.ReelCount;
+        int rows = gameManager?.stPatricksGoldConfig != null
+            ? gameManager.stPatricksGoldConfig.rowCount
+            : StPatricksGoldDefinition.RowCount;
+        HashSet<int> presentedPositions = new HashSet<int>();
+
+        if (line.WildDetails != null)
+        {
+            for (int index = 0; index < line.WildDetails.Count; index++)
+            {
+                WildDetail detail = line.WildDetails[index];
+                if (detail == null ||
+                    detail.col < 0 ||
+                    detail.col >= cols ||
+                    detail.row < 0 ||
+                    detail.row >= rows ||
+                    GetSymbolIdAt(detail.col, detail.row) !=
+                        StPatricksGoldSymbolIds.Wild ||
+                    uiManager.GetWildMultiplierIcon(detail.multiplier) == null)
+                {
+                    continue;
+                }
+
+                int flatIndex = detail.row * cols + detail.col;
+                if (!presentedPositions.Add(flatIndex))
+                {
+                    continue;
+                }
+
+                ShowWildMultiplierIcon(
+                    detail.col,
+                    detail.row,
+                    detail.multiplier,
+                    symbolLoopDuration);
+            }
+        }
+
+        if (presentedPositions.Count > 0 ||
+            line.WildMultiplier <= 1 ||
+            line.Positions == null)
+        {
+            return;
+        }
+
+        // Older responses may omit wildDetails. The aggregate multiplier is
+        // unambiguous only when the line contains one Wild.
+        int fallbackColumn = -1;
+        int fallbackRow = -1;
+        int wildCount = 0;
+        foreach (int flatIndex in line.Positions)
+        {
+            int row = flatIndex / cols;
+            int column = flatIndex % cols;
+            if (column < 0 ||
+                column >= cols ||
+                row < 0 ||
+                row >= rows ||
+                GetSymbolIdAt(column, row) != StPatricksGoldSymbolIds.Wild)
+            {
+                continue;
+            }
+
+            fallbackColumn = column;
+            fallbackRow = row;
+            wildCount++;
+        }
+
+        if (wildCount == 1 &&
+            uiManager.GetWildMultiplierIcon(line.WildMultiplier) != null)
+        {
+            ShowWildMultiplierIcon(
+                fallbackColumn,
+                fallbackRow,
+                line.WildMultiplier,
+                symbolLoopDuration);
+        }
+    }
+
+    private void ShowWildMultiplierIcon(
+        int column,
+        int row,
+        int multiplier,
+        float symbolLoopDuration)
+    {
+        int imageIndex = 2 + GetVisualRow(column, row);
+        Image symbolImage = GetSymbolImage(column, imageIndex);
+        Image multiplierImage = GetWildMultiplierIndicator(symbolImage);
+        Sprite finalSprite = uiManager != null
+            ? uiManager.GetWildMultiplierIcon(multiplier)
+            : null;
+
+        if (multiplierImage == null || finalSprite == null)
+        {
+            return;
+        }
+
+        HideWildMultiplierIndicator(symbolImage);
+        multiplierImage.sprite = finalSprite;
+        Color color = multiplierImage.color;
+        multiplierImage.color = new Color(
+            color.r,
+            color.g,
+            color.b,
+            1f);
+        multiplierImage.enabled = true;
+        multiplierImage.gameObject.SetActive(true);
+
+        Image wildAnimationImage =
+            GetSymbolWinAnimationImage(column, imageIndex);
+        Coroutine animation = StartCoroutine(
+            AnimateWildMultiplierIcon(
+                multiplierImage,
+                wildAnimationImage,
+                symbolLoopDuration));
+        wildMultiplierAnimations[multiplierImage] = animation;
+    }
+
+    private IEnumerator AnimateWildMultiplierIcon(
+        Image multiplierImage,
+        Image wildAnimationImage,
+        float symbolLoopDuration)
+    {
+        if (multiplierImage == null)
+        {
+            yield break;
+        }
+
+        WildMultiplierTransformState transformState =
+            GetWildMultiplierTransformState(multiplierImage);
+        RectTransform multiplierRect = multiplierImage.rectTransform;
+        if (transformState == null || multiplierRect == null)
+        {
+            yield break;
+        }
+
+        float popScale = uiManager != null
+            ? uiManager.GetWildMultiplierPopScale()
+            : 1.1f;
+        float shakeAngle = uiManager != null
+            ? uiManager.GetWildMultiplierShakeAngle()
+            : 2f;
+        int shakesPerSymbolLoop = uiManager != null
+            ? uiManager.GetWildMultiplierShakesPerSymbolLoop()
+            : 4;
+        float loopDuration = Mathf.Max(0.01f, symbolLoopDuration);
+
+        // The multiplier always stays at its Inspector-authored position.
+        multiplierRect.anchoredPosition = transformState.AnchoredPosition;
+        multiplierRect.localRotation = transformState.LocalRotation;
+        multiplierRect.localScale = transformState.LocalScale;
+
+        float elapsed = 0f;
+
+        while (multiplierImage != null &&
+               multiplierImage.gameObject.activeInHierarchy)
+        {
+            float loopProgress = (elapsed % loopDuration) / loopDuration;
+            float shakePhase =
+                loopProgress *
+                Mathf.PI *
+                2f *
+                shakesPerSymbolLoop;
+            float shakeRotation = Mathf.Sin(shakePhase) * shakeAngle;
+            multiplierRect.localRotation =
+                transformState.LocalRotation *
+                Quaternion.Euler(0f, 0f, shakeRotation);
+
+            // Follow the visual grow/shrink of the exact Wild animation frame
+            // currently displayed by SlotSymbolAnimationManager.
+            float wildVisualSize01 = 0f;
+            if (symbolAnimationManager != null)
+            {
+                symbolAnimationManager.TryGetAnimationVisualSize(
+                    wildAnimationImage,
+                    out wildVisualSize01);
+            }
+
+            float scaleMultiplier =
+                Mathf.Lerp(1f, popScale, wildVisualSize01);
+            multiplierRect.localScale = new Vector3(
+                transformState.LocalScale.x * scaleMultiplier,
+                transformState.LocalScale.y * scaleMultiplier,
+                transformState.LocalScale.z);
+            multiplierRect.anchoredPosition =
+                transformState.AnchoredPosition;
+
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
+    }
+
+    private void HideWildMultiplierIndicator(Image symbolImage)
+    {
+        Image multiplierImage = GetWildMultiplierIndicator(symbolImage);
+        if (multiplierImage == null)
+        {
+            return;
+        }
+
+        if (wildMultiplierAnimations.TryGetValue(
+                multiplierImage,
+                out Coroutine animation) &&
+            animation != null)
+        {
+            StopCoroutine(animation);
+        }
+
+        wildMultiplierAnimations.Remove(multiplierImage);
+        RestoreWildMultiplierTransform(multiplierImage);
+        Color color = multiplierImage.color;
+        multiplierImage.color = new Color(
+            color.r,
+            color.g,
+            color.b,
+            1f);
+        multiplierImage.gameObject.SetActive(false);
+    }
+
+    private WildMultiplierTransformState GetWildMultiplierTransformState(
+        Image multiplierImage)
+    {
+        if (multiplierImage == null)
+        {
+            return null;
+        }
+
+        if (wildMultiplierTransformStates.TryGetValue(
+                multiplierImage,
+                out WildMultiplierTransformState existingState))
+        {
+            return existingState;
+        }
+
+        RectTransform multiplierRect = multiplierImage.rectTransform;
+        if (multiplierRect == null)
+        {
+            return null;
+        }
+
+        var state = new WildMultiplierTransformState
+        {
+            AnchoredPosition = multiplierRect.anchoredPosition,
+            LocalRotation = multiplierRect.localRotation,
+            LocalScale = multiplierRect.localScale
         };
-
-        frameRoot.SetActive(false);
-        winFrames.Add(symbolImage, frame);
-        return frame;
+        wildMultiplierTransformStates[multiplierImage] = state;
+        return state;
     }
 
-    private enum WinFrameSide
+    private void RestoreWildMultiplierTransform(Image multiplierImage)
     {
-        Top,
-        Bottom,
-        Left,
-        Right
-    }
-
-    private void CreateWinFrameLayer(
-        RectTransform frameRoot,
-        string layerName,
-        float thickness,
-        Color color)
-    {
-        CreateWinFrameSide(
-            frameRoot,
-            $"{layerName} Top",
-            WinFrameSide.Top,
-            thickness,
-            color);
-        CreateWinFrameSide(
-            frameRoot,
-            $"{layerName} Bottom",
-            WinFrameSide.Bottom,
-            thickness,
-            color);
-        CreateWinFrameSide(
-            frameRoot,
-            $"{layerName} Left",
-            WinFrameSide.Left,
-            thickness,
-            color);
-        CreateWinFrameSide(
-            frameRoot,
-            $"{layerName} Right",
-            WinFrameSide.Right,
-            thickness,
-            color);
-    }
-
-    private void CreateWinFrameSide(
-        RectTransform frameRoot,
-        string sideName,
-        WinFrameSide side,
-        float thickness,
-        Color color)
-    {
-        GameObject sideObject = new GameObject(
-            sideName,
-            typeof(RectTransform),
-            typeof(CanvasRenderer),
-            typeof(Image));
-        sideObject.layer = frameRoot.gameObject.layer;
-
-        RectTransform sideRect = sideObject.GetComponent<RectTransform>();
-        sideRect.SetParent(frameRoot, false);
-
-        thickness = Mathf.Max(1f, thickness);
-        switch (side)
+        WildMultiplierTransformState state =
+            GetWildMultiplierTransformState(multiplierImage);
+        if (state == null || multiplierImage == null)
         {
-            case WinFrameSide.Top:
-                sideRect.anchorMin = new Vector2(0f, 1f);
-                sideRect.anchorMax = new Vector2(1f, 1f);
-                sideRect.pivot = new Vector2(0.5f, 0.5f);
-                sideRect.anchoredPosition = Vector2.zero;
-                sideRect.sizeDelta = new Vector2(0f, thickness);
-                break;
-            case WinFrameSide.Bottom:
-                sideRect.anchorMin = new Vector2(0f, 0f);
-                sideRect.anchorMax = new Vector2(1f, 0f);
-                sideRect.pivot = new Vector2(0.5f, 0.5f);
-                sideRect.anchoredPosition = Vector2.zero;
-                sideRect.sizeDelta = new Vector2(0f, thickness);
-                break;
-            case WinFrameSide.Left:
-                sideRect.anchorMin = new Vector2(0f, 0f);
-                sideRect.anchorMax = new Vector2(0f, 1f);
-                sideRect.pivot = new Vector2(0.5f, 0.5f);
-                sideRect.anchoredPosition = Vector2.zero;
-                sideRect.sizeDelta = new Vector2(thickness, 0f);
-                break;
-            case WinFrameSide.Right:
-                sideRect.anchorMin = new Vector2(1f, 0f);
-                sideRect.anchorMax = new Vector2(1f, 1f);
-                sideRect.pivot = new Vector2(0.5f, 0.5f);
-                sideRect.anchoredPosition = Vector2.zero;
-                sideRect.sizeDelta = new Vector2(thickness, 0f);
-                break;
+            return;
         }
 
-        Image sideImage = sideObject.GetComponent<Image>();
-        sideImage.color = color;
-        sideImage.raycastTarget = false;
-        sideImage.maskable = true;
+        RectTransform multiplierRect = multiplierImage.rectTransform;
+        multiplierRect.anchoredPosition = state.AnchoredPosition;
+        multiplierRect.localRotation = state.LocalRotation;
+        multiplierRect.localScale = state.LocalScale;
+    }
+
+    private Image GetWildMultiplierIndicator(Image symbolImage)
+    {
+        if (symbolImage == null)
+        {
+            return null;
+        }
+
+        if (wildMultiplierIndicators.TryGetValue(
+                symbolImage,
+                out Image cachedIndicator) &&
+            cachedIndicator != null)
+        {
+            return cachedIndicator;
+        }
+
+        Transform symbolTransform = symbolImage.transform;
+        Transform multiplierTransform =
+            symbolTransform.Find("WildMultiplier") ??
+            symbolTransform.Find("WildMultiuplier");
+
+        if (multiplierTransform == null)
+        {
+            Transform[] descendants =
+                symbolTransform.GetComponentsInChildren<Transform>(true);
+            for (int index = 0; index < descendants.Length; index++)
+            {
+                Transform descendant = descendants[index];
+                if (descendant == null || descendant == symbolTransform)
+                {
+                    continue;
+                }
+
+                if (string.Equals(
+                        descendant.name,
+                        "WildMultiplier",
+                        System.StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(
+                        descendant.name,
+                        "WildMultiuplier",
+                        System.StringComparison.OrdinalIgnoreCase))
+                {
+                    multiplierTransform = descendant;
+                    break;
+                }
+            }
+        }
+
+        Image multiplierImage = multiplierTransform != null
+            ? multiplierTransform.GetComponent<Image>()
+            : null;
+        if (multiplierImage != null)
+        {
+            wildMultiplierIndicators[symbolImage] = multiplierImage;
+        }
+
+        return multiplierImage;
     }
 
     private int GetSymbolIdAt(int col, int row)
@@ -1414,14 +1726,9 @@ public class SlotView : MonoBehaviour
         for (int column = 0; column < columns; column++)
         {
             List<int> symbols = currentDisplayMatrix[column];
-            SetReelSymbols(column, symbols, false);
+            SetReelSymbols(column, symbols);
             ApplyStoppedReelLayout(column);
-
-            reelTransforms[column].localPosition = new Vector3(
-                reelTransforms[column].localPosition.x,
-                middlePosition,
-                0f
-            );
+            RestoreReelPosition(column);
         }
     }
 
@@ -1443,19 +1750,12 @@ public class SlotView : MonoBehaviour
     #region Reel Layout
 
     /// <summary>
-    /// Restores the standard three-row St. Patrick's Gold reel layout after a reel stops.
-    /// The outer images are animation buffers and the middle three images are the result rows.
+    /// Restores stopped-reel visibility without changing the Inspector-configured
+    /// Vertical Layout Group alignment, spacing, or symbol sizes.
     /// </summary>
     private void ApplyStoppedReelLayout(int columnIndex)
     {
         if (columnIndex < 0 || columnIndex >= reelImagesList.Count) return;
-
-        if (reelLayoutGroups != null &&
-            columnIndex < reelLayoutGroups.Length &&
-            reelLayoutGroups[columnIndex] != null)
-        {
-            reelLayoutGroups[columnIndex].spacing = defaultSpacing;
-        }
 
         SetImageAlpha(columnIndex, 0, 0f);
         SetImageAlpha(columnIndex, 1, 0f);
@@ -1464,6 +1764,54 @@ public class SlotView : MonoBehaviour
         SetImageAlpha(columnIndex, 4, 1f);
         SetImageAlpha(columnIndex, 5, 0f);
         SetImageAlpha(columnIndex, 6, 0f);
+    }
+
+    private Vector3 GetReelRestingPosition(int columnIndex)
+    {
+        if (reelRestingLocalPositions != null &&
+            columnIndex >= 0 &&
+            columnIndex < reelRestingLocalPositions.Length)
+        {
+            return reelRestingLocalPositions[columnIndex];
+        }
+
+        if (reelTransforms != null &&
+            columnIndex >= 0 &&
+            columnIndex < reelTransforms.Length &&
+            reelTransforms[columnIndex] != null)
+        {
+            return reelTransforms[columnIndex].localPosition;
+        }
+
+        return Vector3.zero;
+    }
+
+    private void RestoreReelPosition(int columnIndex)
+    {
+        if (reelTransforms == null ||
+            columnIndex < 0 ||
+            columnIndex >= reelTransforms.Length ||
+            reelTransforms[columnIndex] == null)
+        {
+            return;
+        }
+
+        reelTransforms[columnIndex].localPosition =
+            GetReelRestingPosition(columnIndex);
+    }
+
+    private float GetReelCycleDistance(int columnIndex)
+    {
+        float configuredSpacing = 0f;
+        if (reelLayoutGroups != null &&
+            columnIndex >= 0 &&
+            columnIndex < reelLayoutGroups.Length &&
+            reelLayoutGroups[columnIndex] != null)
+        {
+            configuredSpacing = reelLayoutGroups[columnIndex].spacing;
+        }
+
+        return Mathf.Max(0.01f, symbolHeight + configuredSpacing);
     }
 
     /// <summary>

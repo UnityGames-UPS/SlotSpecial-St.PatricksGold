@@ -83,8 +83,8 @@ public class UltraSlotView : MonoBehaviour
 
     [Header("Result Animation")]
     [SerializeField, Min(0.1f)] private float resultAnimationDuration = 0.9f;
-    [SerializeField, Range(0.8f, 1f)] private float resultAnimationMinScale = 0.9f;
-    [SerializeField, Range(1f, 1.3f)] private float resultAnimationMaxScale = 1.12f;
+    [Tooltip("Lowest opacity used by the result pulse. This animation never changes symbol size.")]
+    [SerializeField, Range(0.1f, 1f)] private float resultAnimationDimAlpha = 0.7f;
 
     public event Action<IReadOnlyList<int>> SpinCompleted;
 
@@ -886,8 +886,7 @@ public class UltraSlotView : MonoBehaviour
         KillResultAnimations();
 
         float loopDuration = Mathf.Max(0.1f, resultAnimationDuration);
-        float minScale = Mathf.Clamp(resultAnimationMinScale, 0.8f, 1f);
-        float maxScale = Mathf.Clamp(resultAnimationMaxScale, 1f, 1.3f);
+        float dimAlpha = Mathf.Clamp(resultAnimationDimAlpha, 0.1f, 1f);
 
         for (int row = 0; row < RowCount; row++)
         {
@@ -906,22 +905,17 @@ public class UltraSlotView : MonoBehaviour
                     continue;
                 }
 
-                resultImage.transform.localScale = Vector3.one;
                 Sequence pulse = DOTween.Sequence()
                     .SetUpdate(true)
                     .Append(
-                        resultImage.transform
-                            .DOScale(minScale, loopDuration * 0.2f)
+                        resultImage
+                            .DOFade(dimAlpha, loopDuration * 0.25f)
                             .SetEase(Ease.InOutSine))
                     .Append(
-                        resultImage.transform
-                            .DOScale(maxScale, loopDuration * 0.3f)
+                        resultImage
+                            .DOFade(1f, loopDuration * 0.25f)
                             .SetEase(Ease.InOutSine))
-                    .Append(
-                        resultImage.transform
-                            .DOScale(1f, loopDuration * 0.2f)
-                            .SetEase(Ease.InOutSine))
-                    .AppendInterval(loopDuration * 0.3f)
+                    .AppendInterval(loopDuration * 0.5f)
                     .SetLoops(-1, LoopType.Restart);
 
                 resultTweens.Add(pulse);
@@ -936,27 +930,6 @@ public class UltraSlotView : MonoBehaviour
             resultTween?.Kill();
         }
         resultTweens.Clear();
-
-        if (reelImagesList == null)
-        {
-            return;
-        }
-
-        foreach (UltraReelImages reelImages in reelImagesList)
-        {
-            if (reelImages?.images == null)
-            {
-                continue;
-            }
-
-            foreach (Image image in reelImages.images)
-            {
-                if (image != null)
-                {
-                    image.transform.localScale = Vector3.one;
-                }
-            }
-        }
     }
 
     private void ResetReelPosition(int reel)

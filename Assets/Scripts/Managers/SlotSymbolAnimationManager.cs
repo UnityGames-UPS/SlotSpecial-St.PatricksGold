@@ -42,6 +42,9 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         public Image BaseImage;
         public Image OverlayImage;
         public Coroutine PlaybackRoutine;
+        public float MinimumVisualExtent;
+        public float MaximumVisualExtent;
+        public float CurrentVisualSize01;
     }
 
     private void OnDisable()
@@ -65,7 +68,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             return false;
         }
 
-        MatchOverlayToBaseImage(baseImage, overlayImage);
+        AlignOverlayWithoutResizing(overlayImage);
 
         if (!TryGetFrames(symbolId, out Sprite[] frames))
         {
@@ -80,11 +83,21 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         overlayImage.sprite = frames[0];
         SetAlpha(baseImage, 1f);
         SetAlpha(overlayImage, 0f);
+        GetVisualExtentRange(
+            frames,
+            out float minimumVisualExtent,
+            out float maximumVisualExtent);
 
         ActiveSymbolAnimation activeAnimation = new ActiveSymbolAnimation
         {
             BaseImage = baseImage,
-            OverlayImage = overlayImage
+            OverlayImage = overlayImage,
+            MinimumVisualExtent = minimumVisualExtent,
+            MaximumVisualExtent = maximumVisualExtent,
+            CurrentVisualSize01 = GetNormalizedVisualSize(
+                frames[0],
+                minimumVisualExtent,
+                maximumVisualExtent)
         };
 
         activeAnimations[overlayImage] = activeAnimation;
@@ -95,6 +108,24 @@ public class SlotSymbolAnimationManager : MonoBehaviour
                     frames,
                     GetLoopDuration(frames, synchronizedLoopDuration)));
         return true;
+    }
+
+    public bool TryGetAnimationVisualSize(
+        Image overlayImage,
+        out float normalizedVisualSize)
+    {
+        if (overlayImage != null &&
+            activeAnimations.TryGetValue(
+                overlayImage,
+                out ActiveSymbolAnimation activeAnimation))
+        {
+            normalizedVisualSize =
+                Mathf.Clamp01(activeAnimation.CurrentVisualSize01);
+            return true;
+        }
+
+        normalizedVisualSize = 0f;
+        return false;
     }
 
     public void StopAnimation(Image baseImage, Image overlayImage)
@@ -233,6 +264,11 @@ public class SlotSymbolAnimationManager : MonoBehaviour
                     if (frame != null)
                     {
                         overlayImage.sprite = frame;
+                        activeAnimation.CurrentVisualSize01 =
+                            GetNormalizedVisualSize(
+                                frame,
+                                activeAnimation.MinimumVisualExtent,
+                                activeAnimation.MaximumVisualExtent);
                     }
 
                     displayedFrameIndex = frameIndex;
@@ -280,20 +316,81 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return useUnscaledTime ? Time.unscaledDeltaTime : Time.deltaTime;
     }
 
-    private static void MatchOverlayToBaseImage(Image baseImage, Image overlayImage)
+    private static void GetVisualExtentRange(
+        Sprite[] frames,
+        out float minimumExtent,
+        out float maximumExtent)
     {
-        RectTransform baseRect = baseImage.rectTransform;
+        minimumExtent = float.MaxValue;
+        maximumExtent = 0f;
+
+        for (int frameIndex = 0; frameIndex < frames.Length; frameIndex++)
+        {
+            float extent = GetSpriteVisualExtent(frames[frameIndex]);
+            if (extent <= 0f)
+            {
+                continue;
+            }
+
+            minimumExtent = Mathf.Min(minimumExtent, extent);
+            maximumExtent = Mathf.Max(maximumExtent, extent);
+        }
+
+        if (minimumExtent == float.MaxValue)
+        {
+            minimumExtent = 0f;
+        }
+    }
+
+    private static float GetNormalizedVisualSize(
+        Sprite frame,
+        float minimumExtent,
+        float maximumExtent)
+    {
+        float extent = GetSpriteVisualExtent(frame);
+        if (extent <= 0f ||
+            maximumExtent - minimumExtent <= Mathf.Epsilon)
+        {
+            return 0f;
+        }
+
+        return Mathf.InverseLerp(
+            minimumExtent,
+            maximumExtent,
+            extent);
+    }
+
+    private static float GetSpriteVisualExtent(Sprite sprite)
+    {
+        if (sprite == null)
+        {
+            return 0f;
+        }
+
+        Vector2[] vertices = sprite.vertices;
+        if (vertices == null || vertices.Length == 0)
+        {
+            return Mathf.Max(sprite.bounds.size.x, sprite.bounds.size.y);
+        }
+
+        Vector2 minimum = vertices[0];
+        Vector2 maximum = vertices[0];
+        for (int vertexIndex = 1; vertexIndex < vertices.Length; vertexIndex++)
+        {
+            minimum = Vector2.Min(minimum, vertices[vertexIndex]);
+            maximum = Vector2.Max(maximum, vertices[vertexIndex]);
+        }
+
+        Vector2 size = maximum - minimum;
+        return Mathf.Max(size.x, size.y);
+    }
+
+    private static void AlignOverlayWithoutResizing(Image overlayImage)
+    {
         RectTransform overlayRect = overlayImage.rectTransform;
 
-        overlayRect.SetSizeWithCurrentAnchors(
-            RectTransform.Axis.Horizontal,
-            baseRect.rect.width);
-        overlayRect.SetSizeWithCurrentAnchors(
-            RectTransform.Axis.Vertical,
-            baseRect.rect.height);
         overlayRect.anchoredPosition = Vector2.zero;
         overlayRect.localRotation = Quaternion.identity;
-        overlayRect.localScale = Vector3.one;
     }
 
     private static void SetAlpha(Image image, float alpha)
