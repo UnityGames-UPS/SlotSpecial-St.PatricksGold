@@ -19,7 +19,7 @@ public class UltraWheelController : MonoBehaviour
     [SerializeField] private RectTransform wheelTransform;
 
     [Header("Wheel Identity")]
-    [Tooltip("1 = Red, 2 = Blue, 3 = third Ultra wheel.")]
+    [Tooltip("Server identity: 1 = Green, 2 = Blue, 3 = Red.")]
     [SerializeField, Range(1, 3)] private int wheelNumber = 1;
 
     [Header("Wheel Layout")]
@@ -31,24 +31,10 @@ public class UltraWheelController : MonoBehaviour
     [Tooltip("Small final wheel-rotation adjustment used to align segment centers with the pointer.")]
     [SerializeField] private float alignmentOffset;
 
-    [Header("Server Stop Mapping")]
-    [Tooltip(
-        "Enable when the server sends one of 10 logical stop indices rather than a physical 0-20 segment.")]
-    [SerializeField] private bool mapServerStopIndexToPhysicalSegment = true;
-    [Tooltip(
-        "One entry per physical segment, clockwise from segment 0. " +
-        "Each value is the server stop index displayed by that segment.")]
-    [SerializeField] private int[] segmentServerStopIndices =
-    {
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-        0
-    };
-
     [Header("Segment Value Texts")]
     [Tooltip(
         "Assign one existing TMP text per physical wheel segment, clockwise from segment 0. " +
-        "The 10 server values are repeated across these 21 labels using Segment Server Stop Indices.")]
+        "Each label receives the server value at the same 0-20 index.")]
     [SerializeField] private TMP_Text[] segmentValueTexts = new TMP_Text[21];
     [Tooltip("Optional text shown before every server value, for example '$' or 'x'.")]
     [SerializeField] private string valuePrefix;
@@ -56,9 +42,13 @@ public class UltraWheelController : MonoBehaviour
     [SerializeField] private string valueSuffix;
 
     [Header("Spin")]
-    [SerializeField, Min(1)] private int completeRotations = 5;
+    [Tooltip(
+        "Approximate full wheel rotations per second. Lower values rotate " +
+        "more slowly without changing Spin Duration. The final partial turn " +
+        "still aligns with the exact server-selected segment.")]
+    [SerializeField, Min(0.01f)] private float rotationSpeed = 0.5f;
     [Tooltip("Total spin time. A longer duration makes the final slowdown more noticeable.")]
-    [SerializeField, Min(0.1f)] private float spinDuration = 5f;
+    [SerializeField, Min(0.1f)] private float spinDuration = 6f;
     [SerializeField] private bool spinClockwise = true;
     [Tooltip("OutQuint produces a long, smooth slowdown before the exact server-selected stop.")]
     [SerializeField] private Ease spinEase = Ease.OutQuint;
@@ -75,8 +65,6 @@ public class UltraWheelController : MonoBehaviour
     public float SegmentAngle => 360f / Mathf.Max(1, segmentCount);
 
     private Tween spinTween;
-    private int nextMatchingSegmentSearchStart;
-
     private void Awake()
     {
         if (wheelTransform == null)
@@ -152,8 +140,7 @@ public class UltraWheelController : MonoBehaviour
     }
 
     /// <summary>
-    /// Resolves the server's logical stop index to a physical wheel segment,
-    /// then performs the exact indexed spin.
+    /// Spins directly to the server's physical 0-20 stop index.
     /// </summary>
     public bool SpinToServerStopIndex(int serverStopIndex, Action onComplete = null)
     {
@@ -172,32 +159,24 @@ public class UltraWheelController : MonoBehaviour
     }
 
     /// <summary>
-    /// Writes the server's 10 logical wheel values onto all 21 physical segments.
-    /// Duplicate physical segments display the same value and use the same stop index.
+    /// Writes the server's 21 physical wheel values onto the corresponding labels.
     /// </summary>
     public bool SetServerValues(IReadOnlyList<int> serverValues)
     {
-        if (serverValues == null || serverValues.Count != ServerValueCount)
+        if (serverValues == null ||
+            serverValues.Count != ServerValueCount ||
+            segmentCount != ServerValueCount)
         {
             Debug.LogError(
                 $"[UltraWheelController] Wheel {wheelNumber} requires exactly " +
-                $"{ServerValueCount} server values.");
-            return false;
-        }
-
-        if (segmentServerStopIndices == null ||
-            segmentServerStopIndices.Length != segmentCount)
-        {
-            Debug.LogError(
-                $"[UltraWheelController] Wheel {wheelNumber} requires exactly {segmentCount} " +
-                "Segment Server Stop Indices before its values can be displayed.");
+                $"{ServerValueCount} server values and physical segments.");
             return false;
         }
 
         if (segmentValueTexts == null || segmentValueTexts.Length != segmentCount)
         {
             Debug.LogError(
-                $"[UltraWheelController] Wheel {wheelNumber} requires exactly {segmentCount} " +
+                $"[UltraWheelController] Wheel {wheelNumber} requires exactly {ServerValueCount} " +
                 "Segment Value Text assignments.");
             return false;
         }
@@ -205,15 +184,6 @@ public class UltraWheelController : MonoBehaviour
         bool allTextsAssigned = true;
         for (int segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++)
         {
-            int serverValueIndex = segmentServerStopIndices[segmentIndex];
-            if (serverValueIndex < 0 || serverValueIndex >= serverValues.Count)
-            {
-                Debug.LogError(
-                    $"[UltraWheelController] Wheel {wheelNumber} segment {segmentIndex} maps " +
-                    $"to invalid server value index {serverValueIndex}.");
-                return false;
-            }
-
             TMP_Text valueText = segmentValueTexts[segmentIndex];
             if (valueText == null)
             {
@@ -222,7 +192,7 @@ public class UltraWheelController : MonoBehaviour
             }
 
             valueText.text =
-                FormatServerValue(serverValues[serverValueIndex]);
+                FormatServerValue(serverValues[segmentIndex]);
         }
 
         if (!allTextsAssigned)
@@ -236,8 +206,7 @@ public class UltraWheelController : MonoBehaviour
     }
 
     /// <summary>
-    /// Updates the physical segment copies for one logical server stop. This is
-    /// used when the spin response supplies only the selected stop's base award.
+    /// Updates the one physical segment selected by the server result.
     /// </summary>
     public bool SetServerValue(int serverValueIndex, double serverValue)
     {
@@ -249,46 +218,27 @@ public class UltraWheelController : MonoBehaviour
             return false;
         }
 
-        if (segmentServerStopIndices == null ||
-            segmentServerStopIndices.Length != segmentCount ||
+        if (segmentCount != ServerValueCount ||
             segmentValueTexts == null ||
             segmentValueTexts.Length != segmentCount)
         {
             Debug.LogError(
-                $"[UltraWheelController] Wheel {wheelNumber} requires exactly {segmentCount} " +
-                "stop mappings and Segment Value Text assignments.");
+                $"[UltraWheelController] Wheel {wheelNumber} requires exactly {ServerValueCount} " +
+                "Segment Value Text assignments.");
             return false;
         }
 
-        bool foundMappedSegment = false;
-        bool allMappedTextsAssigned = true;
-        for (int segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++)
+        TMP_Text valueText = segmentValueTexts[serverValueIndex];
+        if (valueText == null)
         {
-            if (segmentServerStopIndices[segmentIndex] != serverValueIndex)
-            {
-                continue;
-            }
-
-            foundMappedSegment = true;
-            TMP_Text valueText = segmentValueTexts[segmentIndex];
-            if (valueText == null)
-            {
-                allMappedTextsAssigned = false;
-                continue;
-            }
-
-            valueText.text = FormatServerValue(serverValue);
-        }
-
-        if (!foundMappedSegment)
-        {
-            Debug.LogError(
-                $"[UltraWheelController] Wheel {wheelNumber} has no physical segment mapped " +
-                $"to server value index {serverValueIndex}.");
+            Debug.LogWarning(
+                $"[UltraWheelController] Wheel {wheelNumber} has no text assigned " +
+                $"for physical segment {serverValueIndex}.");
             return false;
         }
 
-        return allMappedTextsAssigned;
+        valueText.text = FormatServerValue(serverValue);
+        return true;
     }
 
     public bool TryResolvePhysicalSegment(
@@ -297,47 +247,16 @@ public class UltraWheelController : MonoBehaviour
     {
         physicalSegmentIndex = -1;
 
-        if (!mapServerStopIndexToPhysicalSegment)
-        {
-            if (serverStopIndex < 0 || serverStopIndex >= segmentCount)
-            {
-                Debug.LogError(
-                    $"[UltraWheelController] Wheel {wheelNumber} received physical stop index " +
-                    $"{serverStopIndex}, expected 0-{segmentCount - 1}.");
-                return false;
-            }
-
-            physicalSegmentIndex = serverStopIndex;
-            return true;
-        }
-
-        if (segmentServerStopIndices == null ||
-            segmentServerStopIndices.Length != segmentCount)
+        if (serverStopIndex < 0 || serverStopIndex >= segmentCount)
         {
             Debug.LogError(
-                $"[UltraWheelController] Wheel {wheelNumber} requires exactly {segmentCount} " +
-                "Segment Server Stop Indices.");
+                $"[UltraWheelController] Wheel {wheelNumber} received physical stop index " +
+                $"{serverStopIndex}, expected 0-{segmentCount - 1}.");
             return false;
         }
 
-        for (int offset = 0; offset < segmentCount; offset++)
-        {
-            int segmentIndex =
-                (nextMatchingSegmentSearchStart + offset) % segmentCount;
-            if (segmentServerStopIndices[segmentIndex] != serverStopIndex)
-            {
-                continue;
-            }
-
-            physicalSegmentIndex = segmentIndex;
-            nextMatchingSegmentSearchStart = (segmentIndex + 1) % segmentCount;
-            return true;
-        }
-
-        Debug.LogError(
-            $"[UltraWheelController] Wheel {wheelNumber} has no physical segment mapped " +
-            $"to server stop index {serverStopIndex}.");
-        return false;
+        physicalSegmentIndex = serverStopIndex;
+        return true;
     }
 
     /// <summary>
@@ -389,7 +308,11 @@ public class UltraWheelController : MonoBehaviour
 
     private float CalculateAnimatedFinalAngle(float currentAngle, float exactFinalAngle)
     {
-        int rotations = Mathf.Max(1, completeRotations);
+        int rotations = Mathf.Max(
+            1,
+            Mathf.RoundToInt(
+                Mathf.Max(0.01f, rotationSpeed) *
+                Mathf.Max(0.1f, spinDuration)));
         if (spinClockwise)
         {
             float clockwiseDistance = Mathf.Repeat(currentAngle - exactFinalAngle, 360f);
@@ -416,7 +339,7 @@ public class UltraWheelController : MonoBehaviour
     {
         wheelNumber = Mathf.Clamp(wheelNumber, 1, 3);
         segmentCount = Mathf.Max(1, segmentCount);
-        completeRotations = Mathf.Max(1, completeRotations);
+        rotationSpeed = Mathf.Max(0.01f, rotationSpeed);
         spinDuration = Mathf.Max(0.1f, spinDuration);
         testWinningIndex = Mathf.Clamp(testWinningIndex, 0, segmentCount - 1);
 

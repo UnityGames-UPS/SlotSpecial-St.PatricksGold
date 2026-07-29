@@ -1,4 +1,5 @@
 using System.Collections;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -22,25 +23,131 @@ public class SlotSymbolAnimationManager : MonoBehaviour
 
     [Header("Special Symbol Sequence Frames")]
     [SerializeField] private Sprite[] wildFrames = new Sprite[0];
-    [SerializeField] private Sprite[] scatterWheelFrames = new Sprite[0];
     [SerializeField] private Sprite[] ultraWheelFrames = new Sprite[0];
     [SerializeField] private Sprite[] templeRichesFrames = new Sprite[0];
 
-    [Header("Playback")]
-    [SerializeField, Min(0.001f)] private float frameDuration = 1f / 30f;
-    [SerializeField, Min(0f)] private float startDelay;
-    [Tooltip("Zero loops continuously until the winning-symbol display is stopped.")]
-    [SerializeField, Min(0)] private int loopCount;
-    [SerializeField, Min(0f)] private float delayBetweenLoops;
-    [SerializeField] private bool useUnscaledTime;
+    [Header("Scatter Wheel Intro Sequences")]
+    [Tooltip("Main Scatter Wheel animation frames in playback order.")]
+    [UnityEngine.Serialization.FormerlySerializedAs("scatterWheelFrames")]
+    [SerializeField] private Sprite[] scatterWheelMainFrames =
+        new Sprite[0];
+    [Tooltip(
+        "Background FX frames played in sync with the Main Scatter Wheel " +
+        "sequence. Add this complete sequence here, not on the Scatter " +
+        "presentation component.")]
+    [SerializeField] private Sprite[] scatterWheelBackgroundFxFrames =
+        new Sprite[0];
+    [Tooltip(
+        "Total playback duration of the Main Scatter Wheel sequence.")]
+    [SerializeField, Min(0.01f)]
+    private float scatterWheelIntroDuration = 1.6f;
+    [Tooltip(
+        "Playback-speed multiplier for the Scatter Background FX. " +
+        "For example, 0.4 plays the FX at 40% speed so it remains visible " +
+        "longer than the Main Scatter Wheel sequence.")]
+    [SerializeField, Range(0.01f, 1f)]
+    private float scatterWheelBackgroundFxSpeedMultiplier = 0.4f;
+    [Tooltip(
+        "Scale used when CanRotate, WheelRim, and Leaf first appear after " +
+        "the Main Scatter Wheel sequence.")]
+    [SerializeField, Range(0.01f, 2f)]
+    private float scatterWheelHandoffStartScale = 1f;
+    [Tooltip(
+        "Final size multiplier for CanRotate, WheelRim, and Leaf. " +
+        "For example, 1.1 makes them 10% larger.")]
+    [SerializeField, Range(0.01f, 2f)]
+    private float scatterWheelHandoffEndScale = 1.1f;
+    [Tooltip(
+        "Time for CanRotate, WheelRim, and Leaf to enlarge to their " +
+        "authored sizes after the Main Scatter Wheel sequence.")]
+    [SerializeField, Min(0.01f)]
+    private float scatterWheelHandoffScaleDuration = 1f;
+    [Tooltip(
+        "Time for the Scatter server-award text to move vertically to the " +
+        "Leaf Y position after the wheel stops.")]
+    [SerializeField, Min(0.01f)]
+    private float scatterWheelResultTextMoveDuration = 0.8f;
+
+    [Header("Anticipation Sequence Frames")]
+    [Tooltip("Frames for the reel-border anticipation animation, in playback order.")]
+    [SerializeField] private Sprite[] anticipationFrames = new Sprite[0];
+    [Tooltip("Duration in seconds of one complete anticipation loop. Lower values play faster.")]
+    [SerializeField, Min(0.05f)] private float anticipationLoopDuration = 0.8f;
+
+    [Header("Ultra Entry Transition")]
+    [Tooltip(
+        "Full-screen transition Image. Keep it outside the panels that are " +
+        "deactivated during the swap.")]
+    [SerializeField] private Image ultraEntryTransitionImage;
+    [Tooltip(
+        "Drag every Ultra entry transition sprite here in playback order. " +
+        "The panels swap halfway through this sequence.")]
+    [SerializeField] private Sprite[] ultraEntryTransitionFrames =
+        new Sprite[0];
+    [Tooltip("Duration of each Ultra entry transition frame. 0.03333 is 30 FPS.")]
+    [SerializeField, Min(0.001f)]
+    private float ultraEntryTransitionFrameDuration = 1f / 30f;
+
+    [Header("Ultra Result Winning Symbol Animations")]
+    [Tooltip("Winning Green Ultra wheel-symbol frames in playback order.")]
+    [SerializeField] private Sprite[] greenUltraWinningSymbolFrames =
+        new Sprite[0];
+    [Tooltip("Winning Blue Ultra wheel-symbol frames in playback order.")]
+    [SerializeField] private Sprite[] blueUltraWinningSymbolFrames =
+        new Sprite[0];
+    [Tooltip("Winning Red Ultra wheel-symbol frames in playback order.")]
+    [SerializeField] private Sprite[] redUltraWinningSymbolFrames =
+        new Sprite[0];
+    [Tooltip("Duration of each Ultra winning-symbol frame. 0.03333 is 30 FPS.")]
+    [SerializeField, Min(0.001f)]
+    private float ultraWinningSymbolFrameDuration = 1f / 30f;
+    [Tooltip(
+        "Number of complete Ultra winning-symbol animation loops to play " +
+        "before opening the next panel.")]
+    [SerializeField, Min(1)]
+    private int ultraWinningSymbolLoopCount = 3;
+
+    [Header("Win Animation Timing")]
+    [Tooltip("Duration in seconds of one complete winning-symbol loop at 1x speed. Lower values play faster.")]
+    [SerializeField, Min(0.1f)] private float winSymbolLoopDuration = 1.6f;
+    [SerializeField, HideInInspector, Min(0.01f)]
+    private float nonWildWinAnimationSpeedMultiplier = 1f;
+    [SerializeField, HideInInspector, Min(0.01f)]
+    private float wildWinAnimationSpeedMultiplier = 1f;
+    [SerializeField, HideInInspector, Min(1)]
+    private int wildWinLoopsBeforeNextStage = 2;
+
+    [SerializeField, HideInInspector, Min(0.001f)]
+    private float frameDuration = 1f / 30f;
+    [SerializeField, HideInInspector, Min(0f)] private float startDelay;
+    [SerializeField, HideInInspector, Min(0)] private int loopCount;
+    [SerializeField, HideInInspector, Min(0f)] private float delayBetweenLoops;
+    [SerializeField, HideInInspector] private bool useUnscaledTime;
 
     private readonly Dictionary<Image, ActiveSymbolAnimation> activeAnimations =
         new Dictionary<Image, ActiveSymbolAnimation>();
+    private readonly Dictionary<RectTransform, Coroutine>
+        activeScatterWheelHandoffs =
+            new Dictionary<RectTransform, Coroutine>();
+    private readonly Dictionary<RectTransform, Coroutine>
+        activeScatterWheelResultTextMoves =
+            new Dictionary<RectTransform, Coroutine>();
+    private readonly Dictionary<Image, Coroutine> activeAnticipations =
+        new Dictionary<Image, Coroutine>();
+    private readonly List<UltraWinningSymbolAnimationTarget>
+        activeUltraWinningTargets =
+            new List<UltraWinningSymbolAnimationTarget>();
+
+    private Coroutine ultraEntryTransitionCoroutine;
+    private Coroutine ultraWinningSymbolCoroutine;
 
     private sealed class ActiveSymbolAnimation
     {
         public Image BaseImage;
         public Image OverlayImage;
+        public Image SecondaryOverlayImage;
+        public Sprite[] SecondaryFrames;
+        public int SecondaryOriginalSiblingIndex = -1;
         public Coroutine PlaybackRoutine;
         public float MinimumVisualExtent;
         public float MaximumVisualExtent;
@@ -49,12 +156,51 @@ public class SlotSymbolAnimationManager : MonoBehaviour
 
     private void OnDisable()
     {
+        StopUltraEntryTransition();
+        StopUltraWinningSymbolAnimations();
         StopAllAnimations();
+        StopAllScatterWheelHandoffs();
+        StopAllScatterWheelResultTextMoves();
+        StopAllAnticipations();
     }
 
     private void OnDestroy()
     {
+        StopUltraEntryTransition();
+        StopUltraWinningSymbolAnimations();
         StopAllAnimations();
+        StopAllScatterWheelHandoffs();
+        StopAllScatterWheelResultTextMoves();
+        StopAllAnticipations();
+    }
+
+    internal float GetWinSymbolLoopDuration()
+    {
+        return Mathf.Max(0.1f, winSymbolLoopDuration);
+    }
+
+    internal float GetScatterWheelIntroDuration()
+    {
+        return Mathf.Max(0.01f, scatterWheelIntroDuration);
+    }
+
+    internal int GetScatterWheelMainFrameCount()
+    {
+        return scatterWheelMainFrames?.Length ?? 0;
+    }
+
+    internal float GetWinAnimationSpeedMultiplier(int symbolId)
+    {
+        float speedMultiplier =
+            symbolId == StPatricksGoldSymbolIds.Wild
+                ? wildWinAnimationSpeedMultiplier
+                : nonWildWinAnimationSpeedMultiplier;
+        return Mathf.Max(0.01f, speedMultiplier);
+    }
+
+    internal int GetWildWinLoopsBeforeNextStage()
+    {
+        return Mathf.Max(1, wildWinLoopsBeforeNextStage);
     }
 
     public bool PlayAnimation(
@@ -110,6 +256,327 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return true;
     }
 
+    public bool PlayAnimationOnce(
+        int symbolId,
+        Image baseImage,
+        Image overlayImage,
+        int frameCount,
+        float playbackDuration,
+        Action onComplete)
+    {
+        if (baseImage == null || overlayImage == null)
+        {
+            return false;
+        }
+
+        AlignOverlayWithoutResizing(overlayImage);
+
+        if (!TryGetFrames(symbolId, out Sprite[] frames))
+        {
+            StopAnimation(baseImage, overlayImage);
+            Debug.LogWarning(
+                $"No sequence frames are configured for symbol " +
+                $"'{StPatricksGoldSymbolIds.GetName(symbolId)}'.",
+                this);
+            return false;
+        }
+
+        int framesToPlay = Mathf.Clamp(frameCount, 1, frames.Length);
+        float duration = Mathf.Max(0.01f, playbackDuration);
+
+        StopAnimation(baseImage, overlayImage);
+        overlayImage.sprite = frames[0];
+        SetAlpha(baseImage, 1f);
+        SetAlpha(overlayImage, 0f);
+        GetVisualExtentRange(
+            frames,
+            out float minimumVisualExtent,
+            out float maximumVisualExtent);
+
+        ActiveSymbolAnimation activeAnimation = new ActiveSymbolAnimation
+        {
+            BaseImage = baseImage,
+            OverlayImage = overlayImage,
+            MinimumVisualExtent = minimumVisualExtent,
+            MaximumVisualExtent = maximumVisualExtent,
+            CurrentVisualSize01 = GetNormalizedVisualSize(
+                frames[0],
+                minimumVisualExtent,
+                maximumVisualExtent)
+        };
+
+        activeAnimations[overlayImage] = activeAnimation;
+        activeAnimation.PlaybackRoutine =
+            StartCoroutine(
+                PlayFramesOnce(
+                    activeAnimation,
+                    frames,
+                    framesToPlay,
+                    duration,
+                    onComplete));
+        return true;
+    }
+
+    public bool PlayScatterWheelIntro(
+        Image baseImage,
+        Image mainAnimationImage,
+        Image backgroundFxImage,
+        Action onComplete,
+        Action onBackgroundFxComplete = null)
+    {
+        if (baseImage == null || mainAnimationImage == null)
+        {
+            return false;
+        }
+
+        AlignOverlayWithoutResizing(mainAnimationImage);
+        if (scatterWheelMainFrames == null ||
+            scatterWheelMainFrames.Length == 0)
+        {
+            StopScatterWheelIntro(
+                baseImage,
+                mainAnimationImage,
+                backgroundFxImage);
+            Debug.LogWarning(
+                "[SlotSymbolAnimationManager] No Main Scatter Wheel " +
+                "sequence frames are configured.",
+                this);
+            return false;
+        }
+
+        StopScatterWheelIntro(
+            baseImage,
+            mainAnimationImage,
+            backgroundFxImage);
+
+        Sprite[] backgroundFrames =
+            backgroundFxImage != null &&
+            scatterWheelBackgroundFxFrames != null &&
+            scatterWheelBackgroundFxFrames.Length > 0
+                ? scatterWheelBackgroundFxFrames
+                : null;
+        if (backgroundFxImage == null)
+        {
+            Debug.LogWarning(
+                "[SlotSymbolAnimationManager] The Scatter Wheel Background " +
+                "FX Image could not be found on the symbol.",
+                this);
+        }
+        else if (backgroundFrames == null)
+        {
+            Debug.LogWarning(
+                "[SlotSymbolAnimationManager] No Scatter Wheel Background " +
+                "FX sequence frames are configured.",
+                this);
+        }
+
+        mainAnimationImage.sprite = scatterWheelMainFrames[0];
+        SetAlpha(baseImage, 1f);
+        SetAlpha(mainAnimationImage, 0f);
+        GetVisualExtentRange(
+            scatterWheelMainFrames,
+            out float minimumVisualExtent,
+            out float maximumVisualExtent);
+
+        var activeAnimation = new ActiveSymbolAnimation
+        {
+            BaseImage = baseImage,
+            OverlayImage = mainAnimationImage,
+            SecondaryOverlayImage = backgroundFxImage,
+            SecondaryFrames = backgroundFrames,
+            SecondaryOriginalSiblingIndex =
+                backgroundFxImage != null
+                    ? backgroundFxImage.transform.GetSiblingIndex()
+                    : -1,
+            MinimumVisualExtent = minimumVisualExtent,
+            MaximumVisualExtent = maximumVisualExtent,
+            CurrentVisualSize01 = GetNormalizedVisualSize(
+                scatterWheelMainFrames[0],
+                minimumVisualExtent,
+                maximumVisualExtent)
+        };
+
+        if (backgroundFxImage != null)
+        {
+            AlignOverlayWithoutResizing(backgroundFxImage);
+            if (backgroundFrames != null)
+            {
+                backgroundFxImage.sprite = backgroundFrames[0];
+            }
+            SetAlpha(backgroundFxImage, 0f);
+        }
+
+        activeAnimations[mainAnimationImage] = activeAnimation;
+        activeAnimation.PlaybackRoutine =
+            StartCoroutine(
+                PlayScatterWheelIntroFrames(
+                    activeAnimation,
+                    onComplete,
+                    onBackgroundFxComplete));
+        return true;
+    }
+
+    public void StopScatterWheelIntro(
+        Image baseImage,
+        Image mainAnimationImage,
+        Image backgroundFxImage)
+    {
+        StopAnimation(baseImage, mainAnimationImage);
+        SetAlpha(backgroundFxImage, 0f);
+        if (backgroundFxImage != null)
+        {
+            backgroundFxImage.gameObject.SetActive(false);
+        }
+    }
+
+    public void PlayScatterWheelHandoff(
+        RectTransform rotatingWheel,
+        Vector3 rotatingWheelTargetScale,
+        RectTransform wheelRim,
+        Vector3 wheelRimTargetScale,
+        RectTransform leaf,
+        Vector3 leafTargetScale)
+    {
+        if (rotatingWheel == null)
+        {
+            return;
+        }
+
+        StopScatterWheelHandoff(rotatingWheel);
+        SetActive(rotatingWheel, true);
+        SetActive(wheelRim, true);
+        SetActive(leaf, true);
+
+        float startScale =
+            Mathf.Max(0.01f, scatterWheelHandoffStartScale);
+        ApplyScaleMultiplier(
+            rotatingWheel,
+            rotatingWheelTargetScale,
+            startScale);
+        ApplyScaleMultiplier(
+            wheelRim,
+            wheelRimTargetScale,
+            startScale);
+        ApplyScaleMultiplier(
+            leaf,
+            leafTargetScale,
+            startScale);
+
+        Coroutine handoffRoutine = StartCoroutine(
+            PlayScatterWheelHandoffScale(
+                rotatingWheel,
+                rotatingWheelTargetScale,
+                wheelRim,
+                wheelRimTargetScale,
+                leaf,
+                leafTargetScale));
+        activeScatterWheelHandoffs[rotatingWheel] =
+            handoffRoutine;
+    }
+
+    public void StopScatterWheelHandoff(
+        RectTransform rotatingWheel)
+    {
+        if (rotatingWheel == null ||
+            !activeScatterWheelHandoffs.TryGetValue(
+                rotatingWheel,
+                out Coroutine handoffRoutine))
+        {
+            return;
+        }
+
+        if (handoffRoutine != null)
+        {
+            StopCoroutine(handoffRoutine);
+        }
+
+        activeScatterWheelHandoffs.Remove(rotatingWheel);
+    }
+
+    private void StopAllScatterWheelHandoffs()
+    {
+        if (activeScatterWheelHandoffs.Count == 0)
+        {
+            return;
+        }
+
+        var handoffRoutines =
+            new List<Coroutine>(
+                activeScatterWheelHandoffs.Values);
+        activeScatterWheelHandoffs.Clear();
+        for (int index = 0;
+             index < handoffRoutines.Count;
+             index++)
+        {
+            if (handoffRoutines[index] != null)
+            {
+                StopCoroutine(handoffRoutines[index]);
+            }
+        }
+    }
+
+    public bool PlayScatterWheelResultTextMove(
+        RectTransform resultText,
+        float targetAnchoredY,
+        Action onComplete)
+    {
+        if (resultText == null)
+        {
+            return false;
+        }
+
+        StopScatterWheelResultTextMove(resultText);
+        Coroutine moveRoutine = StartCoroutine(
+            PlayScatterWheelResultTextMoveFrames(
+                resultText,
+                targetAnchoredY,
+                onComplete));
+        activeScatterWheelResultTextMoves[resultText] =
+            moveRoutine;
+        return true;
+    }
+
+    public void StopScatterWheelResultTextMove(
+        RectTransform resultText)
+    {
+        if (resultText == null ||
+            !activeScatterWheelResultTextMoves.TryGetValue(
+                resultText,
+                out Coroutine moveRoutine))
+        {
+            return;
+        }
+
+        if (moveRoutine != null)
+        {
+            StopCoroutine(moveRoutine);
+        }
+
+        activeScatterWheelResultTextMoves.Remove(resultText);
+    }
+
+    private void StopAllScatterWheelResultTextMoves()
+    {
+        if (activeScatterWheelResultTextMoves.Count == 0)
+        {
+            return;
+        }
+
+        var moveRoutines =
+            new List<Coroutine>(
+                activeScatterWheelResultTextMoves.Values);
+        activeScatterWheelResultTextMoves.Clear();
+        for (int index = 0;
+             index < moveRoutines.Count;
+             index++)
+        {
+            if (moveRoutines[index] != null)
+            {
+                StopCoroutine(moveRoutines[index]);
+            }
+        }
+    }
+
     public bool TryGetAnimationVisualSize(
         Image overlayImage,
         out float normalizedVisualSize)
@@ -130,6 +597,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
 
     public void StopAnimation(Image baseImage, Image overlayImage)
     {
+        ActiveSymbolAnimation stoppedAnimation = null;
         if (overlayImage != null &&
             activeAnimations.TryGetValue(overlayImage, out ActiveSymbolAnimation activeAnimation))
         {
@@ -139,10 +607,18 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             }
 
             activeAnimations.Remove(overlayImage);
+            stoppedAnimation = activeAnimation;
         }
 
-        SetAlpha(baseImage, 1f);
-        SetAlpha(overlayImage, 0f);
+        if (stoppedAnimation != null)
+        {
+            RestoreAnimationLayers(stoppedAnimation);
+        }
+        else
+        {
+            SetAlpha(baseImage, 1f);
+            SetAlpha(overlayImage, 0f);
+        }
     }
 
     public void StopAllAnimations()
@@ -164,9 +640,200 @@ public class SlotSymbolAnimationManager : MonoBehaviour
                 StopCoroutine(animation.PlaybackRoutine);
             }
 
-            SetAlpha(animation.BaseImage, 1f);
-            SetAlpha(animation.OverlayImage, 0f);
+            RestoreAnimationLayers(animation);
         }
+    }
+
+    public bool PlayAnticipation(Image targetImage)
+    {
+        if (targetImage == null)
+        {
+            return false;
+        }
+
+        StopAnticipation(targetImage);
+        if (anticipationFrames == null || anticipationFrames.Length == 0)
+        {
+            SetAlpha(targetImage, 0f);
+            targetImage.gameObject.SetActive(false);
+            Debug.LogWarning(
+                "[SlotSymbolAnimationManager] No anticipation frames are configured.",
+                this);
+            return false;
+        }
+
+        targetImage.gameObject.SetActive(true);
+        targetImage.sprite = anticipationFrames[0];
+        SetAlpha(targetImage, 1f);
+        activeAnticipations[targetImage] = null;
+        Coroutine playbackRoutine =
+            StartCoroutine(PlayAnticipationFrames(targetImage));
+        if (activeAnticipations.ContainsKey(targetImage))
+        {
+            activeAnticipations[targetImage] = playbackRoutine;
+        }
+        return true;
+    }
+
+    public void StopAnticipation(Image targetImage)
+    {
+        if (targetImage == null)
+        {
+            return;
+        }
+
+        if (activeAnticipations.TryGetValue(
+                targetImage,
+                out Coroutine playbackRoutine) &&
+            playbackRoutine != null)
+        {
+            StopCoroutine(playbackRoutine);
+        }
+
+        activeAnticipations.Remove(targetImage);
+        SetAlpha(targetImage, 0f);
+        targetImage.gameObject.SetActive(false);
+    }
+
+    public void StopAllAnticipations()
+    {
+        if (activeAnticipations.Count == 0)
+        {
+            return;
+        }
+
+        var targets = new List<Image>(activeAnticipations.Keys);
+        var routines = new List<Coroutine>(activeAnticipations.Values);
+        activeAnticipations.Clear();
+
+        for (int index = 0; index < routines.Count; index++)
+        {
+            if (routines[index] != null)
+            {
+                StopCoroutine(routines[index]);
+            }
+        }
+
+        for (int index = 0; index < targets.Count; index++)
+        {
+            Image targetImage = targets[index];
+            SetAlpha(targetImage, 0f);
+            if (targetImage != null)
+            {
+                targetImage.gameObject.SetActive(false);
+            }
+        }
+    }
+
+    public bool PlayUltraEntryTransition(
+        Action onMidpoint,
+        Action onComplete)
+    {
+        StopUltraEntryTransition();
+
+        if (ultraEntryTransitionImage == null ||
+            ultraEntryTransitionFrames == null ||
+            ultraEntryTransitionFrames.Length == 0)
+        {
+            Debug.LogError(
+                "[SlotSymbolAnimationManager] Assign the Ultra Entry " +
+                "Transition Image and its ordered sprite frames.",
+                this);
+            return false;
+        }
+
+        ultraEntryTransitionCoroutine = StartCoroutine(
+            PlayUltraEntryTransitionFrames(
+                onMidpoint,
+                onComplete));
+        return true;
+    }
+
+    public void StopUltraEntryTransition()
+    {
+        if (ultraEntryTransitionCoroutine != null)
+        {
+            StopCoroutine(ultraEntryTransitionCoroutine);
+            ultraEntryTransitionCoroutine = null;
+        }
+
+        HideUltraEntryTransitionImage();
+    }
+
+    public bool PlayUltraWinningSymbolAnimations(
+        UltraSlotView ultraSlotView,
+        Action onComplete = null)
+    {
+        StopUltraWinningSymbolAnimations();
+
+        if (ultraSlotView == null ||
+            !ultraSlotView.TryGetWinningSymbolAnimationTargets(
+                out List<UltraWinningSymbolAnimationTarget> requestedTargets))
+        {
+            return false;
+        }
+
+        int maximumFrameCount = 0;
+        var missingFrameSymbols = new HashSet<int>();
+        for (int targetIndex = 0;
+             targetIndex < requestedTargets.Count;
+             targetIndex++)
+        {
+            UltraWinningSymbolAnimationTarget target =
+                requestedTargets[targetIndex];
+            if (target == null ||
+                target.BaseImage == null ||
+                target.AnimationImage == null)
+            {
+                continue;
+            }
+
+            if (!TryGetUltraWinningSymbolFrames(
+                    target.SymbolId,
+                    out Sprite[] frames))
+            {
+                missingFrameSymbols.Add(target.SymbolId);
+                continue;
+            }
+
+            target.Frames = frames;
+            activeUltraWinningTargets.Add(target);
+            maximumFrameCount =
+                Mathf.Max(maximumFrameCount, frames.Length);
+        }
+
+        foreach (int missingSymbolId in missingFrameSymbols)
+        {
+            Debug.LogWarning(
+                "[SlotSymbolAnimationManager] Assign winning animation " +
+                $"frames for the {GetUltraWheelColorName(missingSymbolId)} " +
+                $"Ultra wheel symbol ({missingSymbolId}).",
+                this);
+        }
+
+        if (activeUltraWinningTargets.Count == 0 ||
+            maximumFrameCount <= 0)
+        {
+            activeUltraWinningTargets.Clear();
+            return false;
+        }
+
+        ultraWinningSymbolCoroutine = StartCoroutine(
+            PlayUltraWinningSymbolFrames(
+                maximumFrameCount,
+                onComplete));
+        return true;
+    }
+
+    public void StopUltraWinningSymbolAnimations()
+    {
+        if (ultraWinningSymbolCoroutine != null)
+        {
+            StopCoroutine(ultraWinningSymbolCoroutine);
+            ultraWinningSymbolCoroutine = null;
+        }
+
+        RestoreUltraWinningSymbolTargets();
     }
 
     private bool TryGetFrames(int symbolId, out Sprite[] frames)
@@ -204,7 +871,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
                 frames = wildFrames;
                 break;
             case StPatricksGoldSymbolIds.ScatterWheel:
-                frames = scatterWheelFrames;
+                frames = scatterWheelMainFrames;
                 break;
             case StPatricksGoldSymbolIds.UltraWheel:
                 frames = ultraWheelFrames;
@@ -218,6 +885,221 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         }
 
         return frames != null && frames.Length > 0;
+    }
+
+    private bool TryGetUltraWinningSymbolFrames(
+        int symbolId,
+        out Sprite[] frames)
+    {
+        switch (symbolId)
+        {
+            case UltraSlotView.GreenWheelSymbolId:
+                frames = greenUltraWinningSymbolFrames;
+                break;
+            case UltraSlotView.BlueWheelSymbolId:
+                frames = blueUltraWinningSymbolFrames;
+                break;
+            case UltraSlotView.RedWheelSymbolId:
+                frames = redUltraWinningSymbolFrames;
+                break;
+            default:
+                frames = null;
+                return false;
+        }
+
+        return frames != null && frames.Length > 0;
+    }
+
+    private IEnumerator PlayUltraEntryTransitionFrames(
+        Action onMidpoint,
+        Action onComplete)
+    {
+        ultraEntryTransitionImage.gameObject.SetActive(true);
+        SetAlpha(ultraEntryTransitionImage, 1f);
+
+        float frameDuration =
+            Mathf.Max(0.001f, ultraEntryTransitionFrameDuration);
+        int midpointFrameIndex = Mathf.Clamp(
+            ultraEntryTransitionFrames.Length / 2,
+            1,
+            ultraEntryTransitionFrames.Length);
+        bool midpointInvoked = false;
+
+        for (int frameIndex = 0;
+             frameIndex < ultraEntryTransitionFrames.Length;
+             frameIndex++)
+        {
+            if (!midpointInvoked &&
+                frameIndex >= midpointFrameIndex)
+            {
+                midpointInvoked = true;
+                onMidpoint?.Invoke();
+            }
+
+            Sprite frame = ultraEntryTransitionFrames[frameIndex];
+            if (frame != null)
+            {
+                ultraEntryTransitionImage.sprite = frame;
+            }
+
+            // Waiting after every frame keeps the last frame visible for its
+            // complete duration instead of cutting the transition short.
+            yield return new WaitForSecondsRealtime(frameDuration);
+        }
+
+        if (!midpointInvoked)
+        {
+            onMidpoint?.Invoke();
+        }
+
+        ultraEntryTransitionCoroutine = null;
+        HideUltraEntryTransitionImage();
+        onComplete?.Invoke();
+    }
+
+    private IEnumerator PlayUltraWinningSymbolFrames(
+        int maximumFrameCount,
+        Action onComplete)
+    {
+        float frameDuration =
+            Mathf.Max(0.001f, ultraWinningSymbolFrameDuration);
+
+        for (int targetIndex = 0;
+             targetIndex < activeUltraWinningTargets.Count;
+             targetIndex++)
+        {
+            UltraWinningSymbolAnimationTarget target =
+                activeUltraWinningTargets[targetIndex];
+            AlignOverlayWithoutResizing(target.AnimationImage);
+            target.AnimationImage.gameObject.SetActive(true);
+            if (target.WinIndicatorImage != null)
+            {
+                target.WinIndicatorImage.gameObject.SetActive(true);
+            }
+            SetAlpha(target.BaseImage, 0f);
+            SetAlpha(target.AnimationImage, 1f);
+            SetAlpha(target.WinIndicatorImage, 1f);
+        }
+
+        int loopsToPlay =
+            Mathf.Max(1, ultraWinningSymbolLoopCount);
+        for (int loopIndex = 0;
+             loopIndex < loopsToPlay;
+             loopIndex++)
+        {
+            for (int frameIndex = 0;
+                 frameIndex < maximumFrameCount;
+                 frameIndex++)
+            {
+                for (int targetIndex = 0;
+                     targetIndex < activeUltraWinningTargets.Count;
+                     targetIndex++)
+                {
+                    UltraWinningSymbolAnimationTarget target =
+                        activeUltraWinningTargets[targetIndex];
+                    int targetFrameIndex =
+                        Mathf.Min(frameIndex, target.Frames.Length - 1);
+                    Sprite frame = target.Frames[targetFrameIndex];
+                    if (frame != null)
+                    {
+                        target.AnimationImage.sprite = frame;
+                    }
+                }
+
+                yield return new WaitForSecondsRealtime(frameDuration);
+            }
+        }
+
+        ultraWinningSymbolCoroutine = null;
+        RestoreUltraWinningSymbolTargets();
+        onComplete?.Invoke();
+    }
+
+    private void RestoreUltraWinningSymbolTargets()
+    {
+        for (int targetIndex = 0;
+             targetIndex < activeUltraWinningTargets.Count;
+             targetIndex++)
+        {
+            UltraWinningSymbolAnimationTarget target =
+                activeUltraWinningTargets[targetIndex];
+            if (target == null)
+            {
+                continue;
+            }
+
+            SetAlpha(target.BaseImage, 1f);
+            SetAlpha(target.AnimationImage, 0f);
+            SetAlpha(target.WinIndicatorImage, 0f);
+            if (target.AnimationImage != null)
+            {
+                target.AnimationImage.gameObject.SetActive(false);
+            }
+            if (target.WinIndicatorImage != null)
+            {
+                target.WinIndicatorImage.gameObject.SetActive(false);
+            }
+        }
+
+        activeUltraWinningTargets.Clear();
+    }
+
+    private void HideUltraEntryTransitionImage()
+    {
+        SetAlpha(ultraEntryTransitionImage, 0f);
+        if (ultraEntryTransitionImage != null)
+        {
+            ultraEntryTransitionImage.gameObject.SetActive(false);
+        }
+    }
+
+    private static string GetUltraWheelColorName(int symbolId)
+    {
+        switch (symbolId)
+        {
+            case UltraSlotView.GreenWheelSymbolId:
+                return "Green";
+            case UltraSlotView.BlueWheelSymbolId:
+                return "Blue";
+            case UltraSlotView.RedWheelSymbolId:
+                return "Red";
+            default:
+                return "Unknown";
+        }
+    }
+
+    private IEnumerator PlayAnticipationFrames(Image targetImage)
+    {
+        float loopDuration = Mathf.Max(0.05f, anticipationLoopDuration);
+        while (targetImage != null &&
+               activeAnticipations.ContainsKey(targetImage))
+        {
+            float elapsed = 0f;
+            int displayedFrameIndex = -1;
+            while (elapsed < loopDuration &&
+                   targetImage != null &&
+                   activeAnticipations.ContainsKey(targetImage))
+            {
+                float normalizedTime = elapsed / loopDuration;
+                int frameIndex = Mathf.Min(
+                    Mathf.FloorToInt(normalizedTime * anticipationFrames.Length),
+                    anticipationFrames.Length - 1);
+
+                if (frameIndex != displayedFrameIndex)
+                {
+                    Sprite frame = anticipationFrames[frameIndex];
+                    if (frame != null)
+                    {
+                        targetImage.sprite = frame;
+                    }
+
+                    displayedFrameIndex = frameIndex;
+                }
+
+                elapsed += GetDeltaTime();
+                yield return null;
+            }
+        }
     }
 
     private IEnumerator PlayFrames(
@@ -296,8 +1178,445 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             current == activeAnimation)
         {
             activeAnimations.Remove(overlayImage);
-            SetAlpha(activeAnimation.BaseImage, 1f);
-            SetAlpha(overlayImage, 0f);
+            RestoreAnimationLayers(activeAnimation);
+        }
+    }
+
+    private IEnumerator PlayFramesOnce(
+        ActiveSymbolAnimation activeAnimation,
+        Sprite[] frames,
+        int frameCount,
+        float playbackDuration,
+        Action onComplete)
+    {
+        if (startDelay > 0f)
+        {
+            float delayElapsed = 0f;
+            while (delayElapsed < startDelay)
+            {
+                delayElapsed += GetDeltaTime();
+                yield return null;
+            }
+        }
+
+        Image overlayImage = activeAnimation.OverlayImage;
+        if (overlayImage == null ||
+            !activeAnimations.TryGetValue(
+                overlayImage,
+                out ActiveSymbolAnimation current) ||
+            current != activeAnimation)
+        {
+            yield break;
+        }
+
+        SetAlpha(activeAnimation.BaseImage, 0f);
+        SetAlpha(overlayImage, 1f);
+        PrepareSecondaryAnimationLayer(activeAnimation);
+
+        float elapsed = 0f;
+        int displayedFrameIndex = -1;
+        int displayedSecondaryFrameIndex = -1;
+        while (elapsed < playbackDuration)
+        {
+            float normalizedTime = elapsed / playbackDuration;
+            int frameIndex = Mathf.Min(
+                Mathf.FloorToInt(normalizedTime * frameCount),
+                frameCount - 1);
+
+            if (frameIndex != displayedFrameIndex)
+            {
+                Sprite frame = frames[frameIndex];
+                if (frame != null)
+                {
+                    overlayImage.sprite = frame;
+                    activeAnimation.CurrentVisualSize01 =
+                        GetNormalizedVisualSize(
+                            frame,
+                            activeAnimation.MinimumVisualExtent,
+                            activeAnimation.MaximumVisualExtent);
+                }
+
+                displayedFrameIndex = frameIndex;
+            }
+
+            if (activeAnimation.SecondaryOverlayImage != null &&
+                activeAnimation.SecondaryFrames != null &&
+                activeAnimation.SecondaryFrames.Length > 0)
+            {
+                int secondaryFrameIndex = Mathf.Min(
+                    Mathf.FloorToInt(
+                        normalizedTime *
+                        activeAnimation.SecondaryFrames.Length),
+                    activeAnimation.SecondaryFrames.Length - 1);
+                if (secondaryFrameIndex !=
+                    displayedSecondaryFrameIndex)
+                {
+                    Sprite secondaryFrame =
+                        activeAnimation.SecondaryFrames[
+                            secondaryFrameIndex];
+                    if (secondaryFrame != null)
+                    {
+                        activeAnimation.SecondaryOverlayImage.sprite =
+                            secondaryFrame;
+                    }
+
+                    displayedSecondaryFrameIndex =
+                        secondaryFrameIndex;
+                }
+            }
+
+            elapsed += GetDeltaTime();
+            yield return null;
+        }
+
+        if (overlayImage == null ||
+            !activeAnimations.TryGetValue(
+                overlayImage,
+                out current) ||
+            current != activeAnimation)
+        {
+            yield break;
+        }
+
+        activeAnimations.Remove(overlayImage);
+        RestoreAnimationLayers(activeAnimation);
+        onComplete?.Invoke();
+    }
+
+    private IEnumerator PlayScatterWheelResultTextMoveFrames(
+        RectTransform resultText,
+        float targetAnchoredY,
+        Action onComplete)
+    {
+        Vector2 startPosition = resultText.anchoredPosition;
+        float duration =
+            Mathf.Max(0.01f, scatterWheelResultTextMoveDuration);
+        float elapsed = 0f;
+
+        while (elapsed < duration && resultText != null)
+        {
+            float normalizedTime =
+                Mathf.Clamp01(elapsed / duration);
+            float easedTime =
+                1f - Mathf.Pow(1f - normalizedTime, 3f);
+            Vector2 position = startPosition;
+            position.y =
+                Mathf.Lerp(
+                    startPosition.y,
+                    targetAnchoredY,
+                    easedTime);
+            resultText.anchoredPosition = position;
+
+            elapsed += GetDeltaTime();
+            yield return null;
+        }
+
+        if (resultText != null)
+        {
+            Vector2 finalPosition = resultText.anchoredPosition;
+            finalPosition.y = targetAnchoredY;
+            resultText.anchoredPosition = finalPosition;
+            activeScatterWheelResultTextMoves.Remove(resultText);
+        }
+
+        onComplete?.Invoke();
+    }
+
+    private IEnumerator PlayScatterWheelHandoffScale(
+        RectTransform rotatingWheel,
+        Vector3 rotatingWheelTargetScale,
+        RectTransform wheelRim,
+        Vector3 wheelRimTargetScale,
+        RectTransform leaf,
+        Vector3 leafTargetScale)
+    {
+        float duration =
+            Mathf.Max(0.01f, scatterWheelHandoffScaleDuration);
+        float startScale =
+            Mathf.Max(0.01f, scatterWheelHandoffStartScale);
+        float endScale =
+            Mathf.Max(0.01f, scatterWheelHandoffEndScale);
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            float normalizedTime =
+                Mathf.Clamp01(elapsed / duration);
+            float easedTime =
+                normalizedTime *
+                normalizedTime *
+                (3f - 2f * normalizedTime);
+            float scaleMultiplier =
+                Mathf.Lerp(startScale, endScale, easedTime);
+
+            ApplyScaleMultiplier(
+                rotatingWheel,
+                rotatingWheelTargetScale,
+                scaleMultiplier);
+            ApplyScaleMultiplier(
+                wheelRim,
+                wheelRimTargetScale,
+                scaleMultiplier);
+            ApplyScaleMultiplier(
+                leaf,
+                leafTargetScale,
+                scaleMultiplier);
+
+            elapsed += GetDeltaTime();
+            yield return null;
+        }
+
+        ApplyScaleMultiplier(
+            rotatingWheel,
+            rotatingWheelTargetScale,
+            endScale);
+        ApplyScaleMultiplier(
+            wheelRim,
+            wheelRimTargetScale,
+            endScale);
+        ApplyScaleMultiplier(
+            leaf,
+            leafTargetScale,
+            endScale);
+        if (rotatingWheel != null)
+        {
+            activeScatterWheelHandoffs.Remove(rotatingWheel);
+        }
+    }
+
+    private IEnumerator PlayScatterWheelIntroFrames(
+        ActiveSymbolAnimation activeAnimation,
+        Action onMainSequenceComplete,
+        Action onBackgroundFxComplete)
+    {
+        if (startDelay > 0f)
+        {
+            float delayElapsed = 0f;
+            while (delayElapsed < startDelay)
+            {
+                delayElapsed += GetDeltaTime();
+                yield return null;
+            }
+        }
+
+        Image overlayImage = activeAnimation.OverlayImage;
+        if (!IsCurrentAnimation(activeAnimation))
+        {
+            yield break;
+        }
+
+        SetAlpha(activeAnimation.BaseImage, 0f);
+        SetAlpha(overlayImage, 1f);
+        PrepareSecondaryAnimationLayer(activeAnimation);
+
+        bool hasBackgroundFx =
+            activeAnimation.SecondaryOverlayImage != null &&
+            activeAnimation.SecondaryFrames != null &&
+            activeAnimation.SecondaryFrames.Length > 0;
+        float mainDuration = GetScatterWheelIntroDuration();
+        float backgroundFxDuration =
+            hasBackgroundFx
+                ? mainDuration /
+                  Mathf.Max(
+                      0.01f,
+                      scatterWheelBackgroundFxSpeedMultiplier)
+                : mainDuration;
+        float totalDuration =
+            Mathf.Max(mainDuration, backgroundFxDuration);
+        float elapsed = 0f;
+        int displayedMainFrameIndex = -1;
+        int displayedBackgroundFrameIndex = -1;
+        bool mainSequenceCompleted = false;
+
+        while (elapsed < totalDuration)
+        {
+            if (!mainSequenceCompleted)
+            {
+                float mainNormalizedTime =
+                    Mathf.Clamp01(elapsed / mainDuration);
+                int mainFrameIndex = Mathf.Min(
+                    Mathf.FloorToInt(
+                        mainNormalizedTime *
+                        scatterWheelMainFrames.Length),
+                    scatterWheelMainFrames.Length - 1);
+                if (mainFrameIndex != displayedMainFrameIndex)
+                {
+                    Sprite frame =
+                        scatterWheelMainFrames[mainFrameIndex];
+                    if (frame != null)
+                    {
+                        overlayImage.sprite = frame;
+                        activeAnimation.CurrentVisualSize01 =
+                            GetNormalizedVisualSize(
+                                frame,
+                                activeAnimation.MinimumVisualExtent,
+                                activeAnimation.MaximumVisualExtent);
+                    }
+
+                    displayedMainFrameIndex = mainFrameIndex;
+                }
+
+                if (elapsed >= mainDuration)
+                {
+                    mainSequenceCompleted = true;
+                    RestorePrimaryAnimationLayer(activeAnimation);
+                    onMainSequenceComplete?.Invoke();
+
+                    if (!IsCurrentAnimation(activeAnimation))
+                    {
+                        yield break;
+                    }
+                }
+            }
+
+            if (hasBackgroundFx)
+            {
+                float backgroundNormalizedTime =
+                    Mathf.Clamp01(elapsed / backgroundFxDuration);
+                int backgroundFrameIndex = Mathf.Min(
+                    Mathf.FloorToInt(
+                        backgroundNormalizedTime *
+                        activeAnimation.SecondaryFrames.Length),
+                    activeAnimation.SecondaryFrames.Length - 1);
+                if (backgroundFrameIndex !=
+                    displayedBackgroundFrameIndex)
+                {
+                    Sprite backgroundFrame =
+                        activeAnimation.SecondaryFrames[
+                            backgroundFrameIndex];
+                    if (backgroundFrame != null)
+                    {
+                        activeAnimation.SecondaryOverlayImage.sprite =
+                            backgroundFrame;
+                    }
+
+                    displayedBackgroundFrameIndex =
+                        backgroundFrameIndex;
+                }
+            }
+
+            elapsed += GetDeltaTime();
+            yield return null;
+        }
+
+        if (!mainSequenceCompleted)
+        {
+            RestorePrimaryAnimationLayer(activeAnimation);
+            onMainSequenceComplete?.Invoke();
+            if (!IsCurrentAnimation(activeAnimation))
+            {
+                yield break;
+            }
+        }
+
+        if (!IsCurrentAnimation(activeAnimation))
+        {
+            yield break;
+        }
+
+        activeAnimations.Remove(overlayImage);
+        RestoreAnimationLayers(activeAnimation);
+        onBackgroundFxComplete?.Invoke();
+    }
+
+    private bool IsCurrentAnimation(
+        ActiveSymbolAnimation activeAnimation)
+    {
+        Image overlayImage = activeAnimation?.OverlayImage;
+        return overlayImage != null &&
+               activeAnimations.TryGetValue(
+                   overlayImage,
+                   out ActiveSymbolAnimation current) &&
+               current == activeAnimation;
+    }
+
+    private static void PrepareSecondaryAnimationLayer(
+        ActiveSymbolAnimation activeAnimation)
+    {
+        Image secondaryImage =
+            activeAnimation.SecondaryOverlayImage;
+        if (secondaryImage == null ||
+            activeAnimation.SecondaryFrames == null ||
+            activeAnimation.SecondaryFrames.Length == 0)
+        {
+            return;
+        }
+
+        Transform secondaryTransform = secondaryImage.transform;
+        Transform mainTransform =
+            activeAnimation.OverlayImage != null
+                ? activeAnimation.OverlayImage.transform
+                : null;
+        if (mainTransform != null &&
+            secondaryTransform.parent == mainTransform.parent)
+        {
+            // The FX track is a background, so render it immediately behind
+            // the main Scatter Wheel animation layer.
+            secondaryTransform.SetSiblingIndex(
+                mainTransform.GetSiblingIndex());
+        }
+
+        secondaryImage.gameObject.SetActive(true);
+        SetAlpha(secondaryImage, 1f);
+    }
+
+    private static void RestorePrimaryAnimationLayer(
+        ActiveSymbolAnimation activeAnimation)
+    {
+        if (activeAnimation == null)
+        {
+            return;
+        }
+
+        SetAlpha(activeAnimation.BaseImage, 1f);
+        SetAlpha(activeAnimation.OverlayImage, 0f);
+    }
+
+    private static void RestoreAnimationLayers(
+        ActiveSymbolAnimation activeAnimation)
+    {
+        if (activeAnimation == null)
+        {
+            return;
+        }
+
+        SetAlpha(activeAnimation.BaseImage, 1f);
+        SetAlpha(activeAnimation.OverlayImage, 0f);
+
+        Image secondaryImage =
+            activeAnimation.SecondaryOverlayImage;
+        SetAlpha(secondaryImage, 0f);
+        if (secondaryImage == null)
+        {
+            return;
+        }
+
+        if (activeAnimation.SecondaryOriginalSiblingIndex >= 0)
+        {
+            secondaryImage.transform.SetSiblingIndex(
+                activeAnimation.SecondaryOriginalSiblingIndex);
+        }
+        secondaryImage.gameObject.SetActive(false);
+    }
+
+    private static void SetActive(
+        RectTransform target,
+        bool isActive)
+    {
+        if (target != null)
+        {
+            target.gameObject.SetActive(isActive);
+        }
+    }
+
+    private static void ApplyScaleMultiplier(
+        RectTransform target,
+        Vector3 targetScale,
+        float multiplier)
+    {
+        if (target != null)
+        {
+            target.localScale = targetScale * multiplier;
         }
     }
 
@@ -403,4 +1722,13 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         Color color = image.color;
         image.color = new Color(color.r, color.g, color.b, alpha);
     }
+}
+
+internal sealed class UltraWinningSymbolAnimationTarget
+{
+    public int SymbolId;
+    public Image BaseImage;
+    public Image AnimationImage;
+    public Image WinIndicatorImage;
+    public Sprite[] Frames;
 }

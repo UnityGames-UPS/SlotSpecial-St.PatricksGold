@@ -11,27 +11,35 @@ public class GameManager : MonoBehaviour
     [Header("References")]
     [SerializeField] internal SocketIOManager socketManager;
     [SerializeField] private SlotView slotView;
+    [SerializeField] private SlotSymbolAnimationManager symbolAnimationManager;
+    [Tooltip(
+        "Controls result popups. If empty, the scene PopupManager is found automatically.")]
+    [SerializeField] private PopupManager popupManager;
 
     [Header("Ultra Slot")]
     [SerializeField] private UltraSlotView ultraSlotView;
-    [Tooltip("The normal 5x3 SlotHolder object.")]
+    [Tooltip(
+        "The normal 5x3 panel. This assigned object is deactivated halfway " +
+        "through the Ultra entry frame transition.")]
     [SerializeField] private GameObject normalSlotPanel;
-    [Tooltip("The new three-reel UltraWheelSlot object.")]
+    [Tooltip(
+        "The three-reel Ultra panel. This assigned object is activated when " +
+        "the normal panel is deactivated.")]
     [SerializeField] private GameObject ultraSlotPanel;
     [Tooltip("The panel containing the three Ultra prize wheels.")]
     [SerializeField] private GameObject ultraWheelPanel;
     [SerializeField, Min(0f)] private float ultraSlotSpinDuration = 2f;
-    [SerializeField, Min(0f)] private float ultraTriggerAnimationDuration = 1.5f;
     [SerializeField, Min(0.01f)] private float ultraSlotTransitionDuration = 1.2f;
     [SerializeField, Min(0f)] private float ultraSlotTransitionPadding = 100f;
 
     [Header("Ultra Wheels")]
-    [Tooltip("Wheel 1, represented by Ultra result symbol 1.")]
-    [SerializeField] private UltraWheelController redUltraWheel;
-    [Tooltip("Wheel 2, represented by Ultra result symbol 2.")]
+    [Tooltip("Server wheel 1: Green wheel, represented by Ultra result symbol 1.")]
+    [UnityEngine.Serialization.FormerlySerializedAs("thirdUltraWheel")]
+    [SerializeField] private UltraWheelController greenUltraWheel;
+    [Tooltip("Server wheel 2: Blue wheel, represented by Ultra result symbol 2.")]
     [SerializeField] private UltraWheelController blueUltraWheel;
-    [Tooltip("Wheel 3, represented by Ultra result symbol 3.")]
-    [SerializeField] private UltraWheelController thirdUltraWheel;
+    [Tooltip("Server wheel 3: Red wheel, represented by Ultra result symbol 3.")]
+    [SerializeField] private UltraWheelController redUltraWheel;
     [SerializeField, Min(0f)] private float ultraResultAnimationHoldDuration = 1.2f;
     [Tooltip("How long the final Ultra wheel result remains visible before returning to the normal slot.")]
     [SerializeField, Min(0f)] private float ultraWheelResultHoldDuration = 1.2f;
@@ -44,12 +52,18 @@ public class GameManager : MonoBehaviour
     [Header("Auto Play Settings")]
     [Tooltip("How long an autoplay result remains visible before the next spin starts.")]
     [SerializeField, Min(0f)] private float autoPlayResultHoldDuration = 1f;
+    [Tooltip(
+        "Delay after the Scatter output texts finish moving before autoplay " +
+        "starts the next spin.")]
+    [SerializeField, Min(0f)]
+    private float scatterAutoPlayResultHoldDuration = 2f;
 
     internal StPatricksGoldGameConfig stPatricksGoldConfig;
     internal PlayerData playerData;
     internal ServerSpinResponse latestServerSpinResponse { get; private set; }
     internal SpinResult latestSpinResult { get; private set; }
     internal string latestRawSpinResponse { get; private set; }
+    internal ServerScatterBonus latestScatterBonus { get; private set; }
     internal ServerUltraBonus latestUltraBonus { get; private set; }
     internal IReadOnlyList<int> latestWinningPaylineIndices => latestWinningPaylineIndicesInternal;
 
@@ -79,6 +93,7 @@ public class GameManager : MonoBehaviour
     private SpinSpeed activeSpinSpeed;
     private List<List<int>> pendingResultMatrix;
     private SpinResult pendingSpinResult;
+    private ServerScatterBonus pendingScatterBonus;
     private ServerUltraBonus pendingUltraBonus;
     private List<int> pendingUltraSlotResult;
     private bool manualStopRequested;
@@ -109,8 +124,15 @@ public class GameManager : MonoBehaviour
 
     private void Awake()
     {
+        if (popupManager == null)
+        {
+            popupManager = FindFirstObjectByType<PopupManager>(
+                FindObjectsInactive.Include);
+        }
+
         ResolveUltraSlotReferences();
         CacheUltraSlotLayout();
+        symbolAnimationManager?.StopUltraEntryTransition();
     }
 
     private void Start()
@@ -142,6 +164,8 @@ public class GameManager : MonoBehaviour
         ClearOptimisticBalanceTransaction();
         latestSpinResult = null;
         pendingSpinResult = null;
+        latestScatterBonus = null;
+        pendingScatterBonus = null;
         latestWinningPaylineIndicesInternal.Clear();
 
         ResetUltraSlotState();
@@ -168,7 +192,7 @@ public class GameManager : MonoBehaviour
 
         bool appliedFullTable =
             ApplyUltraWheelServerValues(
-                redUltraWheel,
+                greenUltraWheel,
                 ultraWheelConfig.wheel1Awards,
                 1);
         appliedFullTable |=
@@ -178,14 +202,15 @@ public class GameManager : MonoBehaviour
                 2);
         appliedFullTable |=
             ApplyUltraWheelServerValues(
-                thirdUltraWheel,
+                redUltraWheel,
                 ultraWheelConfig.wheel3Awards,
                 3);
 
         if (!appliedFullTable)
         {
             Debug.Log(
-                "[GameManager] The server supplied Ultra wheel ranges but no full 10-value " +
+                $"[GameManager] The server supplied Ultra wheel ranges but no full " +
+                $"{UltraWheelController.ServerValueCount}-value " +
                 "tables. Each winning segment will be updated from activeWheels.baseAward.");
         }
     }
@@ -206,6 +231,14 @@ public class GameManager : MonoBehaviour
             Debug.LogError(
                 $"[GameManager] Cannot display values for Ultra wheel {wheelNumber}; " +
                 "its controller is not assigned.");
+            return false;
+        }
+
+        if (wheelController.WheelNumber != wheelNumber)
+        {
+            Debug.LogError(
+                $"[GameManager] Ultra wheel {wheelNumber} is assigned to a " +
+                $"controller configured as wheel {wheelController.WheelNumber}.");
             return false;
         }
 
@@ -244,6 +277,12 @@ public class GameManager : MonoBehaviour
                 continue;
             }
 
+            if (serverWheel.awards?.Count ==
+                UltraWheelController.ServerValueCount)
+            {
+                wheelController.SetServerValues(serverWheel.awards);
+            }
+
             wheelController.SetServerValue(
                 serverWheel.stopIndex,
                 serverWheel.baseAward);
@@ -255,6 +294,13 @@ public class GameManager : MonoBehaviour
 
     private void ResolveUltraSlotReferences()
     {
+        if (symbolAnimationManager == null)
+        {
+            symbolAnimationManager =
+                FindFirstObjectByType<SlotSymbolAnimationManager>(
+                    FindObjectsInactive.Include);
+        }
+
         if (ultraSlotView == null)
         {
             ultraSlotView = FindFirstObjectByType<UltraSlotView>(FindObjectsInactive.Include);
@@ -288,14 +334,14 @@ public class GameManager : MonoBehaviour
 
             switch (wheelController.WheelNumber)
             {
-                case 1 when redUltraWheel == null:
-                    redUltraWheel = wheelController;
+                case 1 when greenUltraWheel == null:
+                    greenUltraWheel = wheelController;
                     break;
                 case 2 when blueUltraWheel == null:
                     blueUltraWheel = wheelController;
                     break;
-                case 3 when thirdUltraWheel == null:
-                    thirdUltraWheel = wheelController;
+                case 3 when redUltraWheel == null:
+                    redUltraWheel = wheelController;
                     break;
             }
         }
@@ -454,8 +500,11 @@ public class GameManager : MonoBehaviour
 
     private bool StartSpin()
     {
+        popupManager?.HideScatterWinImmediate();
         pendingResultMatrix = null;
         pendingSpinResult = null;
+        pendingScatterBonus = null;
+        latestScatterBonus = null;
         pendingUltraBonus = null;
         manualStopRequested = false;
         displayedWinAmount = 0;
@@ -647,11 +696,21 @@ public class GameManager : MonoBehaviour
         latestWinningPaylineIndicesInternal.Clear();
         latestWinningPaylineIndicesInternal.AddRange(GetConfiguredWinningPaylineIndices(completedResult));
 
-        currentState = GameState.Idle;
-
+        ServerScatterBonus completedScatterBonus =
+            pendingScatterBonus;
+        pendingScatterBonus = null;
         ServerUltraBonus completedUltraBonus = pendingUltraBonus;
         pendingUltraBonus = null;
         bool ultraTriggered = IsUltraBonusTriggered(completedUltraBonus);
+        bool scatterTriggered =
+            !ultraTriggered &&
+            IsScatterBonusTriggered(completedScatterBonus);
+        latestScatterBonus = scatterTriggered
+            ? completedScatterBonus
+            : null;
+        currentState = scatterTriggered
+            ? GameState.ShowingWin
+            : GameState.Idle;
         displayedWinAmount = ultraTriggered
             ? 0
             : completedResult.winAmount;
@@ -698,6 +757,31 @@ public class GameManager : MonoBehaviour
         SpinActivityChanged?.Invoke(false);
         GamePresentationChanged?.Invoke();
 
+        if (scatterTriggered)
+        {
+            bool presentationStarted =
+                slotView != null &&
+                slotView.ShowScatterWheelFeature(
+                    completedScatterBonus,
+                    stPatricksGoldConfig?.scatterWheel,
+                    () =>
+                        OnScatterWheelPresentationComplete(
+                            shouldContinueAutoPlay,
+                            completedResult.winAmount));
+
+            if (!presentationStarted)
+            {
+                OnScatterWheelPresentationComplete(
+                    shouldContinueAutoPlay,
+                    completedResult.winAmount);
+            }
+
+            Debug.Log(
+                "[GameManager] SpinResult applied. " +
+                "Showing the server Scatter Wheel results.");
+            return;
+        }
+
         // The server win lines have already been converted to flat positions
         // for the visible 5x3 grid. Start their symbol animation only after all
         // reels have settled so the pulse is applied to the displayed result.
@@ -719,6 +803,52 @@ public class GameManager : MonoBehaviour
         {
             QueueNextAutoPlaySpin();
         }
+    }
+
+    private void OnScatterWheelPresentationComplete(
+        bool shouldContinueAutoPlay,
+        double totalWinAmount)
+    {
+        if (popupManager != null &&
+            popupManager.ShowScatterWin(
+                totalWinAmount,
+                () =>
+                    FinishScatterWinPresentation(
+                        shouldContinueAutoPlay,
+                        0f)))
+        {
+            Debug.Log(
+                "[GameManager] Scatter wheels completed. " +
+                "Showing the Scatter total-win popup.");
+            return;
+        }
+
+        FinishScatterWinPresentation(
+            shouldContinueAutoPlay,
+            scatterAutoPlayResultHoldDuration);
+    }
+
+    private void FinishScatterWinPresentation(
+        bool shouldContinueAutoPlay,
+        float autoPlayDelay)
+    {
+        if (currentState == GameState.ShowingWin)
+        {
+            currentState = GameState.Idle;
+        }
+
+        SpinActivityChanged?.Invoke(false);
+        GamePresentationChanged?.Invoke();
+
+        if (shouldContinueAutoPlay)
+        {
+            QueueNextAutoPlaySpin(
+                autoPlayDelay);
+        }
+
+        Debug.Log(
+            "[GameManager] Scatter Wheel presentation completed. " +
+            "Round returned to Idle.");
     }
 
     private float GetSpinDuration(SpinSpeed spinSpeed)
@@ -757,7 +887,8 @@ public class GameManager : MonoBehaviour
 
     internal bool IsSpinRoundActive()
     {
-        return IsSpinning();
+        return IsSpinning() ||
+               currentState == GameState.ShowingWin;
     }
 
     internal void OnSpinResponseReceived(
@@ -783,13 +914,15 @@ public class GameManager : MonoBehaviour
 
         if (slotView == null)
         {
-            FailActiveSpin("The server result cannot be displayed because SlotView is not assigned.");
+            FailActiveSpin(
+                "The server result cannot be displayed because SlotView is not assigned.");
             return;
         }
 
         if (!slotView.TryValidateResultMatrix(resultMatrix, out string validationError))
         {
-            FailActiveSpin($"The server result cannot be displayed: {validationError}");
+            FailActiveSpin(
+                $"The server result cannot be displayed: {validationError}");
             return;
         }
 
@@ -814,6 +947,24 @@ public class GameManager : MonoBehaviour
             pendingUltraBonus = serverResponse.payload?.ultraBonus ??
                                 new ServerUltraBonus { isTriggered = true };
             pendingUltraBonus.isTriggered = true;
+        }
+
+        if (IsScatterBonusTriggered(
+                serverResponse.payload?.scatterBonus) ||
+            serverResponse.payload?.scatterTriggered == true ||
+            serverResponse.payload?.features?.scatterWheel?.triggered == true)
+        {
+            pendingScatterBonus =
+                serverResponse.payload?.scatterBonus ??
+                new ServerScatterBonus
+                {
+                    isTriggered = true,
+                    triggerPositions =
+                        new List<ServerGridPosition>(),
+                    wheelSpins =
+                        new List<ServerScatterWheelSpin>()
+                };
+            pendingScatterBonus.isTriggered = true;
         }
     }
 
@@ -881,6 +1032,7 @@ public class GameManager : MonoBehaviour
 
         pendingResultMatrix = null;
         pendingSpinResult = null;
+        pendingScatterBonus = null;
         pendingUltraBonus = null;
         manualStopRequested = false;
         slotView?.CancelSpin();
@@ -1030,14 +1182,32 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator ShowUltraWheelsAfterResultAnimation()
     {
-        if (ultraResultAnimationHoldDuration > 0f)
+        bool animationCompleted = false;
+        bool animationStarted =
+            symbolAnimationManager != null &&
+            symbolAnimationManager.PlayUltraWinningSymbolAnimations(
+                ultraSlotView,
+                () => animationCompleted = true);
+
+        if (animationStarted)
         {
-            yield return new WaitForSecondsRealtime(
-                ultraResultAnimationHoldDuration);
+            while (isUltraSlotUnlocked &&
+                   !animationCompleted)
+            {
+                yield return null;
+            }
         }
         else
         {
-            yield return null;
+            if (ultraResultAnimationHoldDuration > 0f)
+            {
+                yield return new WaitForSecondsRealtime(
+                    ultraResultAnimationHoldDuration);
+            }
+            else
+            {
+                yield return null;
+            }
         }
 
         ultraWheelsCoroutine = null;
@@ -1210,8 +1380,8 @@ public class GameManager : MonoBehaviour
 
         foreach (int resultSymbol in pendingUltraSlotResult)
         {
-            if (resultSymbol >= UltraSlotView.CoinOneSymbolId &&
-                resultSymbol <= UltraSlotView.CoinThreeSymbolId)
+            if (resultSymbol >= UltraSlotView.GreenWheelSymbolId &&
+                resultSymbol <= UltraSlotView.RedWheelSymbolId)
             {
                 activeWheelNumbers.Add(resultSymbol);
             }
@@ -1225,11 +1395,11 @@ public class GameManager : MonoBehaviour
         switch (wheelNumber)
         {
             case 1:
-                return redUltraWheel;
+                return greenUltraWheel;
             case 2:
                 return blueUltraWheel;
             case 3:
-                return thirdUltraWheel;
+                return redUltraWheel;
             default:
                 return null;
         }
@@ -1342,9 +1512,9 @@ public class GameManager : MonoBehaviour
         var stoppedControllers = new HashSet<UltraWheelController>();
         UltraWheelController[] wheelControllers =
         {
-            redUltraWheel,
+            greenUltraWheel,
             blueUltraWheel,
-            thirdUltraWheel
+            redUltraWheel
         };
 
         foreach (UltraWheelController wheelController in wheelControllers)
@@ -1366,25 +1536,80 @@ public class GameManager : MonoBehaviour
 
         List<int> ultraWheelPositions = GetUltraWheelTriggerPositions(ultraBonus);
         bool startedAnimation =
-            ultraTriggerAnimationDuration > 0f &&
             slotView != null &&
-            slotView.ShowPrioritySymbolAnimation(
+            slotView.ShowPrioritySymbolAnimationLoops(
                 ultraWheelPositions,
-                ultraTriggerAnimationDuration,
+                StPatricksGoldSymbolIds.UltraWheel,
+                2,
                 () =>
                 {
                     if (isUltraSlotUnlocked)
                     {
-                        PlayUltraSlotEnterTransition();
+                        PlayUltraEntryFrameTransition();
                     }
                 });
 
         if (!startedAnimation)
         {
-            PlayUltraSlotEnterTransition();
+            PlayUltraEntryFrameTransition();
             return;
         }
 
+        GamePresentationChanged?.Invoke();
+    }
+
+    private void PlayUltraEntryFrameTransition()
+    {
+        KillUltraSlotTransition();
+
+        if (!isUltraSlotUnlocked)
+        {
+            return;
+        }
+
+        CacheUltraSlotLayout();
+        RestoreUltraSlotLayout();
+        isUltraSlotTransitioning = true;
+        normalSlotPanel?.SetActive(true);
+        ultraSlotPanel?.SetActive(false);
+        ultraWheelPanel?.SetActive(false);
+
+        bool animationStarted =
+            symbolAnimationManager != null &&
+            symbolAnimationManager.PlayUltraEntryTransition(
+                OnUltraEntryTransitionMidpoint,
+                OnUltraEntryTransitionComplete);
+        if (!animationStarted)
+        {
+            Debug.LogError(
+                "[GameManager] The animation manager could not start the " +
+                "Ultra entry transition. The panels will swap immediately.");
+            OnUltraEntryTransitionMidpoint();
+            OnUltraEntryTransitionComplete();
+        }
+
+        GamePresentationChanged?.Invoke();
+    }
+
+    private void OnUltraEntryTransitionMidpoint()
+    {
+        if (isUltraSlotUnlocked)
+        {
+            SwapToUltraSlotPanels();
+        }
+    }
+
+    private void OnUltraEntryTransitionComplete()
+    {
+        isUltraSlotTransitioning = false;
+        GamePresentationChanged?.Invoke();
+    }
+
+    private void SwapToUltraSlotPanels()
+    {
+        normalSlotPanel?.SetActive(false);
+        ultraSlotPanel?.SetActive(true);
+        ultraWheelPanel?.SetActive(false);
         GamePresentationChanged?.Invoke();
     }
 
@@ -1490,56 +1715,6 @@ public class GameManager : MonoBehaviour
                 hasCachedUltraWheelLayout = true;
             }
         }
-    }
-
-    private void PlayUltraSlotEnterTransition()
-    {
-        KillUltraSlotTransition();
-        CacheUltraSlotLayout();
-
-        if (!hasCachedUltraSlotLayout)
-        {
-            normalSlotPanel?.SetActive(false);
-            ultraSlotPanel?.SetActive(true);
-            GamePresentationChanged?.Invoke();
-            Debug.LogWarning(
-                "[GameManager] Ultra slot transition requires RectTransforms; used an instant swap instead.");
-            return;
-        }
-
-        isUltraSlotTransitioning = true;
-        normalSlotPanel.SetActive(true);
-        ultraSlotPanel.SetActive(true);
-        ultraWheelPanel?.SetActive(false);
-
-        normalSlotRectTransform.anchoredPosition = normalSlotRestingPosition;
-        ultraSlotRectTransform.anchoredPosition =
-            ultraSlotRestingPosition +
-            Vector2.down * GetUltraSlotSlideDistance(ultraSlotRectTransform);
-
-        float duration = Mathf.Max(0.01f, ultraSlotTransitionDuration);
-        ultraSlotTransitionSequence = DOTween.Sequence()
-            .SetUpdate(true)
-            .Append(
-                normalSlotRectTransform
-                    .DOAnchorPos(
-                        normalSlotRestingPosition +
-                        Vector2.down * GetUltraSlotSlideDistance(normalSlotRectTransform),
-                        duration)
-                    .SetEase(Ease.InCubic))
-            .AppendCallback(() => normalSlotPanel.SetActive(false))
-            .Append(
-                ultraSlotRectTransform
-                    .DOAnchorPos(ultraSlotRestingPosition, duration)
-                    .SetEase(Ease.OutCubic))
-            .OnComplete(() =>
-            {
-                ultraSlotTransitionSequence = null;
-                isUltraSlotTransitioning = false;
-                GamePresentationChanged?.Invoke();
-            });
-
-        GamePresentationChanged?.Invoke();
     }
 
     private void PlayUltraWheelsEnterTransition()
@@ -1723,6 +1898,9 @@ public class GameManager : MonoBehaviour
 
     private void KillUltraSlotTransition()
     {
+        symbolAnimationManager?.StopUltraEntryTransition();
+        symbolAnimationManager?.StopUltraWinningSymbolAnimations();
+
         if (ultraSlotTransitionSequence != null)
         {
             ultraSlotTransitionSequence.Kill();
@@ -1735,6 +1913,13 @@ public class GameManager : MonoBehaviour
     private static bool IsUltraBonusTriggered(ServerUltraBonus ultraBonus)
     {
         return ultraBonus != null && ultraBonus.isTriggered;
+    }
+
+    private static bool IsScatterBonusTriggered(
+        ServerScatterBonus scatterBonus)
+    {
+        return scatterBonus != null &&
+               scatterBonus.isTriggered;
     }
 
     private static bool TryBuildUltraSlotResult(
@@ -1790,10 +1975,10 @@ public class GameManager : MonoBehaviour
             }
 
             int wheelSymbol = reelResult.assignedWheelIndex;
-            if (wheelSymbol < UltraSlotView.CoinOneSymbolId ||
-                wheelSymbol > UltraSlotView.CoinThreeSymbolId)
+            if (wheelSymbol < UltraSlotView.GreenWheelSymbolId ||
+                wheelSymbol > UltraSlotView.RedWheelSymbolId)
             {
-                wheelSymbol = resultIndex + UltraSlotView.CoinOneSymbolId;
+                wheelSymbol = resultIndex + UltraSlotView.GreenWheelSymbolId;
             }
 
             converted[UltraSlotView.GetResultIndex(
@@ -1925,17 +2110,25 @@ public class GameManager : MonoBehaviour
 
     private void QueueNextAutoPlaySpin()
     {
-        if (!isAutoPlaying || autoPlayCoroutine != null) return;
-
-        autoPlayCoroutine = StartCoroutine(StartNextAutoPlaySpin());
+        QueueNextAutoPlaySpin(autoPlayResultHoldDuration);
     }
 
-    private IEnumerator StartNextAutoPlaySpin()
+    private void QueueNextAutoPlaySpin(float resultHoldDuration)
+    {
+        if (!isAutoPlaying || autoPlayCoroutine != null) return;
+
+        autoPlayCoroutine = StartCoroutine(
+            StartNextAutoPlaySpin(resultHoldDuration));
+    }
+
+    private IEnumerator StartNextAutoPlaySpin(
+        float resultHoldDuration)
     {
         // Keep the completed server result visible before starting another round.
-        if (autoPlayResultHoldDuration > 0f)
+        if (resultHoldDuration > 0f)
         {
-            yield return new WaitForSecondsRealtime(autoPlayResultHoldDuration);
+            yield return new WaitForSecondsRealtime(
+                resultHoldDuration);
         }
         else
         {
@@ -1974,6 +2167,7 @@ public class GameManager : MonoBehaviour
 
         pendingResultMatrix = null;
         pendingSpinResult = null;
+        pendingScatterBonus = null;
         manualStopRequested = false;
         slotView?.CancelSpin();
         CancelOptimisticBalanceTransaction();

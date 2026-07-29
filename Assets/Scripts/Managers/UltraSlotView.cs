@@ -8,7 +8,7 @@ using UnityEngine.UI;
 /// <summary>
 /// Controls the three-reel, three-row slot shown before the Ultra Wheel feature.
 /// Results are row-major and contain nine values:
-/// 0 (or -1) = empty, 1 = coin one, 2 = coin two, 3 = coin three.
+/// 0 (or -1) = empty, 1 = Green wheel, 2 = Blue wheel, 3 = Red wheel.
 /// </summary>
 public class UltraSlotView : MonoBehaviour
 {
@@ -17,18 +17,21 @@ public class UltraSlotView : MonoBehaviour
     public const int ResultCellCount = ReelCount * RowCount;
     public const int CenterRowIndex = 1;
     public const int EmptySymbolId = 0;
-    public const int CoinOneSymbolId = 1;
-    public const int CoinTwoSymbolId = 2;
-    public const int CoinThreeSymbolId = 3;
+    public const int GreenWheelSymbolId = 1;
+    public const int BlueWheelSymbolId = 2;
+    public const int RedWheelSymbolId = 3;
 
     private const int ImagesPerReel = 5;
     private const int FirstVisibleImageIndex = 1;
     private const int LastVisibleImageIndex = FirstVisibleImageIndex + RowCount - 1;
 
-    [Header("Ultra Symbols")]
-    [SerializeField] private Sprite spriteCoinOne;
-    [SerializeField] private Sprite spriteCoinTwo;
-    [SerializeField] private Sprite spriteCoinThree;
+    [Header("Ultra Symbols (1 Green, 2 Blue, 3 Red)")]
+    [UnityEngine.Serialization.FormerlySerializedAs("spriteCoinOne")]
+    [SerializeField] private Sprite spriteGreenWheelSymbol;
+    [UnityEngine.Serialization.FormerlySerializedAs("spriteCoinTwo")]
+    [SerializeField] private Sprite spriteBlueWheelSymbol;
+    [UnityEngine.Serialization.FormerlySerializedAs("spriteCoinThree")]
+    [SerializeField] private Sprite spriteRedWheelSymbol;
 
     [Header("Reels")]
     [Tooltip("Optional parent whose first three children are the ultra reels.")]
@@ -37,18 +40,18 @@ public class UltraSlotView : MonoBehaviour
     [SerializeField] private List<UltraReelImages> reelImagesList = new List<UltraReelImages>(ReelCount);
 
     [Header("Initial Result")]
-    [Tooltip("Nine row-major values for the 3x3 result. Use 0 for empty and 1, 2, or 3 for a coin.")]
+    [Tooltip("Nine row-major values for the 3x3 result. Use 0 for empty, 1 for Green, 2 for Blue, and 3 for Red.")]
     [SerializeField] private int[] initialResult =
     {
-        CoinOneSymbolId,
-        CoinTwoSymbolId,
-        CoinThreeSymbolId,
-        CoinTwoSymbolId,
-        CoinThreeSymbolId,
-        CoinOneSymbolId,
-        CoinThreeSymbolId,
-        CoinOneSymbolId,
-        CoinTwoSymbolId
+        GreenWheelSymbolId,
+        BlueWheelSymbolId,
+        RedWheelSymbolId,
+        BlueWheelSymbolId,
+        RedWheelSymbolId,
+        GreenWheelSymbolId,
+        RedWheelSymbolId,
+        GreenWheelSymbolId,
+        BlueWheelSymbolId
     };
 
     [Header("Spin Strip")]
@@ -56,11 +59,11 @@ public class UltraSlotView : MonoBehaviour
     [SerializeField] private int[] spinStrip =
     {
         EmptySymbolId,
-        CoinOneSymbolId,
+        GreenWheelSymbolId,
         EmptySymbolId,
-        CoinTwoSymbolId,
+        BlueWheelSymbolId,
         EmptySymbolId,
-        CoinThreeSymbolId
+        RedWheelSymbolId
     };
 
     [Header("Spin Settings")]
@@ -81,11 +84,6 @@ public class UltraSlotView : MonoBehaviour
     [SerializeField, Min(0f)] private float quickStopStagger = 0.05f;
     [SerializeField, Min(0.01f)] private float quickStopDuration = 0.18f;
 
-    [Header("Result Animation")]
-    [SerializeField, Min(0.1f)] private float resultAnimationDuration = 0.9f;
-    [Tooltip("Lowest opacity used by the result pulse. This animation never changes symbol size.")]
-    [SerializeField, Range(0.1f, 1f)] private float resultAnimationDimAlpha = 0.7f;
-
     public event Action<IReadOnlyList<int>> SpinCompleted;
 
     public bool IsSpinning => isSpinning;
@@ -95,7 +93,6 @@ public class UltraSlotView : MonoBehaviour
     private readonly List<List<int>> reelBufferSymbols = new List<List<int>>(ReelCount);
     private readonly List<int> reelCycleCounts = new List<int>(ReelCount);
     private readonly List<Tween> reelTweens = new List<Tween>(ReelCount);
-    private readonly List<Tween> resultTweens = new List<Tween>(ResultCellCount);
 
     private Coroutine stopCoroutine;
     private bool isSpinning;
@@ -135,7 +132,7 @@ public class UltraSlotView : MonoBehaviour
         }
 
         KillReelTweens();
-        KillResultAnimations();
+        RestoreCurrentResultSprites();
         isSpinning = false;
         isStopping = false;
         StoreCurrentResult(result);
@@ -168,7 +165,7 @@ public class UltraSlotView : MonoBehaviour
         }
 
         KillReelTweens();
-        KillResultAnimations();
+        RestoreCurrentResultSprites();
         activeSpinSpeed = speed;
         isSpinning = true;
         isStopping = false;
@@ -222,9 +219,122 @@ public class UltraSlotView : MonoBehaviour
             ApplyStoppedReelVisibility(reel);
         }
 
-        PlayResultAnimation();
         SpinCompleted?.Invoke(CurrentResult);
         onComplete?.Invoke();
+    }
+
+    internal bool TryGetWinningSymbolAnimationTargets(
+        out List<UltraWinningSymbolAnimationTarget> targets)
+    {
+        RestoreCurrentResultSprites();
+        targets = new List<UltraWinningSymbolAnimationTarget>();
+
+        if (currentResult.Count != ResultCellCount ||
+            reelImagesList == null ||
+            reelImagesList.Count != ReelCount)
+        {
+            return false;
+        }
+
+        for (int row = 0; row < RowCount; row++)
+        {
+            for (int reel = 0; reel < ReelCount; reel++)
+            {
+                int resultIndex = GetResultIndex(row, reel);
+                int symbolId = currentResult[resultIndex];
+                if (symbolId == EmptySymbolId)
+                {
+                    continue;
+                }
+
+                int imageIndex = FirstVisibleImageIndex + row;
+                Image baseImage =
+                    reelImagesList[reel]?.images?[imageIndex];
+                Image animationImage =
+                    GetWinningAnimationImage(reel, imageIndex);
+                Image winIndicatorImage =
+                    GetWinIndicatorImage(baseImage);
+                if (baseImage == null || animationImage == null)
+                {
+                    Debug.LogWarning(
+                        $"[UltraSlotView] Assign the {GetWheelColorName(symbolId)} " +
+                        $"winning animation Image for Ultra reel {reel + 1}, " +
+                        $"visible row {row + 1}.");
+                    continue;
+                }
+
+                targets.Add(new UltraWinningSymbolAnimationTarget
+                {
+                    SymbolId = symbolId,
+                    BaseImage = baseImage,
+                    AnimationImage = animationImage,
+                    WinIndicatorImage = winIndicatorImage
+                });
+            }
+        }
+
+        return targets.Count > 0;
+    }
+
+    private Image GetWinningAnimationImage(
+        int reel,
+        int imageIndex)
+    {
+        if (reelImagesList == null ||
+            reel < 0 ||
+            reel >= reelImagesList.Count ||
+            reelImagesList[reel]?.winAnimationImages == null)
+        {
+            return null;
+        }
+
+        List<Image> animationImages =
+            reelImagesList[reel].winAnimationImages;
+        const int visibleImageCount = RowCount;
+
+        // The live server result places each active Ultra symbol on the
+        // center row. Support one center overlay per reel as well as an
+        // explicit Top/Middle/Bottom list.
+        if (animationImages.Count == 1)
+        {
+            int centerImageIndex =
+                FirstVisibleImageIndex + CenterRowIndex;
+            return imageIndex == centerImageIndex
+                ? animationImages[0]
+                : null;
+        }
+
+        if (animationImages.Count == visibleImageCount)
+        {
+            int visibleIndex =
+                imageIndex - FirstVisibleImageIndex;
+            return visibleIndex >= 0 &&
+                   visibleIndex < animationImages.Count
+                ? animationImages[visibleIndex]
+                : null;
+        }
+
+        return imageIndex >= 0 &&
+               imageIndex < animationImages.Count
+            ? animationImages[imageIndex]
+            : null;
+    }
+
+    private static Image GetWinIndicatorImage(
+        Image baseImage)
+    {
+        if (baseImage == null)
+        {
+            return null;
+        }
+
+        Transform winTransform =
+            baseImage.transform.Find("Win");
+        return winTransform != null &&
+               winTransform.TryGetComponent(
+                   out Image winIndicatorImage)
+            ? winIndicatorImage
+            : null;
     }
 
     /// <summary>
@@ -321,7 +431,7 @@ public class UltraSlotView : MonoBehaviour
 
         StopAllCoroutines();
         KillReelTweens();
-        KillResultAnimations();
+        RestoreCurrentResultSprites();
         isSpinning = false;
         isStopping = false;
 
@@ -486,9 +596,11 @@ public class UltraSlotView : MonoBehaviour
             }
         }
 
-        if (spriteCoinOne == null || spriteCoinTwo == null || spriteCoinThree == null)
+        if (spriteGreenWheelSymbol == null ||
+            spriteBlueWheelSymbol == null ||
+            spriteRedWheelSymbol == null)
         {
-            error = "Assign the Coin 1, Coin 2, and Coin 3 sprites.";
+            error = "Assign the Green, Blue, and Red Ultra wheel symbol sprites.";
             return false;
         }
 
@@ -586,7 +698,6 @@ public class UltraSlotView : MonoBehaviour
         isStopping = false;
         stopCoroutine = null;
 
-        PlayResultAnimation();
         SpinCompleted?.Invoke(CurrentResult);
         onComplete?.Invoke();
     }
@@ -795,14 +906,95 @@ public class UltraSlotView : MonoBehaviour
     {
         switch (NormalizeSymbolId(symbolId))
         {
-            case CoinOneSymbolId:
-                return spriteCoinOne;
-            case CoinTwoSymbolId:
-                return spriteCoinTwo;
-            case CoinThreeSymbolId:
-                return spriteCoinThree;
+            case GreenWheelSymbolId:
+                return spriteGreenWheelSymbol;
+            case BlueWheelSymbolId:
+                return spriteBlueWheelSymbol;
+            case RedWheelSymbolId:
+                return spriteRedWheelSymbol;
             default:
                 return null;
+        }
+    }
+
+    private static void SetImageAlpha(
+        Image image,
+        float alpha)
+    {
+        if (image == null)
+        {
+            return;
+        }
+
+        Color color = image.color;
+        color.a = Mathf.Clamp01(alpha);
+        image.color = color;
+    }
+
+    private void RestoreCurrentResultSprites()
+    {
+        if (currentResult.Count != ResultCellCount ||
+            reelImagesList == null ||
+            reelImagesList.Count != ReelCount)
+        {
+            return;
+        }
+
+        for (int row = 0; row < RowCount; row++)
+        {
+            for (int reel = 0; reel < ReelCount; reel++)
+            {
+                UltraReelImages reelImages = reelImagesList[reel];
+                int imageIndex = FirstVisibleImageIndex + row;
+                if (reelImages?.images == null ||
+                    imageIndex < 0 ||
+                    imageIndex >= reelImages.images.Count)
+                {
+                    continue;
+                }
+
+                int symbolId =
+                    currentResult[GetResultIndex(row, reel)];
+                Image baseImage =
+                    reelImages.images[imageIndex];
+                SetImageSymbol(
+                    baseImage,
+                    symbolId,
+                    true);
+
+                Image animationImage =
+                    GetWinningAnimationImage(
+                        reel,
+                        imageIndex);
+                if (animationImage != null)
+                {
+                    SetImageAlpha(animationImage, 0f);
+                    animationImage.gameObject.SetActive(false);
+                }
+
+                Image winIndicatorImage =
+                    GetWinIndicatorImage(baseImage);
+                if (winIndicatorImage != null)
+                {
+                    SetImageAlpha(winIndicatorImage, 0f);
+                    winIndicatorImage.gameObject.SetActive(false);
+                }
+            }
+        }
+    }
+
+    private static string GetWheelColorName(int symbolId)
+    {
+        switch (symbolId)
+        {
+            case GreenWheelSymbolId:
+                return "Green";
+            case BlueWheelSymbolId:
+                return "Blue";
+            case RedWheelSymbolId:
+                return "Red";
+            default:
+                return "Unknown";
         }
     }
 
@@ -824,9 +1016,9 @@ public class UltraSlotView : MonoBehaviour
     private static bool IsKnownSymbol(int symbolId)
     {
         return symbolId == EmptySymbolId ||
-               symbolId == CoinOneSymbolId ||
-               symbolId == CoinTwoSymbolId ||
-               symbolId == CoinThreeSymbolId;
+               symbolId == GreenWheelSymbolId ||
+               symbolId == BlueWheelSymbolId ||
+               symbolId == RedWheelSymbolId;
     }
 
     private void StoreCurrentResult(IList<int> result)
@@ -853,15 +1045,15 @@ public class UltraSlotView : MonoBehaviour
     {
         return new List<int>
         {
-            CoinOneSymbolId,
-            CoinTwoSymbolId,
-            CoinThreeSymbolId,
-            CoinTwoSymbolId,
-            CoinThreeSymbolId,
-            CoinOneSymbolId,
-            CoinThreeSymbolId,
-            CoinOneSymbolId,
-            CoinTwoSymbolId
+            GreenWheelSymbolId,
+            BlueWheelSymbolId,
+            RedWheelSymbolId,
+            BlueWheelSymbolId,
+            RedWheelSymbolId,
+            GreenWheelSymbolId,
+            RedWheelSymbolId,
+            GreenWheelSymbolId,
+            BlueWheelSymbolId
         };
     }
 
@@ -879,57 +1071,6 @@ public class UltraSlotView : MonoBehaviour
         }
 
         return column;
-    }
-
-    private void PlayResultAnimation()
-    {
-        KillResultAnimations();
-
-        float loopDuration = Mathf.Max(0.1f, resultAnimationDuration);
-        float dimAlpha = Mathf.Clamp(resultAnimationDimAlpha, 0.1f, 1f);
-
-        for (int row = 0; row < RowCount; row++)
-        {
-            for (int reel = 0; reel < ReelCount; reel++)
-            {
-                int resultIndex = GetResultIndex(row, reel);
-                if (currentResult[resultIndex] == EmptySymbolId)
-                {
-                    continue;
-                }
-
-                int imageIndex = FirstVisibleImageIndex + row;
-                Image resultImage = reelImagesList[reel].images[imageIndex];
-                if (resultImage == null)
-                {
-                    continue;
-                }
-
-                Sequence pulse = DOTween.Sequence()
-                    .SetUpdate(true)
-                    .Append(
-                        resultImage
-                            .DOFade(dimAlpha, loopDuration * 0.25f)
-                            .SetEase(Ease.InOutSine))
-                    .Append(
-                        resultImage
-                            .DOFade(1f, loopDuration * 0.25f)
-                            .SetEase(Ease.InOutSine))
-                    .AppendInterval(loopDuration * 0.5f)
-                    .SetLoops(-1, LoopType.Restart);
-
-                resultTweens.Add(pulse);
-            }
-        }
-    }
-
-    private void KillResultAnimations()
-    {
-        foreach (Tween resultTween in resultTweens)
-        {
-            resultTween?.Kill();
-        }
-        resultTweens.Clear();
     }
 
     private void ResetReelPosition(int reel)
@@ -968,7 +1109,7 @@ public class UltraSlotView : MonoBehaviour
     private void OnDestroy()
     {
         KillReelTweens();
-        KillResultAnimations();
+        RestoreCurrentResultSprites();
     }
 }
 
@@ -976,4 +1117,10 @@ public class UltraSlotView : MonoBehaviour
 public class UltraReelImages
 {
     public List<Image> images = new List<Image>(5);
+    [Tooltip(
+        "For the live centered server result, assign one center animation " +
+        "Image. You can alternatively assign three Images in Top, Middle, " +
+        "Bottom order.")]
+    public List<Image> winAnimationImages =
+        new List<Image>(3);
 }

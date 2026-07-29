@@ -9,6 +9,8 @@ public class SlotView : MonoBehaviour
     [Header("References")]
     [SerializeField] private GameManager gameManager;
     [SerializeField] private SlotSymbolAnimationManager symbolAnimationManager;
+    [SerializeField, HideInInspector]
+    private ScatterWheelPresentationManager scatterWheelPresentationManager;
     [Tooltip("Provides the configured 2x, 3x, 4x, and 5x Wild multiplier icons.")]
     [SerializeField] private UIManager uiManager;
 
@@ -50,6 +52,18 @@ public class SlotView : MonoBehaviour
     [SerializeField] private float reelStartStagger = 0.08f;
     [SerializeField] private float reelStopStagger = 0.12f;
 
+    [Header("Scatter / Ultra Anticipation")]
+    [Tooltip("Assign the Anticipations 3rd Image.")]
+    [SerializeField] private Image thirdColumnAnticipationImage;
+    [Tooltip("Assign the Anticipations 4th Image.")]
+    [SerializeField] private Image fourthColumnAnticipationImage;
+    [Tooltip("Assign the Anticipations 5th Image.")]
+    [SerializeField] private Image fifthColumnAnticipationImage;
+    [Tooltip("How long an anticipated reel keeps spinning before it begins to stop.")]
+    [SerializeField, Min(0f)] private float anticipationDuration = 1.5f;
+    [Tooltip("Visible spin-speed multiplier applied only to the reel currently in anticipation.")]
+    [SerializeField, Min(1f)] private float anticipationReelSpeedMultiplier = 1.5f;
+
     [Header("Stop Animation Settings")]
     [Tooltip("Duration multiplier for the final decelerating symbol cycle. A value of 3 preserves the incoming speed with OutCubic easing.")]
     [SerializeField, Range(2f, 5f)] private float finalStopDurationMultiplier = 3f;
@@ -60,17 +74,6 @@ public class SlotView : MonoBehaviour
     [SerializeField] private float quickStopStagger = 0.06f;
     [SerializeField] private float quickStopDuration = 0.2f;
     [SerializeField] private int minSpinCyclesBeforeStop = 3;
-
-    [Header("Win Animation Settings")]
-    [Tooltip("Duration of one complete symbol loop at normal 1x playback speed.")]
-    [SerializeField] private float winSymbolLoopDuration = 1.6f;
-    [Tooltip("Playback-speed multiplier applied to every winning symbol except Wild.")]
-    [SerializeField, Min(0.01f)] private float nonWildWinAnimationSpeedMultiplier = 1f;
-    [Tooltip("Playback-speed multiplier applied to Wild winning symbols.")]
-    [SerializeField, Min(0.01f)] private float wildWinAnimationSpeedMultiplier = 1f;
-    [Tooltip("The next win stage starts after this many complete Wild animation loops.")]
-    [UnityEngine.Serialization.FormerlySerializedAs("winSymbolCyclesPerStage")]
-    [SerializeField, Min(1)] private int wildWinLoopsBeforeNextStage = 2;
 
     private List<Tween> spinTweens = new List<Tween>();
     private List<int> reelCycleCount = new List<int>();
@@ -106,11 +109,11 @@ public class SlotView : MonoBehaviour
         public Vector3 LocalScale;
     }
 
-
     internal List<List<int>> currentDisplayMatrix;
 
     private bool isSpinning;
     private SpinSpeed activeSpinSpeed = SpinSpeed.Normal;
+    private bool[] anticipatingReels;
 
     #region Initialization
 
@@ -122,6 +125,15 @@ public class SlotView : MonoBehaviour
                 FindObjectsInactive.Include);
         }
 
+        if (scatterWheelPresentationManager == null)
+        {
+            scatterWheelPresentationManager =
+                GetComponent<ScatterWheelPresentationManager>();
+        }
+
+        scatterWheelPresentationManager?.Configure(
+            this,
+            symbolAnimationManager);
         BuildSymbolSpriteArray();
         InitializeReels();
     }
@@ -173,6 +185,7 @@ public class SlotView : MonoBehaviour
         // Cache VerticalLayoutGroup references from reel containers
         reelLayoutGroups = new VerticalLayoutGroup[reelTransforms.Length];
         reelRestingLocalPositions = new Vector3[reelTransforms.Length];
+        anticipatingReels = new bool[reelTransforms.Length];
         for (int i = 0; i < reelTransforms.Length; i++)
         {
             if (reelTransforms[i] != null)
@@ -185,6 +198,7 @@ public class SlotView : MonoBehaviour
         HideWinAnimationImages();
         HideWinIndicators();
         HideWildMultiplierIndicators();
+        ResetAnticipations();
     }
 
     private void HideWinAnimationImages()
@@ -319,6 +333,7 @@ public class SlotView : MonoBehaviour
             return;
         }
 
+        scatterWheelPresentationManager?.HideColumn(columnIndex);
         for (int imageIndex = 0; imageIndex < reel.images.Count; imageIndex++)
         {
             HideWildMultiplierIndicator(reel.images[imageIndex]);
@@ -380,6 +395,7 @@ public class SlotView : MonoBehaviour
         activeSpinSpeed = spinSpeedMode;
         isSpinning = true;
         KillAllTweens();
+        ResetAnticipations();
 
         for (int i = 0; i < reelCycleCount.Count; i++)
         {
@@ -447,6 +463,10 @@ public class SlotView : MonoBehaviour
         float speedMultiplier = configuredSpeedMultiplier > 0f
             ? Mathf.Clamp(configuredSpeedMultiplier, 0.25f, 2f)
             : defaultSpeedMultiplier;
+        if (IsReelAnticipating(columnIndex))
+        {
+            speedMultiplier *= Mathf.Max(1f, anticipationReelSpeedMultiplier);
+        }
         float symbolCycleDuration = Mathf.Max(0.01f, spinSpeed) / speedMultiplier;
 
         Sequence cycleSequence = DOTween.Sequence();
@@ -563,15 +583,43 @@ public class SlotView : MonoBehaviour
 
         float stagger = isQuickStop ? quickStopStagger : reelStopStagger;
         int stoppedReels = 0;
+        bool[] anticipationColumns = isQuickStop
+            ? new bool[cols]
+            : BuildAnticipationColumns(resultMatrix);
 
-        // Start stopping each reel with stagger
+        // Begin normal reels with the usual stagger. An anticipated reel waits
+        // until every reel to its left has visibly landed, then keeps spinning
+        // during its anticipation presentation before its own stop begins.
         for (int col = 0; col < cols; col++)
         {
-            float delay = col * stagger;
+            if (col > 0 && stagger > 0f)
+            {
+                yield return new WaitForSeconds(stagger);
+            }
+
+            bool useAnticipation =
+                col < anticipationColumns.Length &&
+                anticipationColumns[col];
+
+            if (useAnticipation)
+            {
+                while (stoppedReels < col)
+                {
+                    yield return null;
+                }
+
+                SetReelAnticipation(col, true);
+                float holdDuration = Mathf.Max(0f, anticipationDuration);
+                if (holdDuration > 0f)
+                {
+                    yield return new WaitForSeconds(holdDuration);
+                }
+                SetReelAnticipation(col, false);
+            }
+
             StartCoroutine(StopSingleReel(
                 col,
                 resultMatrix[col],
-                delay,
                 isQuickStop,
                 () => stoppedReels++
             ));
@@ -591,15 +639,9 @@ public class SlotView : MonoBehaviour
     private IEnumerator StopSingleReel(
         int columnIndex,
         List<int> targetSymbols,
-        float delay,
         bool isQuickStop,
         System.Action onStopped)
     {
-        if (delay > 0f)
-        {
-            yield return new WaitForSeconds(delay);
-        }
-
         if (columnIndex < spinTweens.Count && spinTweens[columnIndex] != null)
         {
             spinTweens[columnIndex].Kill();
@@ -678,6 +720,149 @@ public class SlotView : MonoBehaviour
 
         ApplyStoppedReelLayout(columnIndex);
         onStopped?.Invoke();
+    }
+
+    private bool[] BuildAnticipationColumns(List<List<int>> resultMatrix)
+    {
+        int columnCount = resultMatrix?.Count ?? 0;
+        var result = new bool[columnCount];
+        int scatterCount = 0;
+        int ultraCount = 0;
+
+        for (int column = 0; column < columnCount; column++)
+        {
+            // The existing anticipation overlays begin at the third reel.
+            // Scatter and Ultra counts remain independent.
+            result[column] =
+                column >= 2 &&
+                (scatterCount == 2 || ultraCount == 2);
+
+            List<int> symbols = resultMatrix[column];
+            if (symbols == null)
+            {
+                continue;
+            }
+
+            for (int row = 0; row < symbols.Count; row++)
+            {
+                if (symbols[row] == StPatricksGoldSymbolIds.ScatterWheel)
+                {
+                    scatterCount++;
+                }
+                else if (symbols[row] == StPatricksGoldSymbolIds.UltraWheel)
+                {
+                    ultraCount++;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private bool IsReelAnticipating(int columnIndex)
+    {
+        return anticipatingReels != null &&
+               columnIndex >= 0 &&
+               columnIndex < anticipatingReels.Length &&
+               anticipatingReels[columnIndex];
+    }
+
+    private void SetReelAnticipation(int columnIndex, bool active)
+    {
+        if (anticipatingReels == null ||
+            anticipatingReels.Length != reelTransforms.Length)
+        {
+            anticipatingReels = new bool[reelTransforms.Length];
+        }
+
+        if (columnIndex < 0 || columnIndex >= anticipatingReels.Length)
+        {
+            return;
+        }
+
+        anticipatingReels[columnIndex] = active;
+
+        if (columnIndex < spinTweens.Count)
+        {
+            Tween activeTween = spinTweens[columnIndex];
+            if (activeTween != null && activeTween.IsActive())
+            {
+                activeTween.timeScale = active
+                    ? Mathf.Max(1f, anticipationReelSpeedMultiplier)
+                    : 1f;
+            }
+        }
+
+        Image anticipationImage = GetAnticipationImage(columnIndex);
+        if (anticipationImage == null)
+        {
+            return;
+        }
+
+        if (active && symbolAnimationManager != null)
+        {
+            symbolAnimationManager.PlayAnticipation(anticipationImage);
+        }
+        else if (symbolAnimationManager != null)
+        {
+            symbolAnimationManager.StopAnticipation(anticipationImage);
+        }
+        else
+        {
+            Color color = anticipationImage.color;
+            anticipationImage.color =
+                new Color(color.r, color.g, color.b, 0f);
+            anticipationImage.gameObject.SetActive(false);
+        }
+    }
+
+    private Image GetAnticipationImage(int columnIndex)
+    {
+        switch (columnIndex)
+        {
+            case 2:
+                return thirdColumnAnticipationImage;
+            case 3:
+                return fourthColumnAnticipationImage;
+            case 4:
+                return fifthColumnAnticipationImage;
+            default:
+                return null;
+        }
+    }
+
+    private void ResetAnticipations()
+    {
+        if (anticipatingReels != null)
+        {
+            for (int column = 0;
+                 column < anticipatingReels.Length;
+                 column++)
+            {
+                anticipatingReels[column] = false;
+            }
+        }
+
+        for (int column = 2; column <= 4; column++)
+        {
+            Image anticipationImage = GetAnticipationImage(column);
+            if (anticipationImage == null)
+            {
+                continue;
+            }
+
+            if (symbolAnimationManager != null)
+            {
+                symbolAnimationManager.StopAnticipation(anticipationImage);
+            }
+            else
+            {
+                Color color = anticipationImage.color;
+                anticipationImage.color =
+                    new Color(color.r, color.g, color.b, 0f);
+                anticipationImage.gameObject.SetActive(false);
+            }
+        }
     }
 
     private Sequence CreateStopPop(int columnIndex, bool isQuickStop)
@@ -763,6 +948,120 @@ public class SlotView : MonoBehaviour
 
 
 
+    #region Scatter Wheel Presentation
+
+    internal bool ShowScatterWheelFeature(
+        ServerScatterBonus scatterBonus,
+        ScatterWheelConfig scatterWheelConfig,
+        System.Action onComplete)
+    {
+        if (scatterWheelPresentationManager == null)
+        {
+            Debug.LogError(
+                "[SlotView] ScatterWheelPresentationManager is not " +
+                "assigned.");
+            return false;
+        }
+
+        StopWinAnimations();
+        return scatterWheelPresentationManager
+            .ShowScatterWheelFeature(
+                scatterBonus,
+                scatterWheelConfig,
+                onComplete);
+    }
+
+    internal void CancelScatterWheelPresentation()
+    {
+        scatterWheelPresentationManager?.CancelPresentation();
+    }
+
+    internal bool IsScatterWheelAt(int column, int row)
+    {
+        return column >= 0 &&
+               row >= 0 &&
+               GetSymbolIdAt(column, row) ==
+                   StPatricksGoldSymbolIds.ScatterWheel;
+    }
+
+    internal bool TryGetScatterWheelSymbolImages(
+        int column,
+        int row,
+        out Image symbolImage,
+        out Image animationImage,
+        out Image backgroundFxImage)
+    {
+        symbolImage = null;
+        animationImage = null;
+        backgroundFxImage = null;
+        if (!IsScatterWheelAt(column, row))
+        {
+            return false;
+        }
+
+        int imageIndex = 2 + GetVisualRow(column, row);
+        symbolImage = GetSymbolImage(column, imageIndex);
+        animationImage =
+            GetSymbolWinAnimationImage(column, imageIndex);
+        backgroundFxImage =
+            GetScatterWheelBackgroundFxImage(symbolImage);
+        return symbolImage != null && animationImage != null;
+    }
+
+    private static Image GetScatterWheelBackgroundFxImage(
+        Image symbolImage)
+    {
+        if (symbolImage == null)
+        {
+            return null;
+        }
+
+        string[] supportedNames =
+        {
+            "Scatter Background FX",
+            "ScatterBackgroundFX",
+            "Background FX",
+            "BackgroundFX",
+            "Background"
+        };
+
+        Transform symbolTransform = symbolImage.transform;
+        for (int childIndex = 0;
+             childIndex < symbolTransform.childCount;
+             childIndex++)
+        {
+            Transform backgroundTransform =
+                symbolTransform.GetChild(childIndex);
+            if (backgroundTransform == null)
+            {
+                continue;
+            }
+
+            string normalizedChildName =
+                backgroundTransform.name.Trim();
+            for (int nameIndex = 0;
+                 nameIndex < supportedNames.Length;
+                 nameIndex++)
+            {
+                if (string.Equals(
+                        normalizedChildName,
+                        supportedNames[nameIndex],
+                        System.StringComparison.OrdinalIgnoreCase) &&
+                    backgroundTransform.TryGetComponent(
+                        out Image backgroundImage))
+                {
+                    return backgroundImage;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    #endregion
+
+
+
     #region Win Line Animation
 
     internal void ShowWinLineAnimation(List<WinLine> winLines, System.Action onComplete)
@@ -803,6 +1102,41 @@ public class SlotView : MonoBehaviour
         return true;
     }
 
+    internal bool ShowPrioritySymbolAnimationLoops(
+        IEnumerable<int> flatPositions,
+        int symbolId,
+        int loopCount,
+        System.Action onComplete)
+    {
+        if (flatPositions == null ||
+            symbolAnimationManager == null)
+        {
+            return false;
+        }
+
+        var uniquePositions = new HashSet<int>(flatPositions);
+        if (uniquePositions.Count == 0)
+        {
+            return false;
+        }
+
+        float animationDuration =
+            symbolAnimationManager.GetWinSymbolLoopDuration();
+        float loopDuration =
+            animationDuration /
+            symbolAnimationManager.GetWinAnimationSpeedMultiplier(symbolId);
+        int loops = Mathf.Max(1, loopCount);
+
+        StopWinAnimations();
+        winAnimationCoroutine = StartCoroutine(
+            PlayPrioritySymbolAnimation(
+                uniquePositions,
+                animationDuration,
+                loopDuration * loops,
+                onComplete));
+        return true;
+    }
+
     internal void CancelWinAnimation()
     {
         StopWinAnimations();
@@ -813,8 +1147,21 @@ public class SlotView : MonoBehaviour
         float duration,
         System.Action onComplete)
     {
-        AnimateWinPositions(flatPositions, duration);
-        yield return new WaitForSecondsRealtime(duration);
+        yield return PlayPrioritySymbolAnimation(
+            flatPositions,
+            duration,
+            duration,
+            onComplete);
+    }
+
+    private IEnumerator PlayPrioritySymbolAnimation(
+        IEnumerable<int> flatPositions,
+        float loopDuration,
+        float totalDuration,
+        System.Action onComplete)
+    {
+        AnimateWinPositions(flatPositions, loopDuration);
+        yield return new WaitForSecondsRealtime(totalDuration);
 
         StopWinAnimations(false);
         winAnimationCoroutine = null;
@@ -824,12 +1171,21 @@ public class SlotView : MonoBehaviour
     private IEnumerator PlayWinningSymbols(List<WinLine> winLines, System.Action onComplete)
     {
         bool isAuto = (gameManager != null && gameManager.isAutoPlaying);
-        float cycleDuration = Mathf.Max(0.1f, winSymbolLoopDuration);
+        float cycleDuration = symbolAnimationManager != null
+            ? symbolAnimationManager.GetWinSymbolLoopDuration()
+            : 1.6f;
+        float wildSpeedMultiplier = symbolAnimationManager != null
+            ? symbolAnimationManager.GetWinAnimationSpeedMultiplier(
+                StPatricksGoldSymbolIds.Wild)
+            : 1f;
         float wildLoopDuration =
             cycleDuration /
-            Mathf.Max(0.01f, wildWinAnimationSpeedMultiplier);
+            wildSpeedMultiplier;
+        int wildLoopsBeforeNextStage = symbolAnimationManager != null
+            ? symbolAnimationManager.GetWildWinLoopsBeforeNextStage()
+            : 2;
         float stageDuration =
-            wildLoopDuration * Mathf.Max(1, wildWinLoopsBeforeNextStage);
+            wildLoopDuration * wildLoopsBeforeNextStage;
 
         // Celebrate the complete result first, then present each returned line
         // separately so overlapping wins are still easy to read.
@@ -868,6 +1224,12 @@ public class SlotView : MonoBehaviour
         // The separate TotalWin text remains visible for the complete-result
         // celebration. Per-row amounts begin with the individual lines below.
         WinLineAmountPresentationChanged?.Invoke(-1, 0);
+        for (int lineIndex = 0; lineIndex < individualWinningLines.Count; lineIndex++)
+        {
+            ShowWildMultiplierIcons(
+                individualWinningLines[lineIndex],
+                wildLoopDuration);
+        }
         AnimateWinPositions(allWinningPositions, cycleDuration);
         yield return new WaitForSecondsRealtime(stageDuration);
         StopWinAnimations(false);
@@ -881,7 +1243,7 @@ public class SlotView : MonoBehaviour
                 WinLineAmountPresentationChanged?.Invoke(
                     line.DisplayRow,
                     line.WinAmount);
-                ShowWildMultiplierIcons(line, cycleDuration);
+                ShowWildMultiplierIcons(line, wildLoopDuration);
                 AnimateWinPositions(
                     line.Positions,
                     cycleDuration);
@@ -905,7 +1267,7 @@ public class SlotView : MonoBehaviour
                 WinLineAmountPresentationChanged?.Invoke(
                     line.DisplayRow,
                     line.WinAmount);
-                ShowWildMultiplierIcons(line, cycleDuration);
+                ShowWildMultiplierIcons(line, wildLoopDuration);
                 AnimateWinPositions(
                     line.Positions,
                     cycleDuration);
@@ -1157,9 +1519,7 @@ public class SlotView : MonoBehaviour
 
         int symbolId = GetSymbolId(symbolImage.sprite);
         float speedMultiplier =
-            symbolId == StPatricksGoldSymbolIds.Wild
-                ? wildWinAnimationSpeedMultiplier
-                : nonWildWinAnimationSpeedMultiplier;
+            symbolAnimationManager.GetWinAnimationSpeedMultiplier(symbolId);
         float symbolLoopDuration =
             animationDuration / Mathf.Max(0.01f, speedMultiplier);
 
@@ -1180,6 +1540,9 @@ public class SlotView : MonoBehaviour
 
         SetWinIndicatorActive(symbolImage, false);
         HideWildMultiplierIndicator(symbolImage);
+        scatterWheelPresentationManager?.HideWheel(
+            column,
+            imageIndex - 2);
 
         Image animationImage = GetSymbolWinAnimationImage(column, imageIndex);
         if (symbolAnimationManager != null)
@@ -1707,6 +2070,9 @@ public class SlotView : MonoBehaviour
 
     internal void CancelSpin()
     {
+        CancelScatterWheelPresentation();
+        ResetAnticipations();
+
         if (!isSpinning) return;
 
         isSpinning = false;
@@ -1736,6 +2102,9 @@ public class SlotView : MonoBehaviour
 
     private void KillAllTweens()
     {
+        CancelScatterWheelPresentation();
+        ResetAnticipations();
+
         foreach (var tween in spinTweens)
         {
             tween?.Kill();

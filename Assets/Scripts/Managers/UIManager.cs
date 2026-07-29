@@ -32,14 +32,6 @@ public class UIManager : MonoBehaviour
     [SerializeField] private TMP_Text balanceAmountText;
     [SerializeField] private TMP_Text betAmountText;
 
-    [Header("Total Win Animation")]
-    [Tooltip("Assign the TotalWin TMP text. If empty, a scene text named TotalWin is found automatically.")]
-    [SerializeField] private TMP_Text totalWinAmountText;
-    [SerializeField, Min(0.01f)] private float totalWinCountDuration = 1.2f;
-    [SerializeField, Min(1f)] private float totalWinPeakFontSize = 184f;
-    [SerializeField, Min(1f)] private float totalWinFinalFontSize = 148f;
-    [SerializeField, Min(0.01f)] private float totalWinSettleDuration = 0.25f;
-
     [Header("Win Line Row Amounts")]
     [Tooltip("The SlotView that presents individual winning lines. It is found automatically when left empty.")]
     [SerializeField] private SlotView slotView;
@@ -49,6 +41,14 @@ public class UIManager : MonoBehaviour
     [SerializeField] private TMP_Text middleWinLineAmountText;
     [Tooltip("Amount shown when the winning line uses the bottom cell of the center reel.")]
     [SerializeField] private TMP_Text bottomWinLineAmountText;
+    [UnityEngine.Serialization.FormerlySerializedAs("totalWinCountDuration")]
+    [SerializeField, Min(0.01f)] private float winLineGrowDuration = 1.2f;
+    [UnityEngine.Serialization.FormerlySerializedAs("totalWinPeakFontSize")]
+    [SerializeField, Min(1f)] private float winLinePeakFontSize = 184f;
+    [UnityEngine.Serialization.FormerlySerializedAs("totalWinFinalFontSize")]
+    [SerializeField, Min(1f)] private float winLineFinalFontSize = 148f;
+    [UnityEngine.Serialization.FormerlySerializedAs("totalWinSettleDuration")]
+    [SerializeField, Min(0.01f)] private float winLineSettleDuration = 0.25f;
 
     [Header("Wild Multiplier Icons")]
     [Tooltip("Icon displayed on a winning Wild when the server returns a 2x multiplier.")]
@@ -115,10 +115,7 @@ public class UIManager : MonoBehaviour
     private CanvasGroup hamburgerMenuCanvasGroup;
     private Tween hamburgerMenuTween;
     private bool isHamburgerMenuOpen;
-    private Tween totalWinCountTween;
-    private Sequence totalWinFontSizeSequence;
     private Sequence winLineAmountFontSizeSequence;
-    private double lastPresentedTotalWin;
 
     private void Awake()
     {
@@ -190,17 +187,6 @@ public class UIManager : MonoBehaviour
         if (betAmountText == null)
         {
             Debug.LogError("[UIManager] Bet Amount Text is not assigned.");
-        }
-
-        ResolveTotalWinText();
-        if (totalWinAmountText == null)
-        {
-            Debug.LogWarning(
-                "[UIManager] Total Win Amount Text is not assigned and no scene TMP text named 'TotalWin' was found.");
-        }
-        else
-        {
-            ResetTotalWinDisplay();
         }
 
         ResolveWinLineAmountReferences();
@@ -550,9 +536,7 @@ public class UIManager : MonoBehaviour
                 OnWinLineAmountPresentationChanged;
         }
 
-        StopTotalWinAnimation(true);
         ResetWinLineAmountDisplay();
-        lastPresentedTotalWin = double.NaN;
     }
 
     private void OnSpinButtonClicked()
@@ -569,6 +553,11 @@ public class UIManager : MonoBehaviour
         {
             Debug.LogError("[UIManager] Cannot spin because GameManager is not assigned.");
             RefreshSpinControls();
+            return;
+        }
+
+        if (!gameManager.CanRequestSpin())
+        {
             return;
         }
 
@@ -1252,30 +1241,21 @@ public class UIManager : MonoBehaviour
 
     private void ApplySpinControlState(bool isRoundActive)
     {
-        bool isAutoPlaying = gameManager != null && gameManager.isAutoPlaying;
         bool isUltraUnlocked = gameManager != null && gameManager.IsUltraSlotUnlocked();
-        bool showPendingSpinButton = isWaitingForStoppedAutoPlayRound &&
-                                     isRoundActive &&
-                                     !isAutoPlaying &&
-                                     !isUltraUnlocked;
-        bool showSpinButton = (!isRoundActive && !isAutoPlaying) ||
-                              showPendingSpinButton;
-        showSpinButton = showSpinButton && !isUltraUnlocked;
+        bool showSpinButton = !isUltraUnlocked;
 
         if (spinButton != null)
         {
             spinButton.gameObject.SetActive(showSpinButton);
+            // Keep the normal SPIN visual unchanged throughout the round.
+            // OnSpinButtonClicked ignores input until CanRequestSpin is true.
             spinButton.interactable = showSpinButton;
         }
 
         if (stopButton != null)
         {
-            bool showStopButton = !isUltraUnlocked &&
-                                  isRoundActive &&
-                                  !isAutoPlaying &&
-                                  !showPendingSpinButton;
-            stopButton.gameObject.SetActive(showStopButton);
-            stopButton.interactable = showStopButton;
+            stopButton.gameObject.SetActive(false);
+            stopButton.interactable = false;
         }
 
         if (ultraStartButton != null)
@@ -1352,15 +1332,6 @@ public class UIManager : MonoBehaviour
             betAmountText.text = gameManager.GetDisplayedTotalBetAmount().ToString("0.00");
         }
 
-        RefreshTotalWinDisplay(winAmount);
-    }
-
-    private void ResolveTotalWinText()
-    {
-        if (totalWinAmountText == null)
-        {
-            totalWinAmountText = FindTextByName("TotalWin");
-        }
     }
 
     private void ResolveWinLineAmountReferences()
@@ -1369,112 +1340,6 @@ public class UIManager : MonoBehaviour
         {
             slotView = FindFirstObjectByType<SlotView>(
                 FindObjectsInactive.Include);
-        }
-    }
-
-    private void RefreshTotalWinDisplay(double winAmount)
-    {
-        if (totalWinAmountText == null)
-        {
-            return;
-        }
-
-        if (winAmount <= 0)
-        {
-            lastPresentedTotalWin = 0;
-            ResetTotalWinDisplay();
-            return;
-        }
-
-        if (System.Math.Abs(lastPresentedTotalWin - winAmount) < 0.0001)
-        {
-            return;
-        }
-
-        lastPresentedTotalWin = winAmount;
-        PlayTotalWinAnimation(winAmount);
-    }
-
-    private void PlayTotalWinAnimation(double totalWin)
-    {
-        StopTotalWinAnimation(true);
-
-        totalWinAmountText.gameObject.SetActive(true);
-        totalWinAmountText.text = "0.00";
-        totalWinAmountText.fontSize = 0f;
-
-        double animatedWin = 0;
-        float animationDuration = Mathf.Max(0.01f, totalWinCountDuration);
-        totalWinCountTween = DOTween
-            .To(
-                () => animatedWin,
-                value =>
-                {
-                    animatedWin = value;
-                    totalWinAmountText.text = value.ToString("0.00");
-                },
-                totalWin,
-                animationDuration)
-            .SetEase(Ease.OutCubic)
-            .SetUpdate(true)
-            .OnComplete(() =>
-            {
-                totalWinCountTween = null;
-                totalWinAmountText.text = totalWin.ToString("0.00");
-            });
-
-        float peakFontSize = Mathf.Max(1f, totalWinPeakFontSize);
-        float finalFontSize = Mathf.Clamp(
-            totalWinFinalFontSize,
-            1f,
-            peakFontSize);
-        totalWinFontSizeSequence = DOTween.Sequence()
-            .SetEase(Ease.OutCubic)
-            .SetUpdate(true)
-            .Append(
-                DOTween.To(
-                    () => totalWinAmountText.fontSize,
-                    value => totalWinAmountText.fontSize = value,
-                    peakFontSize,
-                    animationDuration)
-                    .SetEase(Ease.OutCubic))
-            .Append(
-                DOTween.To(
-                    () => totalWinAmountText.fontSize,
-                    value => totalWinAmountText.fontSize = value,
-                    finalFontSize,
-                    Mathf.Max(0.01f, totalWinSettleDuration))
-                    .SetEase(Ease.OutCubic))
-            .OnComplete(() =>
-            {
-                totalWinFontSizeSequence = null;
-                totalWinAmountText.fontSize = finalFontSize;
-            });
-    }
-
-    private void ResetTotalWinDisplay()
-    {
-        StopTotalWinAnimation(true);
-
-        if (totalWinAmountText != null)
-        {
-            totalWinAmountText.text = "0.00";
-            totalWinAmountText.gameObject.SetActive(false);
-        }
-    }
-
-    private void StopTotalWinAnimation(bool restoreFontSize)
-    {
-        totalWinCountTween?.Kill();
-        totalWinCountTween = null;
-
-        totalWinFontSizeSequence?.Kill();
-        totalWinFontSizeSequence = null;
-
-        if (restoreFontSize && totalWinAmountText != null)
-        {
-            totalWinAmountText.fontSize =
-                Mathf.Max(1f, totalWinFinalFontSize);
         }
     }
 
@@ -1493,20 +1358,13 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        // Individual-line amounts replace the combined TotalWin presentation.
-        StopTotalWinAnimation(true);
-        if (totalWinAmountText != null)
-        {
-            totalWinAmountText.gameObject.SetActive(false);
-        }
-
         rowText.text = winAmount.ToString("0.00");
         rowText.fontSize = 0f;
         rowText.gameObject.SetActive(true);
 
-        float peakFontSize = Mathf.Max(1f, totalWinPeakFontSize);
+        float peakFontSize = Mathf.Max(1f, winLinePeakFontSize);
         float finalFontSize = Mathf.Clamp(
-            totalWinFinalFontSize,
+            winLineFinalFontSize,
             1f,
             peakFontSize);
 
@@ -1517,14 +1375,14 @@ public class UIManager : MonoBehaviour
                     () => rowText.fontSize,
                     value => rowText.fontSize = value,
                     peakFontSize,
-                    Mathf.Max(0.01f, totalWinCountDuration))
+                    Mathf.Max(0.01f, winLineGrowDuration))
                     .SetEase(Ease.OutCubic))
             .Append(
                 DOTween.To(
                     () => rowText.fontSize,
                     value => rowText.fontSize = value,
                     finalFontSize,
-                    Mathf.Max(0.01f, totalWinSettleDuration))
+                    Mathf.Max(0.01f, winLineSettleDuration))
                     .SetEase(Ease.OutCubic))
             .OnComplete(() =>
             {
@@ -1565,7 +1423,7 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        rowText.fontSize = Mathf.Max(1f, totalWinFinalFontSize);
+        rowText.fontSize = Mathf.Max(1f, winLineFinalFontSize);
         rowText.gameObject.SetActive(false);
     }
 
