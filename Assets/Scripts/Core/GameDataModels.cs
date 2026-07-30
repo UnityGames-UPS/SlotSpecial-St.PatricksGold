@@ -234,6 +234,9 @@ public class ServerScatterBonus
     public List<ServerGridPosition> triggerPositions;
     public List<ServerScatterWheelSpin> wheelSpins;
     public double totalAward;
+
+    [NonSerialized] public bool hasIsTriggered;
+    [NonSerialized] public bool hasTotalAward;
 }
 
 [Serializable]
@@ -248,6 +251,9 @@ public class ServerScatterWheelSpin
     public List<string> values;
 
     [NonSerialized] public bool hasPosition;
+    [NonSerialized] public bool hasWheelIndex;
+    [NonSerialized] public bool hasStopIndex;
+    [NonSerialized] public bool hasAwardValue;
 }
 
 [Serializable]
@@ -258,6 +264,9 @@ public class ServerUltraBonus
     public List<ServerUltraReelResult> reelResults;
     public List<ServerUltraActiveWheel> activeWheels;
     public double totalAward;
+
+    [NonSerialized] public bool hasIsTriggered;
+    [NonSerialized] public bool hasTotalAward;
 }
 
 [Serializable]
@@ -265,6 +274,9 @@ public class ServerGridPosition
 {
     public int row;
     public int col;
+
+    [NonSerialized] public bool hasRow;
+    [NonSerialized] public bool hasCol;
 }
 
 [Serializable]
@@ -273,7 +285,14 @@ public class ServerUltraReelResult
     public int reelIndex;
     public int bonusWheelStopIndex;
     public string wheelState;
+    public int multiplierValue;
     public int assignedWheelIndex;
+
+    [NonSerialized] public bool hasReelIndex;
+    [NonSerialized] public bool hasBonusWheelStopIndex;
+    [NonSerialized] public bool hasWheelState;
+    [NonSerialized] public bool hasMultiplierValue;
+    [NonSerialized] public bool hasAssignedWheelIndex;
 }
 
 [Serializable]
@@ -285,6 +304,12 @@ public class ServerUltraActiveWheel
     public int multiplier;
     public double finalAward;
     public List<int> awards;
+
+    [NonSerialized] public bool hasWheelIndex;
+    [NonSerialized] public bool hasStopIndex;
+    [NonSerialized] public bool hasBaseAward;
+    [NonSerialized] public bool hasMultiplier;
+    [NonSerialized] public bool hasFinalAward;
 }
 
 [Serializable]
@@ -763,11 +788,8 @@ public static class GameDataConverter
                 ? new ScatterData
                 {
                     isTriggered = true,
-                    scatterCount =
-                        scatterBonus?.triggerPositions?.Count > 0
-                            ? scatterBonus.triggerPositions.Count
-                            : serverResponse.payload.scatterCount,
-                    winAmount = scatterBonus?.totalAward ?? 0
+                    scatterCount = scatterBonus.wheelSpins.Count,
+                    winAmount = scatterBonus.totalAward
                 }
                 : null
         };

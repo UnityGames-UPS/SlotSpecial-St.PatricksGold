@@ -105,6 +105,19 @@ public class UltraSlotView : MonoBehaviour
         TryBuildReelReferencesFromRoot();
         InitializeState();
 
+        if (!ShowConfiguredInitialResult())
+        {
+            Debug.LogError("[UltraSlotView] The ultra slot could not be initialized. Check its Inspector references.");
+        }
+    }
+
+    /// <summary>
+    /// Displays the Inspector-configured symbols before the Ultra slot spins.
+    /// These symbols are visual setup only; the stopped result is supplied
+    /// separately by the server.
+    /// </summary>
+    public bool ShowConfiguredInitialResult()
+    {
         var startResult = new List<int>(ResultCellCount);
         for (int cell = 0; cell < ResultCellCount; cell++)
         {
@@ -114,10 +127,7 @@ public class UltraSlotView : MonoBehaviour
             startResult.Add(symbolId);
         }
 
-        if (!SetInitialResult(startResult))
-        {
-            Debug.LogError("[UltraSlotView] The ultra slot could not be initialized. Check its Inspector references.");
-        }
+        return SetInitialResult(startResult);
     }
 
     /// <summary>
@@ -1048,22 +1058,6 @@ public class UltraSlotView : MonoBehaviour
         }
 
         return result;
-    }
-
-    public static List<int> CreateDefaultInitialResult()
-    {
-        return new List<int>
-        {
-            GreenWheelSymbolId,
-            BlueWheelSymbolId,
-            RedWheelSymbolId,
-            BlueWheelSymbolId,
-            RedWheelSymbolId,
-            GreenWheelSymbolId,
-            RedWheelSymbolId,
-            GreenWheelSymbolId,
-            BlueWheelSymbolId
-        };
     }
 
     public static int GetResultIndex(int row, int reel)

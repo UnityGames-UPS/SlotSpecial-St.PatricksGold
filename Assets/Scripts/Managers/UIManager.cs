@@ -11,6 +11,7 @@ public class UIManager : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private GameManager gameManager;
+    [SerializeField] private OrientationChange orientationChange;
     [SerializeField] private Button spinButton;
     [SerializeField] private Button stopButton;
 
@@ -103,30 +104,126 @@ public class UIManager : MonoBehaviour
     [SerializeField] private Button guidePageButton;
     [SerializeField] private Button guidePageBackButton;
 
+    [Header("Shared Sound Panel")]
+    [SerializeField] private GameObject soundPanel;
+    [SerializeField] private Button soundPanelButton;
+    [SerializeField] private Button soundPanelCloseButton;
+
+    [Header("Platform Navigation")]
+    [SerializeField] private JSFunctCalls jsFunctCalls;
+    [SerializeField] private Button homeButton;
+    [SerializeField] private Button moreGamesButton;
+    [SerializeField] private Button fullScreenButton;
+    [SerializeField] private Button smallScreenButton;
+
+    [Header("Portrait Main Controls")]
+    [SerializeField] private Button portraitSpinButton;
+    [SerializeField] private Button portraitStopButton;
+    [SerializeField] private Button portraitUltraStartButton;
+    [SerializeField] private Button portraitUltraTakeButton;
+
+    [Header("Portrait Spin Mode Controls")]
+    [SerializeField] private Button portraitNormalSpinButton;
+    [SerializeField] private Button portraitFastSpinButton;
+    [SerializeField] private Button portraitSkipSpinButton;
+
+    [Header("Portrait Dynamic Game Text")]
+    [SerializeField] private TMP_Text portraitWinLinesCountText;
+    [SerializeField] private TMP_Text portraitGoodLuckText;
+    [SerializeField] private TMP_Text portraitWonLabelText;
+    [SerializeField] private TMP_Text portraitWinAmountText;
+    [SerializeField] private TMP_Text portraitBalanceAmountText;
+    [SerializeField] private TMP_Text portraitBetAmountText;
+
+    [Header("Portrait Bet Controls")]
+    [SerializeField] private Button portraitIncreaseBetButton;
+    [SerializeField] private Button portraitDecreaseBetButton;
+
+    [Header("Portrait Auto Play")]
+    [SerializeField] private GameObject portraitAutoPlayPanel;
+    [SerializeField] private Button portraitAutoPlay10Button;
+    [SerializeField] private Button portraitAutoPlay50Button;
+    [SerializeField] private Button portraitAutoPlay100Button;
+    [SerializeField] private Button portraitAutoPlay200Button;
+    [SerializeField] private Button portraitAutoPlay500Button;
+    [SerializeField] private Button portraitAutoPlayInfiniteButton;
+    [SerializeField] private Button portraitAutoPlayStopButton;
+    [SerializeField] private TMP_Text portraitAutoPlayCountText;
+
+    [Header("Portrait Hamburger Menu")]
+    [SerializeField] private GameObject portraitHamburgerMenuPanel;
+    [SerializeField] private Button portraitHamburgerMenuButton;
+    [SerializeField] private Button portraitHamburgerMenuDownButton;
+
+    [Header("Portrait Page Buttons")]
+    [SerializeField] private Button portraitInfoPageButton;
+    [SerializeField] private Button portraitGuidePageButton;
+    [SerializeField] private Button portraitSoundPanelButton;
+
+    [Header("Portrait Platform Navigation")]
+    [SerializeField] private Button portraitHomeButton;
+    [SerializeField] private Button portraitMoreGamesButton;
+    [SerializeField] private Button portraitFullScreenButton;
+    [SerializeField] private Button portraitSmallScreenButton;
+
     private bool isAutoPlayPanelOpen;
     private bool isSpinPointerHeld;
     private bool suppressNextSpinClick;
     private Coroutine spinHoldCoroutine;
-    private EventTrigger spinEventTrigger;
-    private EventTrigger.Entry spinPointerDownEntry;
-    private EventTrigger.Entry spinPointerUpEntry;
-    private EventTrigger.Entry spinPointerExitEntry;
-    private RectTransform autoPlayPanelViewport;
-    private RectTransform autoPlayPanelRectTransform;
-    private Vector3 autoPlayPanelRestingLocalPosition;
-    private Vector3 autoPlayPanelRestingScale;
-    private Tween autoPlayPanelTween;
-    private bool isAutoPlayPanelClosing;
+    private SpinHoldEventRegistration landscapeSpinHoldRegistration;
+    private SpinHoldEventRegistration portraitSpinHoldRegistration;
+    private AutoPlayPanelAnimationState landscapeAutoPlayPanelAnimation;
+    private AutoPlayPanelAnimationState portraitAutoPlayPanelAnimation;
     private bool isWaitingForStoppedAutoPlayRound;
     private bool waitForAutoPlayDismissPointerRelease;
     private readonly List<RaycastResult> autoPlayDismissRaycastResults = new List<RaycastResult>();
     private CanvasGroup hamburgerMenuCanvasGroup;
+    private CanvasGroup portraitHamburgerMenuCanvasGroup;
     private Tween hamburgerMenuTween;
+    private Tween portraitHamburgerMenuTween;
     private bool isHamburgerMenuOpen;
+    private bool isPortraitPresentationActive;
     private Sequence winLineAmountFontSizeSequence;
+
+    private sealed class SpinHoldEventRegistration
+    {
+        public EventTrigger Trigger;
+        public EventTrigger.Entry PointerDown;
+        public EventTrigger.Entry PointerUp;
+        public EventTrigger.Entry PointerExit;
+    }
+
+    private sealed class AutoPlayPanelAnimationState
+    {
+        public GameObject Panel;
+        public RectTransform RectTransform;
+        public CanvasGroup CanvasGroup;
+        public Vector3 RestingLocalPosition;
+        public Vector3 RestingScale;
+        public Tween Tween;
+        public bool IsClosing;
+    }
 
     private void Awake()
     {
+        if (orientationChange == null)
+        {
+            orientationChange = FindFirstObjectByType<OrientationChange>(
+                FindObjectsInactive.Include);
+        }
+
+        if (orientationChange == null)
+        {
+            Debug.LogWarning(
+                "[UIManager] Orientation Change is not assigned. UI state " +
+                "cannot be synchronized during layout changes.");
+        }
+
+        isPortraitPresentationActive =
+            orientationChange != null &&
+            orientationChange.CurrentMode ==
+                OrientationChange.OrientationMode.MobilePortrait;
+
         if (spinButton == null)
         {
             spinButton = GetComponent<Button>();
@@ -243,16 +340,13 @@ public class UIManager : MonoBehaviour
         }
         else
         {
-            autoPlayPanelRectTransform = autoPlayPanel.GetComponent<RectTransform>();
-            if (autoPlayPanelRectTransform == null)
+            landscapeAutoPlayPanelAnimation =
+                CreateAutoPlayPanelAnimationState(autoPlayPanel);
+            if (landscapeAutoPlayPanelAnimation == null)
             {
-                Debug.LogError("[UIManager] Auto Play Panel requires a RectTransform for its slide animation.");
-            }
-            else
-            {
-                CreateAutoPlayPanelViewport();
-                autoPlayPanelRestingLocalPosition = autoPlayPanelRectTransform.localPosition;
-                autoPlayPanelRestingScale = autoPlayPanelRectTransform.localScale;
+                Debug.LogError(
+                    "[UIManager] Auto Play Panel requires a RectTransform " +
+                    "for its popup animation.");
             }
         }
 
@@ -273,6 +367,39 @@ public class UIManager : MonoBehaviour
             Debug.LogError("[UIManager] Auto Play Count Text is not assigned.");
         }
 
+        if (portraitAutoPlayPanel == null ||
+            portraitAutoPlay10Button == null ||
+            portraitAutoPlay50Button == null ||
+            portraitAutoPlay100Button == null ||
+            portraitAutoPlay200Button == null ||
+            portraitAutoPlay500Button == null ||
+            portraitAutoPlayInfiniteButton == null ||
+            portraitAutoPlayStopButton == null ||
+            portraitAutoPlayCountText == null)
+        {
+            Debug.LogError(
+                "[UIManager] One or more Portrait Auto Play references are not assigned.");
+        }
+        else
+        {
+            portraitAutoPlayPanelAnimation =
+                CreateAutoPlayPanelAnimationState(
+                    portraitAutoPlayPanel);
+            if (portraitAutoPlayPanelAnimation == null)
+            {
+                Debug.LogError(
+                    "[UIManager] Portrait Auto Play Panel requires a " +
+                    "RectTransform for its popup animation.");
+            }
+        }
+
+        SetAutoPlayPanelImmediate(
+            landscapeAutoPlayPanelAnimation,
+            false);
+        SetAutoPlayPanelImmediate(
+            portraitAutoPlayPanelAnimation,
+            false);
+
         if (hamburgerMenuPanel == null ||
             hamburgerMenuButton == null ||
             hamburgerMenuDownButton == null)
@@ -286,9 +413,27 @@ public class UIManager : MonoBehaviour
             {
                 hamburgerMenuCanvasGroup = hamburgerMenuPanel.AddComponent<CanvasGroup>();
             }
-
-            ResetHamburgerMenu();
         }
+
+        if (portraitHamburgerMenuPanel == null ||
+            portraitHamburgerMenuButton == null ||
+            portraitHamburgerMenuDownButton == null)
+        {
+            Debug.LogError(
+                "[UIManager] Portrait hamburger menu panel and toggle buttons must be assigned.");
+        }
+        else
+        {
+            portraitHamburgerMenuCanvasGroup =
+                portraitHamburgerMenuPanel.GetComponent<CanvasGroup>();
+            if (portraitHamburgerMenuCanvasGroup == null)
+            {
+                portraitHamburgerMenuCanvasGroup =
+                    portraitHamburgerMenuPanel.AddComponent<CanvasGroup>();
+            }
+        }
+
+        ResetHamburgerMenu();
 
         ResolveInfoPageReferences();
         if (infoPagePanel == null ||
@@ -315,6 +460,37 @@ public class UIManager : MonoBehaviour
         {
             ResetGuidePage();
         }
+
+        if (soundPanel == null ||
+            soundPanelButton == null ||
+            soundPanelCloseButton == null ||
+            portraitSoundPanelButton == null)
+        {
+            Debug.LogError(
+                "[UIManager] Shared Sound Panel, both Sound buttons, and " +
+                "the shared Close button must be assigned.");
+        }
+        else
+        {
+            soundPanel.SetActive(false);
+        }
+
+        if (jsFunctCalls == null ||
+            homeButton == null ||
+            portraitHomeButton == null ||
+            moreGamesButton == null ||
+            portraitMoreGamesButton == null ||
+            fullScreenButton == null ||
+            smallScreenButton == null ||
+            portraitFullScreenButton == null ||
+            portraitSmallScreenButton == null)
+        {
+            Debug.LogError(
+                "[UIManager] JSCall and both landscape/portrait Home, " +
+                "MoreGames, FullScreen, and SmallScreen buttons must be assigned.");
+        }
+
+        SetFullscreenState(false);
 
         if (gameManager == null)
         {
@@ -395,9 +571,38 @@ public class UIManager : MonoBehaviour
         return Mathf.Max(1, wildMultiplierShakesPerSymbolLoop);
     }
 
+    private static void AddButtonListener(
+        Button button,
+        UnityEngine.Events.UnityAction callback)
+    {
+        if (button != null)
+        {
+            button.onClick.AddListener(callback);
+        }
+    }
+
+    private static void RemoveButtonListener(
+        Button button,
+        UnityEngine.Events.UnityAction callback)
+    {
+        if (button != null)
+        {
+            button.onClick.RemoveListener(callback);
+        }
+    }
+
     private void OnEnable()
     {
         RegisterSpinHoldEvents();
+
+        if (orientationChange != null)
+        {
+            isPortraitPresentationActive =
+                orientationChange.CurrentMode ==
+                    OrientationChange.OrientationMode.MobilePortrait;
+            orientationChange.OnOrientationChangedInstance +=
+                OnOrientationChanged;
+        }
 
         if (spinButton != null)
         {
@@ -470,6 +675,89 @@ public class UIManager : MonoBehaviour
             guidePageButton.onClick.AddListener(OpenGuidePage);
         if (guidePageBackButton != null)
             guidePageBackButton.onClick.AddListener(CloseGuidePage);
+        AddButtonListener(soundPanelButton, OpenSoundPanel);
+        AddButtonListener(soundPanelCloseButton, CloseSoundPanel);
+        AddButtonListener(homeButton, OnHomeButtonClicked);
+        AddButtonListener(moreGamesButton, OnMoreGamesButtonClicked);
+        AddButtonListener(fullScreenButton, OnFullScreenButtonClicked);
+        AddButtonListener(smallScreenButton, OnSmallScreenButtonClicked);
+
+        AddButtonListener(portraitSpinButton, OnSpinButtonClicked);
+        AddButtonListener(portraitStopButton, OnStopButtonClicked);
+        AddButtonListener(
+            portraitUltraStartButton,
+            OnUltraStartButtonClicked);
+        AddButtonListener(
+            portraitUltraTakeButton,
+            OnUltraTakeButtonClicked);
+        AddButtonListener(
+            portraitNormalSpinButton,
+            OnNormalSpinButtonClicked);
+        AddButtonListener(
+            portraitFastSpinButton,
+            OnFastSpinButtonClicked);
+        AddButtonListener(
+            portraitSkipSpinButton,
+            OnSkipSpinButtonClicked);
+        AddButtonListener(
+            portraitIncreaseBetButton,
+            OnIncreaseBetButtonClicked);
+        AddButtonListener(
+            portraitDecreaseBetButton,
+            OnDecreaseBetButtonClicked);
+        AddButtonListener(
+            portraitAutoPlay10Button,
+            OnAutoPlay10ButtonClicked);
+        AddButtonListener(
+            portraitAutoPlay50Button,
+            OnAutoPlay50ButtonClicked);
+        AddButtonListener(
+            portraitAutoPlay100Button,
+            OnAutoPlay100ButtonClicked);
+        AddButtonListener(
+            portraitAutoPlay200Button,
+            OnAutoPlay200ButtonClicked);
+        AddButtonListener(
+            portraitAutoPlay500Button,
+            OnAutoPlay500ButtonClicked);
+        AddButtonListener(
+            portraitAutoPlayInfiniteButton,
+            OnAutoPlayInfiniteButtonClicked);
+        AddButtonListener(
+            portraitAutoPlayStopButton,
+            OnAutoPlayStopButtonClicked);
+        AddButtonListener(
+            portraitHamburgerMenuButton,
+            OpenHamburgerMenu);
+        AddButtonListener(
+            portraitHamburgerMenuDownButton,
+            CloseHamburgerMenu);
+        AddButtonListener(
+            portraitInfoPageButton,
+            OpenInfoPage);
+        AddButtonListener(
+            portraitGuidePageButton,
+            OpenGuidePage);
+        AddButtonListener(
+            portraitSoundPanelButton,
+            OpenSoundPanel);
+        AddButtonListener(
+            portraitHomeButton,
+            OnHomeButtonClicked);
+        AddButtonListener(
+            portraitMoreGamesButton,
+            OnMoreGamesButtonClicked);
+        AddButtonListener(
+            portraitFullScreenButton,
+            OnFullScreenButtonClicked);
+        AddButtonListener(
+            portraitSmallScreenButton,
+            OnSmallScreenButtonClicked);
+
+        if (jsFunctCalls != null)
+        {
+            jsFunctCalls.RegisterFullscreenListener(gameObject.name);
+        }
 
         if (gameManager != null)
         {
@@ -499,6 +787,12 @@ public class UIManager : MonoBehaviour
         ResetAutoPlayPanelAnimation();
         ResetHamburgerMenu();
         UnregisterSpinHoldEvents();
+
+        if (orientationChange != null)
+        {
+            orientationChange.OnOrientationChangedInstance -=
+                OnOrientationChanged;
+        }
 
         if (spinButton != null)
         {
@@ -571,6 +865,84 @@ public class UIManager : MonoBehaviour
             guidePageButton.onClick.RemoveListener(OpenGuidePage);
         if (guidePageBackButton != null)
             guidePageBackButton.onClick.RemoveListener(CloseGuidePage);
+        RemoveButtonListener(soundPanelButton, OpenSoundPanel);
+        RemoveButtonListener(soundPanelCloseButton, CloseSoundPanel);
+        RemoveButtonListener(homeButton, OnHomeButtonClicked);
+        RemoveButtonListener(moreGamesButton, OnMoreGamesButtonClicked);
+        RemoveButtonListener(fullScreenButton, OnFullScreenButtonClicked);
+        RemoveButtonListener(smallScreenButton, OnSmallScreenButtonClicked);
+
+        RemoveButtonListener(portraitSpinButton, OnSpinButtonClicked);
+        RemoveButtonListener(portraitStopButton, OnStopButtonClicked);
+        RemoveButtonListener(
+            portraitUltraStartButton,
+            OnUltraStartButtonClicked);
+        RemoveButtonListener(
+            portraitUltraTakeButton,
+            OnUltraTakeButtonClicked);
+        RemoveButtonListener(
+            portraitNormalSpinButton,
+            OnNormalSpinButtonClicked);
+        RemoveButtonListener(
+            portraitFastSpinButton,
+            OnFastSpinButtonClicked);
+        RemoveButtonListener(
+            portraitSkipSpinButton,
+            OnSkipSpinButtonClicked);
+        RemoveButtonListener(
+            portraitIncreaseBetButton,
+            OnIncreaseBetButtonClicked);
+        RemoveButtonListener(
+            portraitDecreaseBetButton,
+            OnDecreaseBetButtonClicked);
+        RemoveButtonListener(
+            portraitAutoPlay10Button,
+            OnAutoPlay10ButtonClicked);
+        RemoveButtonListener(
+            portraitAutoPlay50Button,
+            OnAutoPlay50ButtonClicked);
+        RemoveButtonListener(
+            portraitAutoPlay100Button,
+            OnAutoPlay100ButtonClicked);
+        RemoveButtonListener(
+            portraitAutoPlay200Button,
+            OnAutoPlay200ButtonClicked);
+        RemoveButtonListener(
+            portraitAutoPlay500Button,
+            OnAutoPlay500ButtonClicked);
+        RemoveButtonListener(
+            portraitAutoPlayInfiniteButton,
+            OnAutoPlayInfiniteButtonClicked);
+        RemoveButtonListener(
+            portraitAutoPlayStopButton,
+            OnAutoPlayStopButtonClicked);
+        RemoveButtonListener(
+            portraitHamburgerMenuButton,
+            OpenHamburgerMenu);
+        RemoveButtonListener(
+            portraitHamburgerMenuDownButton,
+            CloseHamburgerMenu);
+        RemoveButtonListener(
+            portraitInfoPageButton,
+            OpenInfoPage);
+        RemoveButtonListener(
+            portraitGuidePageButton,
+            OpenGuidePage);
+        RemoveButtonListener(
+            portraitSoundPanelButton,
+            OpenSoundPanel);
+        RemoveButtonListener(
+            portraitHomeButton,
+            OnHomeButtonClicked);
+        RemoveButtonListener(
+            portraitMoreGamesButton,
+            OnMoreGamesButtonClicked);
+        RemoveButtonListener(
+            portraitFullScreenButton,
+            OnFullScreenButtonClicked);
+        RemoveButtonListener(
+            portraitSmallScreenButton,
+            OnSmallScreenButtonClicked);
 
         if (gameManager != null)
         {
@@ -710,6 +1082,39 @@ public class UIManager : MonoBehaviour
         RefreshAutoPlayControls();
     }
 
+    private void OnOrientationChanged(
+        OrientationChange.OrientationMode mode,
+        int width,
+        int height)
+    {
+        isPortraitPresentationActive =
+            mode == OrientationChange.OrientationMode.MobilePortrait;
+
+        // A deactivated layout may not receive PointerUp, so do not carry a
+        // partially held spin gesture into the newly active controls.
+        CancelSpinHold();
+        waitForAutoPlayDismissPointerRelease = false;
+
+        SnapAutoPlayPanelsToSharedState();
+        SynchronizeHamburgerMenusForOrientation();
+        RefreshSpinControls();
+        RefreshSpinModeButtons();
+        RefreshGameTexts();
+        RefreshBetControls();
+        RefreshAutoPlayControls();
+    }
+
+    private void SnapAutoPlayPanelsToSharedState()
+    {
+        ResetAutoPlayPanelAnimation();
+        SetAutoPlayPanelImmediate(
+            landscapeAutoPlayPanelAnimation,
+            false);
+        SetAutoPlayPanelImmediate(
+            portraitAutoPlayPanelAnimation,
+            false);
+    }
+
     private void OnAutoPlay10ButtonClicked()
     {
         StartAutoPlay(10);
@@ -812,26 +1217,55 @@ public class UIManager : MonoBehaviour
 
     private void RegisterSpinHoldEvents()
     {
-        if (spinButton == null || spinPointerDownEntry != null) return;
+        landscapeSpinHoldRegistration =
+            RegisterSpinHoldEvents(spinButton);
+        portraitSpinHoldRegistration =
+            RegisterSpinHoldEvents(portraitSpinButton);
+    }
 
-        spinEventTrigger = spinButton.GetComponent<EventTrigger>();
-        if (spinEventTrigger == null)
+    private SpinHoldEventRegistration RegisterSpinHoldEvents(
+        Button targetButton)
+    {
+        if (targetButton == null)
         {
-            spinEventTrigger = spinButton.gameObject.AddComponent<EventTrigger>();
+            return null;
         }
 
-        if (spinEventTrigger.triggers == null)
+        EventTrigger eventTrigger =
+            targetButton.GetComponent<EventTrigger>();
+        if (eventTrigger == null)
         {
-            spinEventTrigger.triggers = new List<EventTrigger.Entry>();
+            eventTrigger =
+                targetButton.gameObject.AddComponent<EventTrigger>();
         }
 
-        spinPointerDownEntry = CreateSpinTriggerEntry(EventTriggerType.PointerDown, OnSpinPointerDown);
-        spinPointerUpEntry = CreateSpinTriggerEntry(EventTriggerType.PointerUp, OnSpinPointerUp);
-        spinPointerExitEntry = CreateSpinTriggerEntry(EventTriggerType.PointerExit, OnSpinPointerExit);
+        if (eventTrigger.triggers == null)
+        {
+            eventTrigger.triggers =
+                new List<EventTrigger.Entry>();
+        }
 
-        spinEventTrigger.triggers.Add(spinPointerDownEntry);
-        spinEventTrigger.triggers.Add(spinPointerUpEntry);
-        spinEventTrigger.triggers.Add(spinPointerExitEntry);
+        var registration = new SpinHoldEventRegistration
+        {
+            Trigger = eventTrigger,
+            PointerDown =
+                CreateSpinTriggerEntry(
+                    EventTriggerType.PointerDown,
+                    OnSpinPointerDown),
+            PointerUp =
+                CreateSpinTriggerEntry(
+                    EventTriggerType.PointerUp,
+                    OnSpinPointerUp),
+            PointerExit =
+                CreateSpinTriggerEntry(
+                    EventTriggerType.PointerExit,
+                    OnSpinPointerExit)
+        };
+
+        eventTrigger.triggers.Add(registration.PointerDown);
+        eventTrigger.triggers.Add(registration.PointerUp);
+        eventTrigger.triggers.Add(registration.PointerExit);
+        return registration;
     }
 
     private EventTrigger.Entry CreateSpinTriggerEntry(
@@ -845,17 +1279,28 @@ public class UIManager : MonoBehaviour
 
     private void UnregisterSpinHoldEvents()
     {
-        if (spinEventTrigger != null && spinEventTrigger.triggers != null)
+        UnregisterSpinHoldEvents(landscapeSpinHoldRegistration);
+        UnregisterSpinHoldEvents(portraitSpinHoldRegistration);
+
+        landscapeSpinHoldRegistration = null;
+        portraitSpinHoldRegistration = null;
+    }
+
+    private static void UnregisterSpinHoldEvents(
+        SpinHoldEventRegistration registration)
+    {
+        if (registration?.Trigger == null ||
+            registration.Trigger.triggers == null)
         {
-            spinEventTrigger.triggers.Remove(spinPointerDownEntry);
-            spinEventTrigger.triggers.Remove(spinPointerUpEntry);
-            spinEventTrigger.triggers.Remove(spinPointerExitEntry);
+            return;
         }
 
-        spinPointerDownEntry = null;
-        spinPointerUpEntry = null;
-        spinPointerExitEntry = null;
-        spinEventTrigger = null;
+        registration.Trigger.triggers.Remove(
+            registration.PointerDown);
+        registration.Trigger.triggers.Remove(
+            registration.PointerUp);
+        registration.Trigger.triggers.Remove(
+            registration.PointerExit);
     }
 
     private void OnSpinPointerDown(BaseEventData eventData)
@@ -991,11 +1436,17 @@ public class UIManager : MonoBehaviour
         {
             Transform hitTransform = result.gameObject.transform;
             if (IsTransformInside(hitTransform, autoPlayPanel != null ? autoPlayPanel.transform : null) ||
+                IsTransformInside(hitTransform, portraitAutoPlayPanel != null ? portraitAutoPlayPanel.transform : null) ||
                 IsTransformInside(hitTransform, increaseBetButton != null ? increaseBetButton.transform : null) ||
                 IsTransformInside(hitTransform, decreaseBetButton != null ? decreaseBetButton.transform : null) ||
                 IsTransformInside(hitTransform, normalSpinButton != null ? normalSpinButton.transform : null) ||
                 IsTransformInside(hitTransform, fastSpinButton != null ? fastSpinButton.transform : null) ||
-                IsTransformInside(hitTransform, skipSpinButton != null ? skipSpinButton.transform : null))
+                IsTransformInside(hitTransform, skipSpinButton != null ? skipSpinButton.transform : null) ||
+                IsTransformInside(hitTransform, portraitIncreaseBetButton != null ? portraitIncreaseBetButton.transform : null) ||
+                IsTransformInside(hitTransform, portraitDecreaseBetButton != null ? portraitDecreaseBetButton.transform : null) ||
+                IsTransformInside(hitTransform, portraitNormalSpinButton != null ? portraitNormalSpinButton.transform : null) ||
+                IsTransformInside(hitTransform, portraitFastSpinButton != null ? portraitFastSpinButton.transform : null) ||
+                IsTransformInside(hitTransform, portraitSkipSpinButton != null ? portraitSkipSpinButton.transform : null))
             {
                 return true;
             }
@@ -1010,226 +1461,461 @@ public class UIManager : MonoBehaviour
                (candidate == allowedRoot || candidate.IsChildOf(allowedRoot));
     }
 
-    private void CreateAutoPlayPanelViewport()
+    private static AutoPlayPanelAnimationState
+        CreateAutoPlayPanelAnimationState(GameObject panel)
     {
-        RectTransform originalParent = autoPlayPanelRectTransform.parent as RectTransform;
-        if (originalParent == null) return;
+        if (panel == null)
+        {
+            return null;
+        }
 
-        int originalSiblingIndex = autoPlayPanelRectTransform.GetSiblingIndex();
-        Vector2 originalAnchorMin = autoPlayPanelRectTransform.anchorMin;
-        Vector2 originalAnchorMax = autoPlayPanelRectTransform.anchorMax;
-        Vector3 originalAnchoredPosition = autoPlayPanelRectTransform.anchoredPosition3D;
-        Vector2 originalSizeDelta = autoPlayPanelRectTransform.sizeDelta;
-        Vector2 originalPivot = autoPlayPanelRectTransform.pivot;
-        Quaternion originalLocalRotation = autoPlayPanelRectTransform.localRotation;
-        Vector3 originalLocalScale = autoPlayPanelRectTransform.localScale;
+        RectTransform rectTransform = panel.GetComponent<RectTransform>();
+        if (rectTransform == null)
+        {
+            return null;
+        }
 
-        GameObject viewportObject = new GameObject(
-            "AutoplayPanelAnimationViewport",
-            typeof(RectTransform),
-            typeof(RectMask2D)
-        );
-        viewportObject.layer = autoPlayPanel.layer;
+        RectTransform originalParent =
+            rectTransform.parent as RectTransform;
+        bool alreadyWrapped =
+            originalParent != null &&
+            originalParent.name ==
+                "AutoplayPanelAnimationViewport" &&
+            originalParent.GetComponent<RectMask2D>() != null;
 
-        autoPlayPanelViewport = viewportObject.GetComponent<RectTransform>();
-        autoPlayPanelViewport.SetParent(originalParent, false);
-        autoPlayPanelViewport.SetSiblingIndex(originalSiblingIndex);
-        autoPlayPanelViewport.anchorMin = originalAnchorMin;
-        autoPlayPanelViewport.anchorMax = originalAnchorMax;
-        autoPlayPanelViewport.anchoredPosition3D = originalAnchoredPosition;
-        autoPlayPanelViewport.sizeDelta = originalSizeDelta;
-        autoPlayPanelViewport.pivot = originalPivot;
-        autoPlayPanelViewport.localRotation = originalLocalRotation;
-        autoPlayPanelViewport.localScale = originalLocalScale;
+        if (originalParent != null && !alreadyWrapped)
+        {
+            int originalSiblingIndex =
+                rectTransform.GetSiblingIndex();
+            Vector2 originalAnchorMin =
+                rectTransform.anchorMin;
+            Vector2 originalAnchorMax =
+                rectTransform.anchorMax;
+            Vector3 originalAnchoredPosition =
+                rectTransform.anchoredPosition3D;
+            Vector2 originalSizeDelta =
+                rectTransform.sizeDelta;
+            Vector2 originalPivot =
+                rectTransform.pivot;
+            Quaternion originalLocalRotation =
+                rectTransform.localRotation;
+            Vector3 originalLocalScale =
+                rectTransform.localScale;
 
-        autoPlayPanelRectTransform.SetParent(autoPlayPanelViewport, false);
-        autoPlayPanelRectTransform.anchorMin = Vector2.zero;
-        autoPlayPanelRectTransform.anchorMax = Vector2.one;
-        autoPlayPanelRectTransform.offsetMin = Vector2.zero;
-        autoPlayPanelRectTransform.offsetMax = Vector2.zero;
-        autoPlayPanelRectTransform.pivot = originalPivot;
-        autoPlayPanelRectTransform.localRotation = Quaternion.identity;
-        autoPlayPanelRectTransform.localScale = Vector3.one;
+            GameObject viewportObject = new GameObject(
+                "AutoplayPanelAnimationViewport",
+                typeof(RectTransform),
+                typeof(RectMask2D));
+            viewportObject.layer = panel.layer;
+
+            RectTransform viewport =
+                viewportObject.GetComponent<RectTransform>();
+            viewport.SetParent(originalParent, false);
+            viewport.SetSiblingIndex(originalSiblingIndex);
+            viewport.anchorMin = originalAnchorMin;
+            viewport.anchorMax = originalAnchorMax;
+            viewport.anchoredPosition3D =
+                originalAnchoredPosition;
+            viewport.sizeDelta = originalSizeDelta;
+            viewport.pivot = originalPivot;
+            viewport.localRotation = originalLocalRotation;
+            viewport.localScale = originalLocalScale;
+
+            rectTransform.SetParent(viewport, false);
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.offsetMin = Vector2.zero;
+            rectTransform.offsetMax = Vector2.zero;
+            rectTransform.pivot = originalPivot;
+            rectTransform.localRotation =
+                Quaternion.identity;
+            rectTransform.localScale = Vector3.one;
+        }
+
+        CanvasGroup canvasGroup = panel.GetComponent<CanvasGroup>();
+        if (canvasGroup == null)
+        {
+            canvasGroup = panel.AddComponent<CanvasGroup>();
+        }
+
+        return new AutoPlayPanelAnimationState
+        {
+            Panel = panel,
+            RectTransform = rectTransform,
+            CanvasGroup = canvasGroup,
+            RestingLocalPosition =
+                rectTransform.localPosition,
+            RestingScale = rectTransform.localScale
+        };
     }
 
-    private void ShowAutoPlayPanelAnimated()
+    private void ShowAutoPlayPanelAnimated(
+        AutoPlayPanelAnimationState animationState)
     {
-        if (autoPlayPanel == null) return;
-
-        if (autoPlayPanelRectTransform == null)
+        if (animationState == null)
         {
-            autoPlayPanel.SetActive(true);
             return;
         }
 
-        bool isReversingClose = isAutoPlayPanelClosing && autoPlayPanel.activeSelf;
-        autoPlayPanelTween?.Kill();
-        autoPlayPanelTween = null;
-        isAutoPlayPanelClosing = false;
+        bool isReversingClose =
+            animationState.IsClosing &&
+            animationState.Panel.activeSelf;
+        animationState.Tween?.Kill();
+        animationState.Tween = null;
+        animationState.IsClosing = false;
+        animationState.CanvasGroup.alpha = 1f;
+        animationState.CanvasGroup.interactable = true;
+        animationState.CanvasGroup.blocksRaycasts = true;
 
-        float fullPanelDistance = autoPlayPanelRectTransform.rect.height + 2f;
         if (!isReversingClose)
         {
-            // Activate while fully below the viewport. The mask reveals the
-            // panel progressively as it travels upward into its resting place.
-            autoPlayPanelRectTransform.localPosition = autoPlayPanelRestingLocalPosition
-                + (Vector3.down * Mathf.Max(autoPlayPanelSlideDistance, fullPanelDistance));
+            float fullPanelDistance =
+                animationState.RectTransform.rect.height +
+                2f;
+            animationState.RectTransform.localPosition =
+                animationState.RestingLocalPosition +
+                (Vector3.down *
+                 Mathf.Max(
+                     autoPlayPanelSlideDistance,
+                     fullPanelDistance));
         }
 
-        autoPlayPanelRectTransform.localScale = autoPlayPanelRestingScale;
-        autoPlayPanel.SetActive(true);
+        animationState.RectTransform.localScale =
+            animationState.RestingScale;
+        animationState.Panel.SetActive(true);
 
-        float duration = Mathf.Max(0.01f, autoPlayPanelSlideDuration) * 1.35f;
-        autoPlayPanelTween = autoPlayPanelRectTransform
-            .DOLocalMove(autoPlayPanelRestingLocalPosition, duration)
-            .SetEase(Ease.InOutCubic)
-            .SetUpdate(true)
-            .OnComplete(() => autoPlayPanelTween = null);
-    }
-
-    private void HideAutoPlayPanelAnimated()
-    {
-        if (autoPlayPanel == null) return;
-
-        waitForAutoPlayDismissPointerRelease = false;
-        autoPlayPanelTween?.Kill();
-        autoPlayPanelTween = null;
-
-        if (autoPlayPanelRectTransform == null)
-        {
-            autoPlayPanel.SetActive(false);
-            isAutoPlayPanelClosing = false;
-            return;
-        }
-
-        isAutoPlayPanelClosing = true;
-        float duration = Mathf.Max(0.01f, autoPlayPanelSlideDuration) * 1.35f;
-        float fullPanelDistance = autoPlayPanelRectTransform.rect.height + 2f;
-        Vector3 closeTargetPosition = autoPlayPanelRestingLocalPosition
-            + (Vector3.down * Mathf.Max(autoPlayPanelSlideDistance, fullPanelDistance));
-
-        autoPlayPanelRectTransform.localScale = autoPlayPanelRestingScale;
-        autoPlayPanelTween = autoPlayPanelRectTransform
-            .DOLocalMove(closeTargetPosition, duration)
+        float duration =
+            Mathf.Max(
+                0.01f,
+                autoPlayPanelSlideDuration) *
+            1.35f;
+        Tween slideTween = animationState.RectTransform
+            .DOLocalMove(
+                animationState.RestingLocalPosition,
+                duration)
             .SetEase(Ease.InOutCubic)
             .SetUpdate(true)
             .OnComplete(() =>
             {
-                // Hide first, then restore the resting transform invisibly so
-                // the panel can never flash back into view for one frame.
-                autoPlayPanel.SetActive(false);
-                autoPlayPanelRectTransform.localPosition = autoPlayPanelRestingLocalPosition;
-                autoPlayPanelRectTransform.localScale = autoPlayPanelRestingScale;
-                isAutoPlayPanelClosing = false;
-                autoPlayPanelTween = null;
+                animationState.RectTransform.localPosition =
+                    animationState.RestingLocalPosition;
+                animationState.Tween = null;
             });
+
+        animationState.Tween = slideTween;
+    }
+
+    private void HideAutoPlayPanelAnimated(
+        AutoPlayPanelAnimationState animationState)
+    {
+        if (animationState == null)
+        {
+            return;
+        }
+
+        waitForAutoPlayDismissPointerRelease = false;
+        animationState.Tween?.Kill();
+        animationState.Tween = null;
+        animationState.IsClosing = true;
+        animationState.CanvasGroup.interactable = false;
+        animationState.CanvasGroup.blocksRaycasts = false;
+        animationState.CanvasGroup.alpha = 1f;
+
+        float duration =
+            Mathf.Max(
+                0.01f,
+                autoPlayPanelSlideDuration) *
+            1.35f;
+        float fullPanelDistance =
+            animationState.RectTransform.rect.height +
+            2f;
+        Vector3 closeTargetPosition =
+            animationState.RestingLocalPosition +
+            (Vector3.down *
+             Mathf.Max(
+                 autoPlayPanelSlideDistance,
+                 fullPanelDistance));
+
+        animationState.RectTransform.localScale =
+            animationState.RestingScale;
+        Tween slideTween = animationState.RectTransform
+            .DOLocalMove(
+                closeTargetPosition,
+                duration)
+            .SetEase(Ease.InOutCubic)
+            .SetUpdate(true)
+            .OnComplete(() =>
+            {
+                animationState.Tween = null;
+                SetAutoPlayPanelImmediate(
+                    animationState,
+                    false);
+            });
+
+        animationState.Tween = slideTween;
+    }
+
+    private static void SetAutoPlayPanelImmediate(
+        AutoPlayPanelAnimationState animationState,
+        bool isOpen)
+    {
+        if (animationState == null)
+        {
+            return;
+        }
+
+        animationState.Tween?.Kill();
+        animationState.Tween = null;
+        animationState.IsClosing = false;
+        animationState.CanvasGroup.alpha = 1f;
+        animationState.CanvasGroup.interactable = isOpen;
+        animationState.CanvasGroup.blocksRaycasts = isOpen;
+        animationState.RectTransform.localPosition =
+            animationState.RestingLocalPosition;
+        animationState.RectTransform.localScale =
+            animationState.RestingScale;
+        animationState.Panel.SetActive(isOpen);
     }
 
     private void ResetAutoPlayPanelAnimation()
     {
-        autoPlayPanelTween?.Kill();
-        autoPlayPanelTween = null;
-        isAutoPlayPanelClosing = false;
-
-        if (autoPlayPanelRectTransform != null)
-        {
-            autoPlayPanelRectTransform.localPosition = autoPlayPanelRestingLocalPosition;
-            autoPlayPanelRectTransform.localScale = autoPlayPanelRestingScale;
-        }
+        ResetAutoPlayPanelAnimation(
+            landscapeAutoPlayPanelAnimation);
+        ResetAutoPlayPanelAnimation(
+            portraitAutoPlayPanelAnimation);
     }
 
-    private void OpenHamburgerMenu()
+    private static void ResetAutoPlayPanelAnimation(
+        AutoPlayPanelAnimationState animationState)
     {
-        if (hamburgerMenuPanel == null || hamburgerMenuCanvasGroup == null) return;
-
-        hamburgerMenuTween?.Kill();
-        hamburgerMenuTween = null;
-        isHamburgerMenuOpen = true;
-
-        if (hamburgerMenuButton != null)
-        {
-            hamburgerMenuButton.gameObject.SetActive(false);
-        }
-        if (hamburgerMenuDownButton != null)
-        {
-            hamburgerMenuDownButton.gameObject.SetActive(true);
-            hamburgerMenuDownButton.interactable = true;
-        }
-
-        hamburgerMenuPanel.SetActive(true);
-        hamburgerMenuCanvasGroup.alpha = 0f;
-        hamburgerMenuCanvasGroup.interactable = true;
-        hamburgerMenuCanvasGroup.blocksRaycasts = true;
-
-        hamburgerMenuTween = hamburgerMenuCanvasGroup
-            .DOFade(1f, Mathf.Max(0.01f, hamburgerMenuFadeDuration))
-            .SetEase(Ease.OutQuad)
-            .SetUpdate(true)
-            .OnComplete(() => hamburgerMenuTween = null);
-    }
-
-    private void CloseHamburgerMenu()
-    {
-        if (!isHamburgerMenuOpen ||
-            hamburgerMenuPanel == null ||
-            hamburgerMenuCanvasGroup == null)
+        if (animationState == null)
         {
             return;
         }
 
-        hamburgerMenuTween?.Kill();
-        hamburgerMenuTween = null;
+        animationState.Tween?.Kill();
+        animationState.Tween = null;
+        animationState.IsClosing = false;
+        animationState.RectTransform.localPosition =
+            animationState.RestingLocalPosition;
+        animationState.RectTransform.localScale =
+            animationState.RestingScale;
+    }
+
+    private void OpenHamburgerMenu()
+    {
+        isHamburgerMenuOpen = true;
+        SetHamburgerMenuImmediate(
+            !isPortraitPresentationActive,
+            false);
+        ShowHamburgerMenuAnimated(
+            isPortraitPresentationActive);
+    }
+
+    private void CloseHamburgerMenu()
+    {
+        if (!isHamburgerMenuOpen)
+        {
+            return;
+        }
+
         isHamburgerMenuOpen = false;
-        // Keep child buttons visually in their normal state while fading.
-        // Blocking raycasts prevents clicks without triggering disabled sprites.
-        hamburgerMenuCanvasGroup.blocksRaycasts = false;
-
-        hamburgerMenuTween = hamburgerMenuCanvasGroup
-            .DOFade(0f, Mathf.Max(0.01f, hamburgerMenuFadeDuration))
-            .SetEase(Ease.InQuad)
-            .SetUpdate(true)
-            .OnComplete(() =>
-            {
-                hamburgerMenuPanel.SetActive(false);
-
-                if (hamburgerMenuDownButton != null)
-                {
-                    hamburgerMenuDownButton.gameObject.SetActive(false);
-                    hamburgerMenuDownButton.interactable = true;
-                }
-                if (hamburgerMenuButton != null)
-                {
-                    hamburgerMenuButton.gameObject.SetActive(true);
-                }
-
-                hamburgerMenuTween = null;
-            });
+        SetHamburgerMenuImmediate(
+            !isPortraitPresentationActive,
+            false);
+        HideHamburgerMenuAnimated(
+            isPortraitPresentationActive);
     }
 
     private void ResetHamburgerMenu()
     {
-        hamburgerMenuTween?.Kill();
-        hamburgerMenuTween = null;
         isHamburgerMenuOpen = false;
+        SetHamburgerMenuImmediate(false, false);
+        SetHamburgerMenuImmediate(true, false);
+    }
 
-        if (hamburgerMenuCanvasGroup != null)
+    private void SynchronizeHamburgerMenusForOrientation()
+    {
+        SetHamburgerMenuImmediate(false, false);
+        SetHamburgerMenuImmediate(true, false);
+
+        if (isHamburgerMenuOpen)
         {
-            hamburgerMenuCanvasGroup.alpha = 0f;
-            hamburgerMenuCanvasGroup.interactable = false;
-            hamburgerMenuCanvasGroup.blocksRaycasts = false;
+            ShowHamburgerMenuAnimated(
+                isPortraitPresentationActive);
         }
-        if (hamburgerMenuPanel != null)
+    }
+
+    private void ShowHamburgerMenuAnimated(bool usePortrait)
+    {
+        GameObject panel = usePortrait
+            ? portraitHamburgerMenuPanel
+            : hamburgerMenuPanel;
+        CanvasGroup canvasGroup = usePortrait
+            ? portraitHamburgerMenuCanvasGroup
+            : hamburgerMenuCanvasGroup;
+        Button openButton = usePortrait
+            ? portraitHamburgerMenuButton
+            : hamburgerMenuButton;
+        Button closeButton = usePortrait
+            ? portraitHamburgerMenuDownButton
+            : hamburgerMenuDownButton;
+
+        if (panel == null || canvasGroup == null)
         {
-            hamburgerMenuPanel.SetActive(false);
+            return;
         }
-        if (hamburgerMenuDownButton != null)
+
+        KillHamburgerMenuTween(usePortrait);
+        panel.SetActive(true);
+        canvasGroup.alpha = 0f;
+        canvasGroup.interactable = true;
+        canvasGroup.blocksRaycasts = true;
+        SetHamburgerToggleButtonState(
+            openButton,
+            closeButton,
+            true);
+
+        Tween fadeTween = canvasGroup
+            .DOFade(
+                1f,
+                Mathf.Max(
+                    0.01f,
+                    hamburgerMenuFadeDuration))
+            .SetEase(Ease.OutQuad)
+            .SetUpdate(true);
+        SetHamburgerMenuTween(usePortrait, fadeTween);
+        fadeTween.OnComplete(() =>
         {
-            hamburgerMenuDownButton.gameObject.SetActive(false);
-            hamburgerMenuDownButton.interactable = true;
+            canvasGroup.alpha = 1f;
+            SetHamburgerMenuTween(usePortrait, null);
+        });
+    }
+
+    private void HideHamburgerMenuAnimated(bool usePortrait)
+    {
+        GameObject panel = usePortrait
+            ? portraitHamburgerMenuPanel
+            : hamburgerMenuPanel;
+        CanvasGroup canvasGroup = usePortrait
+            ? portraitHamburgerMenuCanvasGroup
+            : hamburgerMenuCanvasGroup;
+        Button openButton = usePortrait
+            ? portraitHamburgerMenuButton
+            : hamburgerMenuButton;
+        Button closeButton = usePortrait
+            ? portraitHamburgerMenuDownButton
+            : hamburgerMenuDownButton;
+
+        if (panel == null || canvasGroup == null)
+        {
+            SetHamburgerToggleButtonState(
+                openButton,
+                closeButton,
+                false);
+            return;
         }
-        if (hamburgerMenuButton != null)
+
+        KillHamburgerMenuTween(usePortrait);
+        canvasGroup.interactable = false;
+        canvasGroup.blocksRaycasts = false;
+
+        Tween fadeTween = canvasGroup
+            .DOFade(
+                0f,
+                Mathf.Max(
+                    0.01f,
+                    hamburgerMenuFadeDuration))
+            .SetEase(Ease.InQuad)
+            .SetUpdate(true);
+        SetHamburgerMenuTween(usePortrait, fadeTween);
+        fadeTween.OnComplete(() =>
         {
-            hamburgerMenuButton.gameObject.SetActive(true);
+            canvasGroup.alpha = 0f;
+            panel.SetActive(false);
+            SetHamburgerToggleButtonState(
+                openButton,
+                closeButton,
+                false);
+            SetHamburgerMenuTween(usePortrait, null);
+        });
+    }
+
+    private void SetHamburgerMenuImmediate(
+        bool usePortrait,
+        bool isOpen)
+    {
+        GameObject panel = usePortrait
+            ? portraitHamburgerMenuPanel
+            : hamburgerMenuPanel;
+        CanvasGroup canvasGroup = usePortrait
+            ? portraitHamburgerMenuCanvasGroup
+            : hamburgerMenuCanvasGroup;
+        Button openButton = usePortrait
+            ? portraitHamburgerMenuButton
+            : hamburgerMenuButton;
+        Button closeButton = usePortrait
+            ? portraitHamburgerMenuDownButton
+            : hamburgerMenuDownButton;
+
+        KillHamburgerMenuTween(usePortrait);
+
+        if (canvasGroup != null)
+        {
+            canvasGroup.alpha = isOpen ? 1f : 0f;
+            canvasGroup.interactable = isOpen;
+            canvasGroup.blocksRaycasts = isOpen;
+        }
+
+        if (panel != null)
+        {
+            panel.SetActive(isOpen);
+        }
+
+        SetHamburgerToggleButtonState(
+            openButton,
+            closeButton,
+            isOpen);
+    }
+
+    private static void SetHamburgerToggleButtonState(
+        Button openButton,
+        Button closeButton,
+        bool isOpen)
+    {
+        if (openButton != null)
+        {
+            openButton.gameObject.SetActive(!isOpen);
+            openButton.interactable = true;
+        }
+
+        if (closeButton != null)
+        {
+            closeButton.gameObject.SetActive(isOpen);
+            closeButton.interactable = true;
+        }
+    }
+
+    private void KillHamburgerMenuTween(bool usePortrait)
+    {
+        Tween tween = usePortrait
+            ? portraitHamburgerMenuTween
+            : hamburgerMenuTween;
+        tween?.Kill();
+        SetHamburgerMenuTween(usePortrait, null);
+    }
+
+    private void SetHamburgerMenuTween(
+        bool usePortrait,
+        Tween tween)
+    {
+        if (usePortrait)
+        {
+            portraitHamburgerMenuTween = tween;
+        }
+        else
+        {
+            hamburgerMenuTween = tween;
         }
     }
 
@@ -1413,6 +2099,85 @@ public class UIManager : MonoBehaviour
         CloseGuidePage();
     }
 
+    private void OpenSoundPanel()
+    {
+        if (soundPanel == null)
+        {
+            Debug.LogError(
+                "[UIManager] Cannot open Sound Panel because it is not assigned.");
+            return;
+        }
+
+        CloseAutoPlayPanel();
+        ResetHamburgerMenu();
+        CloseInfoPage();
+        CloseGuidePage();
+        soundPanel.SetActive(true);
+    }
+
+    private void CloseSoundPanel()
+    {
+        if (soundPanel != null)
+        {
+            soundPanel.SetActive(false);
+        }
+    }
+
+    private void OnHomeButtonClicked()
+    {
+        gameManager?.ExitGame();
+    }
+
+    private void OnMoreGamesButtonClicked()
+    {
+        jsFunctCalls?.SendCustomMessage("MoreGames");
+    }
+
+    private void OnFullScreenButtonClicked()
+    {
+        jsFunctCalls?.RequestExpandGame();
+        SetFullscreenState(true);
+    }
+
+    private void OnSmallScreenButtonClicked()
+    {
+        jsFunctCalls?.RequestShrinkGame();
+        SetFullscreenState(false);
+    }
+
+    public void OnFullscreenChanged(string fullscreenValue)
+    {
+        SetFullscreenState(
+            string.Equals(
+                fullscreenValue,
+                "1",
+                System.StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(
+                fullscreenValue,
+                "true",
+                System.StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void SetFullscreenState(bool isFullscreen)
+    {
+        SetActionButtonState(
+            fullScreenButton,
+            !isFullscreen,
+            true);
+        SetActionButtonState(
+            smallScreenButton,
+            isFullscreen,
+            true);
+        SetActionButtonState(
+            portraitFullScreenButton,
+            !isFullscreen,
+            true);
+        SetActionButtonState(
+            portraitSmallScreenButton,
+            isFullscreen,
+            true);
+    }
+
     private void RefreshSpinControls()
     {
         bool isRoundActive = gameManager != null && gameManager.IsSpinRoundActive();
@@ -1431,11 +2196,18 @@ public class UIManager : MonoBehaviour
             !showUltraTake &&
             gameManager != null &&
             gameManager.ShouldShowUltraStartButton();
+        bool showAutoPlayStop =
+            !isUltraUnlocked &&
+            gameManager != null &&
+            gameManager.isAutoPlaying;
         bool showStopButton =
             !isUltraUnlocked &&
+            !showAutoPlayStop &&
+            !isWaitingForStoppedAutoPlayRound &&
             gameManager != null &&
             gameManager.IsSpinning();
         bool showSpinButton =
+            !showAutoPlayStop &&
             !showStopButton &&
             !showUltraStart &&
             !showUltraTake;
@@ -1454,6 +2226,12 @@ public class UIManager : MonoBehaviour
             stopButton.interactable = true;
         }
 
+        if (autoPlayStopButton != null)
+        {
+            autoPlayStopButton.gameObject.SetActive(showAutoPlayStop);
+            autoPlayStopButton.interactable = showAutoPlayStop;
+        }
+
         if (ultraStartButton != null)
         {
             ultraStartButton.gameObject.SetActive(showUltraStart);
@@ -1465,6 +2243,41 @@ public class UIManager : MonoBehaviour
             ultraTakeButton.gameObject.SetActive(showUltraTake);
             ultraTakeButton.interactable = true;
         }
+
+        SetActionButtonState(
+            portraitSpinButton,
+            showSpinButton,
+            true);
+        SetActionButtonState(
+            portraitStopButton,
+            showStopButton,
+            true);
+        SetActionButtonState(
+            portraitAutoPlayStopButton,
+            showAutoPlayStop,
+            showAutoPlayStop);
+        SetActionButtonState(
+            portraitUltraStartButton,
+            showUltraStart,
+            true);
+        SetActionButtonState(
+            portraitUltraTakeButton,
+            showUltraTake,
+            true);
+    }
+
+    private static void SetActionButtonState(
+        Button button,
+        bool isVisible,
+        bool isInteractable)
+    {
+        if (button == null)
+        {
+            return;
+        }
+
+        button.gameObject.SetActive(isVisible);
+        button.interactable = isInteractable;
     }
 
     private void RefreshSpinModeButtons()
@@ -1477,6 +2290,18 @@ public class UIManager : MonoBehaviour
         SetSpinModeButtonState(normalSpinButton, selectedMode == SpinSpeed.Normal, canChangeMode);
         SetSpinModeButtonState(fastSpinButton, selectedMode == SpinSpeed.FastSpin, canChangeMode);
         SetSpinModeButtonState(skipSpinButton, selectedMode == SpinSpeed.SkipSpin, canChangeMode);
+        SetSpinModeButtonState(
+            portraitNormalSpinButton,
+            selectedMode == SpinSpeed.Normal,
+            canChangeMode);
+        SetSpinModeButtonState(
+            portraitFastSpinButton,
+            selectedMode == SpinSpeed.FastSpin,
+            canChangeMode);
+        SetSpinModeButtonState(
+            portraitSkipSpinButton,
+            selectedMode == SpinSpeed.SkipSpin,
+            canChangeMode);
     }
 
     private void SetSpinModeButtonState(Button button, bool isSelected, bool canChangeMode)
@@ -1529,6 +2354,48 @@ public class UIManager : MonoBehaviour
         if (betAmountText != null)
         {
             betAmountText.text = gameManager.GetDisplayedTotalBetAmount().ToString("0.00");
+        }
+
+        if (portraitWinLinesCountText != null)
+        {
+            portraitWinLinesCountText.text =
+                gameManager.GetDisplayedPaylineCount().ToString();
+        }
+
+        if (portraitGoodLuckText != null)
+        {
+            portraitGoodLuckText.text = "GOOD LUCK !";
+            portraitGoodLuckText.gameObject.SetActive(!hasWin);
+        }
+
+        if (portraitWonLabelText != null)
+        {
+            portraitWonLabelText.text = "WON";
+            portraitWonLabelText.gameObject.SetActive(hasWin);
+        }
+
+        if (portraitWinAmountText != null)
+        {
+            if (hasWin)
+            {
+                portraitWinAmountText.text =
+                    winAmount.ToString("0.00");
+            }
+
+            portraitWinAmountText.gameObject.SetActive(hasWin);
+        }
+
+        if (portraitBalanceAmountText != null)
+        {
+            portraitBalanceAmountText.text =
+                $"BALANCE:  {gameManager.GetDisplayedBalance():0.00}";
+        }
+
+        if (portraitBetAmountText != null)
+        {
+            portraitBetAmountText.text =
+                gameManager.GetDisplayedTotalBetAmount()
+                    .ToString("0.00");
         }
 
     }
@@ -1637,72 +2504,148 @@ public class UIManager : MonoBehaviour
         {
             decreaseBetButton.interactable = gameManager != null && gameManager.CanDecreaseBet();
         }
+
+        if (portraitIncreaseBetButton != null)
+        {
+            portraitIncreaseBetButton.interactable =
+                gameManager != null &&
+                gameManager.CanIncreaseBet();
+        }
+
+        if (portraitDecreaseBetButton != null)
+        {
+            portraitDecreaseBetButton.interactable =
+                gameManager != null &&
+                gameManager.CanDecreaseBet();
+        }
     }
 
     private void RefreshAutoPlayControls()
     {
         bool isAutoPlaying = gameManager != null && gameManager.isAutoPlaying;
         bool isUltraUnlocked = gameManager != null && gameManager.IsUltraSlotUnlocked();
+        bool showAutoPlayStop = isAutoPlaying && !isUltraUnlocked;
         bool canStartAutoPlay = gameManager != null && gameManager.CanStartAutoPlay();
         bool shouldShowAutoPlayPanel = isAutoPlayPanelOpen &&
                                        !isAutoPlaying &&
                                        !isUltraUnlocked;
 
-        if (autoPlayPanel != null)
+        AutoPlayPanelAnimationState activeAnimation =
+            isPortraitPresentationActive
+                ? portraitAutoPlayPanelAnimation
+                : landscapeAutoPlayPanelAnimation;
+        AutoPlayPanelAnimationState hiddenAnimation =
+            isPortraitPresentationActive
+                ? landscapeAutoPlayPanelAnimation
+                : portraitAutoPlayPanelAnimation;
+
+        SetAutoPlayPanelImmediate(hiddenAnimation, false);
+
+        if (activeAnimation != null)
         {
             if (shouldShowAutoPlayPanel)
             {
-                if (!autoPlayPanel.activeSelf || isAutoPlayPanelClosing)
+                if (!activeAnimation.Panel.activeSelf ||
+                    activeAnimation.IsClosing)
                 {
-                    ShowAutoPlayPanelAnimated();
+                    ShowAutoPlayPanelAnimated(activeAnimation);
                 }
             }
-            else if (autoPlayPanel.activeSelf && !isAutoPlayPanelClosing)
+            else if (activeAnimation.Panel.activeSelf &&
+                     !activeAnimation.IsClosing)
             {
-                HideAutoPlayPanelAnimated();
+                HideAutoPlayPanelAnimated(activeAnimation);
             }
         }
 
         bool canUseAutoPlayChoices = canStartAutoPlay &&
                                      shouldShowAutoPlayPanel &&
-                                     !isAutoPlayPanelClosing;
+                                     (activeAnimation == null ||
+                                      !activeAnimation.IsClosing);
         SetButtonInteractable(autoPlay10Button, canUseAutoPlayChoices);
         SetButtonInteractable(autoPlay50Button, canUseAutoPlayChoices);
         SetButtonInteractable(autoPlay100Button, canUseAutoPlayChoices);
         SetButtonInteractable(autoPlay200Button, canUseAutoPlayChoices);
         SetButtonInteractable(autoPlay500Button, canUseAutoPlayChoices);
         SetButtonInteractable(autoPlayInfiniteButton, canUseAutoPlayChoices);
+        SetButtonInteractable(
+            portraitAutoPlay10Button,
+            canUseAutoPlayChoices);
+        SetButtonInteractable(
+            portraitAutoPlay50Button,
+            canUseAutoPlayChoices);
+        SetButtonInteractable(
+            portraitAutoPlay100Button,
+            canUseAutoPlayChoices);
+        SetButtonInteractable(
+            portraitAutoPlay200Button,
+            canUseAutoPlayChoices);
+        SetButtonInteractable(
+            portraitAutoPlay500Button,
+            canUseAutoPlayChoices);
+        SetButtonInteractable(
+            portraitAutoPlayInfiniteButton,
+            canUseAutoPlayChoices);
 
         if (autoPlayStopButton != null)
         {
-            autoPlayStopButton.gameObject.SetActive(isAutoPlaying);
-            autoPlayStopButton.interactable = isAutoPlaying;
+            autoPlayStopButton.gameObject.SetActive(showAutoPlayStop);
+            autoPlayStopButton.interactable = showAutoPlayStop;
         }
 
-        if (autoPlayCountText != null)
+        if (portraitAutoPlayStopButton != null)
         {
-            // If the text is a child of the stop button, control it independently.
-            // If both components share one GameObject, the button visibility above controls it.
-            if (autoPlayStopButton == null ||
-                autoPlayCountText.gameObject != autoPlayStopButton.gameObject)
-            {
-                autoPlayCountText.gameObject.SetActive(isAutoPlaying);
-            }
+            portraitAutoPlayStopButton.gameObject.SetActive(
+                showAutoPlayStop);
+            portraitAutoPlayStopButton.interactable =
+                showAutoPlayStop;
+        }
 
-            if (isAutoPlaying)
-            {
-                if (gameManager.autoPlayRemainingRounds == GameManager.InfiniteAutoPlayRounds)
-                {
-                    autoPlayCountText.text = "∞";
-                }
-                else
-                {
-                    int spinsRemainingAfterCurrent = Mathf.Max(
-                        0,
-                        gameManager.autoPlayRemainingRounds - 1);
-                    autoPlayCountText.text = spinsRemainingAfterCurrent.ToString();
-                }
-            }
+        RefreshAutoPlayCountText(
+            autoPlayCountText,
+            autoPlayStopButton,
+            isAutoPlaying);
+        RefreshAutoPlayCountText(
+            portraitAutoPlayCountText,
+            portraitAutoPlayStopButton,
+            isAutoPlaying);
+    }
+
+    private void RefreshAutoPlayCountText(
+        TMP_Text countText,
+        Button owningStopButton,
+        bool isAutoPlaying)
+    {
+        if (countText == null)
+        {
+            return;
+        }
+
+        // If the text is a child of the stop button, control it
+        // independently. If both components share one GameObject, the
+        // button visibility above controls it.
+        if (owningStopButton == null ||
+            countText.gameObject != owningStopButton.gameObject)
+        {
+            countText.gameObject.SetActive(isAutoPlaying);
+        }
+
+        if (!isAutoPlaying)
+        {
+            return;
+        }
+
+        if (gameManager.autoPlayRemainingRounds ==
+            GameManager.InfiniteAutoPlayRounds)
+        {
+            countText.text = "∞";
+        }
+        else
+        {
+            int spinsRemainingAfterCurrent = Mathf.Max(
+                0,
+                gameManager.autoPlayRemainingRounds - 1);
+            countText.text = spinsRemainingAfterCurrent.ToString();
         }
     }
 

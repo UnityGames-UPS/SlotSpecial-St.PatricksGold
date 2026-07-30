@@ -205,40 +205,22 @@ public class UltraWheelController : MonoBehaviour
         return allTextsAssigned;
     }
 
-    /// <summary>
-    /// Updates the one physical segment selected by the server result.
-    /// </summary>
-    public bool SetServerValue(int serverValueIndex, double serverValue)
+    public void ClearServerValues()
     {
-        if (serverValueIndex < 0 || serverValueIndex >= ServerValueCount)
+        if (segmentValueTexts == null)
         {
-            Debug.LogError(
-                $"[UltraWheelController] Wheel {wheelNumber} received server value index " +
-                $"{serverValueIndex}, expected 0-{ServerValueCount - 1}.");
-            return false;
+            return;
         }
 
-        if (segmentCount != ServerValueCount ||
-            segmentValueTexts == null ||
-            segmentValueTexts.Length != segmentCount)
+        for (int segmentIndex = 0;
+             segmentIndex < segmentValueTexts.Length;
+             segmentIndex++)
         {
-            Debug.LogError(
-                $"[UltraWheelController] Wheel {wheelNumber} requires exactly {ServerValueCount} " +
-                "Segment Value Text assignments.");
-            return false;
+            if (segmentValueTexts[segmentIndex] != null)
+            {
+                segmentValueTexts[segmentIndex].text = string.Empty;
+            }
         }
-
-        TMP_Text valueText = segmentValueTexts[serverValueIndex];
-        if (valueText == null)
-        {
-            Debug.LogWarning(
-                $"[UltraWheelController] Wheel {wheelNumber} has no text assigned " +
-                $"for physical segment {serverValueIndex}.");
-            return false;
-        }
-
-        valueText.text = FormatServerValue(serverValue);
-        return true;
     }
 
     public bool TryResolvePhysicalSegment(

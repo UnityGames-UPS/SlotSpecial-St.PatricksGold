@@ -38,6 +38,14 @@ public class SlotView : MonoBehaviour
     [Header("Reel Images - 7 images per reel")]
     [SerializeField] private List<ReelImages> reelImagesList;
 
+    [Header("Win Presentation")]
+    [Tooltip(
+        "RGB multiplier applied to visible symbols outside the currently " +
+        "presented winning positions. Alpha is preserved.")]
+    [ColorUsage(false)]
+    [SerializeField] private Color nonWinningSymbolTint =
+        new Color(0.4f, 0.4f, 0.4f, 1f);
+
     [Header("Spin Settings")]
     [Tooltip("Height of one symbol used only to calculate reel movement. Vertical Layout Group spacing is added automatically; symbol sizes are never changed.")]
     [SerializeField] private float symbolHeight = 205f;
@@ -83,6 +91,8 @@ public class SlotView : MonoBehaviour
     private Vector3[] reelRestingLocalPositions;
     private readonly Dictionary<Image, GameObject> winIndicators =
         new Dictionary<Image, GameObject>();
+    private readonly Dictionary<Image, Color> symbolBaseColors =
+        new Dictionary<Image, Color>();
     private readonly Dictionary<Image, Image> wildMultiplierIndicators =
         new Dictionary<Image, Image>();
     private readonly Dictionary<Image, Coroutine> wildMultiplierAnimations =
@@ -198,6 +208,7 @@ public class SlotView : MonoBehaviour
         HideWinAnimationImages();
         HideWinIndicators();
         HideWildMultiplierIndicators();
+        CacheSymbolBaseColors();
         ResetAnticipations();
     }
 
@@ -952,7 +963,6 @@ public class SlotView : MonoBehaviour
 
     internal bool ShowScatterWheelFeature(
         ServerScatterBonus scatterBonus,
-        ScatterWheelConfig scatterWheelConfig,
         System.Action onComplete)
     {
         if (scatterWheelPresentationManager == null)
@@ -964,16 +974,67 @@ public class SlotView : MonoBehaviour
         }
 
         StopWinAnimations();
-        return scatterWheelPresentationManager
+        HashSet<int> triggerPositions =
+            GetScatterWheelTriggerPositions(scatterBonus);
+        if (triggerPositions.Count > 0)
+        {
+            ApplyNonWinningSymbolTint(triggerPositions);
+        }
+
+        bool presentationStarted = scatterWheelPresentationManager
             .ShowScatterWheelFeature(
                 scatterBonus,
-                scatterWheelConfig,
                 onComplete);
+        if (!presentationStarted)
+        {
+            StopWinAnimations(false);
+        }
+
+        return presentationStarted;
     }
 
     internal void CancelScatterWheelPresentation()
     {
         scatterWheelPresentationManager?.CancelPresentation();
+        RestoreVisibleSymbolColors();
+    }
+
+    private HashSet<int> GetScatterWheelTriggerPositions(
+        ServerScatterBonus scatterBonus)
+    {
+        var positions = new HashSet<int>();
+        if (scatterBonus?.wheelSpins == null)
+        {
+            return positions;
+        }
+
+        int columns =
+            currentDisplayMatrix?.Count > 0
+                ? currentDisplayMatrix.Count
+                : gameManager?.stPatricksGoldConfig?.reelCount ??
+                  StPatricksGoldDefinition.ReelCount;
+        int rows =
+            gameManager?.stPatricksGoldConfig?.rowCount ??
+            StPatricksGoldDefinition.RowCount;
+
+        foreach (ServerScatterWheelSpin wheelSpin in
+                 scatterBonus.wheelSpins)
+        {
+            if (wheelSpin == null ||
+                !wheelSpin.hasPosition ||
+                wheelSpin.row < 0 ||
+                wheelSpin.row >= rows ||
+                wheelSpin.col < 0 ||
+                wheelSpin.col >= columns)
+            {
+                continue;
+            }
+
+            positions.Add(
+                wheelSpin.row * columns + wheelSpin.col);
+        }
+
+        return positions;
     }
 
     internal bool IsScatterWheelAt(int column, int row)
@@ -1094,6 +1155,7 @@ public class SlotView : MonoBehaviour
         }
 
         StopWinAnimations();
+        ApplyNonWinningSymbolTint(uniquePositions);
         winAnimationCoroutine = StartCoroutine(
             PlayPrioritySymbolAnimation(
                 uniquePositions,
@@ -1128,6 +1190,7 @@ public class SlotView : MonoBehaviour
         int loops = Mathf.Max(1, loopCount);
 
         StopWinAnimations();
+        ApplyNonWinningSymbolTint(uniquePositions);
         winAnimationCoroutine = StartCoroutine(
             PlayPrioritySymbolAnimation(
                 uniquePositions,
@@ -1230,6 +1293,7 @@ public class SlotView : MonoBehaviour
                 individualWinningLines[lineIndex],
                 wildLoopDuration);
         }
+        ApplyNonWinningSymbolTint(allWinningPositions);
         AnimateWinPositions(allWinningPositions, cycleDuration);
         yield return new WaitForSecondsRealtime(stageDuration);
         StopWinAnimations(false);
@@ -1244,6 +1308,7 @@ public class SlotView : MonoBehaviour
                     line.DisplayRow,
                     line.WinAmount);
                 ShowWildMultiplierIcons(line, wildLoopDuration);
+                ApplyNonWinningSymbolTint(line.Positions);
                 AnimateWinPositions(
                     line.Positions,
                     cycleDuration);
@@ -1268,6 +1333,7 @@ public class SlotView : MonoBehaviour
                     line.DisplayRow,
                     line.WinAmount);
                 ShowWildMultiplierIcons(line, wildLoopDuration);
+                ApplyNonWinningSymbolTint(line.Positions);
                 AnimateWinPositions(
                     line.Positions,
                     cycleDuration);
@@ -1350,6 +1416,168 @@ public class SlotView : MonoBehaviour
             if (col < 0 || col >= cols || row < 0 || row >= rows) continue;
 
             AnimateWinSymbol(col, row, animationDuration);
+        }
+    }
+
+    private void CacheSymbolBaseColors()
+    {
+        if (reelImagesList == null)
+        {
+            return;
+        }
+
+        for (int column = 0;
+             column < reelImagesList.Count;
+             column++)
+        {
+            List<Image> images =
+                reelImagesList[column]?.images;
+            if (images == null)
+            {
+                continue;
+            }
+
+            for (int imageIndex = 0;
+                 imageIndex < images.Count;
+                 imageIndex++)
+            {
+                Image image = images[imageIndex];
+                if (image != null &&
+                    !symbolBaseColors.ContainsKey(image))
+                {
+                    Color baseColor = image.color;
+                    baseColor.a = 1f;
+                    symbolBaseColors.Add(image, baseColor);
+                }
+            }
+        }
+    }
+
+    private void ApplyNonWinningSymbolTint(
+        ISet<int> winningPositions)
+    {
+        if (winningPositions == null ||
+            reelImagesList == null)
+        {
+            return;
+        }
+
+        CacheSymbolBaseColors();
+
+        int columns =
+            gameManager?.stPatricksGoldConfig != null
+                ? gameManager.stPatricksGoldConfig.reelCount
+                : StPatricksGoldDefinition.ReelCount;
+        int rows =
+            gameManager?.stPatricksGoldConfig != null
+                ? gameManager.stPatricksGoldConfig.rowCount
+                : StPatricksGoldDefinition.RowCount;
+        columns = Mathf.Min(columns, reelImagesList.Count);
+
+        Color tint = new Color(
+            Mathf.Clamp01(nonWinningSymbolTint.r),
+            Mathf.Clamp01(nonWinningSymbolTint.g),
+            Mathf.Clamp01(nonWinningSymbolTint.b),
+            1f);
+
+        for (int column = 0; column < columns; column++)
+        {
+            for (int row = 0; row < rows; row++)
+            {
+                int imageIndex =
+                    2 + GetVisualRow(column, row);
+                Image symbolImage =
+                    GetSymbolImage(column, imageIndex);
+                if (symbolImage == null)
+                {
+                    continue;
+                }
+
+                Color baseColor =
+                    GetSymbolBaseColor(symbolImage);
+                Color currentColor = symbolImage.color;
+                int flatIndex = (row * columns) + column;
+                bool isWinning =
+                    winningPositions.Contains(flatIndex);
+
+                symbolImage.color = isWinning
+                    ? new Color(
+                        baseColor.r,
+                        baseColor.g,
+                        baseColor.b,
+                        currentColor.a)
+                    : new Color(
+                        baseColor.r * tint.r,
+                        baseColor.g * tint.g,
+                        baseColor.b * tint.b,
+                        currentColor.a);
+            }
+        }
+    }
+
+    private Color GetSymbolBaseColor(Image symbolImage)
+    {
+        if (symbolImage != null &&
+            symbolBaseColors.TryGetValue(
+                symbolImage,
+                out Color baseColor))
+        {
+            return baseColor;
+        }
+
+        Color fallback =
+            symbolImage != null
+                ? symbolImage.color
+                : Color.white;
+        fallback.a = 1f;
+        if (symbolImage != null)
+        {
+            symbolBaseColors[symbolImage] = fallback;
+        }
+
+        return fallback;
+    }
+
+    private void RestoreVisibleSymbolColors()
+    {
+        if (reelImagesList == null)
+        {
+            return;
+        }
+
+        CacheSymbolBaseColors();
+
+        int columns =
+            gameManager?.stPatricksGoldConfig != null
+                ? gameManager.stPatricksGoldConfig.reelCount
+                : StPatricksGoldDefinition.ReelCount;
+        int rows =
+            gameManager?.stPatricksGoldConfig != null
+                ? gameManager.stPatricksGoldConfig.rowCount
+                : StPatricksGoldDefinition.RowCount;
+        columns = Mathf.Min(columns, reelImagesList.Count);
+
+        for (int column = 0; column < columns; column++)
+        {
+            for (int row = 0; row < rows; row++)
+            {
+                int imageIndex =
+                    2 + GetVisualRow(column, row);
+                Image symbolImage =
+                    GetSymbolImage(column, imageIndex);
+                if (symbolImage == null)
+                {
+                    continue;
+                }
+
+                Color baseColor =
+                    GetSymbolBaseColor(symbolImage);
+                symbolImage.color = new Color(
+                    baseColor.r,
+                    baseColor.g,
+                    baseColor.b,
+                    symbolImage.color.a);
+            }
         }
     }
 
@@ -1559,8 +1787,12 @@ public class SlotView : MonoBehaviour
             }
         }
 
-        Color c = symbolImage.color;
-        symbolImage.color = new Color(c.r, c.g, c.b, 1f);
+        Color baseColor = GetSymbolBaseColor(symbolImage);
+        symbolImage.color = new Color(
+            baseColor.r,
+            baseColor.g,
+            baseColor.b,
+            1f);
         symbolImage.enabled = true;
     }
 

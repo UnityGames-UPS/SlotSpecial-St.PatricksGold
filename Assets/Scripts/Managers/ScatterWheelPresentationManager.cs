@@ -12,7 +12,8 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
 {
     private const int ColumnCount = 5;
     private const int RowCount = 3;
-    private const int SegmentCount = 8;
+    internal const int ServerValueCount = 8;
+    private const int SegmentCount = ServerValueCount;
     private const int ConstantSpeedCompleteRotations = 1;
     private const int MinimumDecelerationRotations = 3;
     private const int AuthoredAccelerationFrameCount = 24;
@@ -157,7 +158,6 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
 
     internal bool ShowScatterWheelFeature(
         ServerScatterBonus scatterBonus,
-        ScatterWheelConfig scatterWheelConfig,
         Action onComplete)
     {
         if (scatterBonus?.wheelSpins == null ||
@@ -181,8 +181,7 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
         presentationCompleted = onComplete;
         presentationCoroutine = StartCoroutine(
             PlayScatterWheelFeature(
-                scatterBonus,
-                scatterWheelConfig));
+                scatterBonus));
         return true;
     }
 
@@ -228,15 +227,12 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
     }
 
     private IEnumerator PlayScatterWheelFeature(
-        ServerScatterBonus scatterBonus,
-        ScatterWheelConfig scatterWheelConfig)
+        ServerScatterBonus scatterBonus)
     {
         // Allow StartCoroutine to assign its handle before any malformed
         // result can complete the presentation.
         yield return null;
 
-        List<ServerGridPosition> displayedPositions =
-            GetDisplayedScatterWheelPositions();
         float animationDuration =
             symbolAnimationManager.GetScatterWheelIntroDuration();
         int animationFrameCount = Mathf.Max(
@@ -261,21 +257,16 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
         {
             ServerScatterWheelSpin wheelSpin =
                 scatterBonus.wheelSpins[spinIndex];
-            if (wheelSpin == null ||
-                !TryResolvePosition(
-                    wheelSpin,
-                    spinIndex,
-                    scatterBonus.triggerPositions,
-                    displayedPositions,
-                    out int row,
-                    out int column))
+            if (wheelSpin == null || !wheelSpin.hasPosition)
             {
-                Debug.LogWarning(
-                    $"[ScatterWheel] wheelSpins[{spinIndex}] has no valid " +
-                    "symbol position.");
+                Debug.LogError(
+                    $"[ScatterWheel] wheelSpins[{spinIndex}] has no explicit " +
+                    "validated server position.");
                 continue;
             }
 
+            int row = wheelSpin.row;
+            int column = wheelSpin.col;
             if (wheelSpin.stopIndex < 0 ||
                 wheelSpin.stopIndex >= SegmentCount)
             {
@@ -351,9 +342,8 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
                 continue;
             }
 
-            List<string> serverValues = ResolveWheelValues(
-                wheelSpin,
-                scatterWheelConfig);
+            List<string> serverValues =
+                GetValidatedServerValues(wheelSpin);
             var presentation = new ActiveScatterWheel
             {
                 SymbolImage = symbolImage,
@@ -372,7 +362,7 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
                     wheelSpin.awardValue.ToString(
                         "0.##",
                         CultureInfo.InvariantCulture),
-                StopIndex = ResolveWinningStopIndex(wheelSpin),
+                StopIndex = wheelSpin.stopIndex,
                 RestingEulerAngles = canRotate.localEulerAngles,
                 RestingWheelScale = canRotate.localScale,
                 RestingWheelRimScale =
@@ -648,73 +638,8 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
             });
     }
 
-    private List<ServerGridPosition>
-        GetDisplayedScatterWheelPositions()
-    {
-        var positions = new List<ServerGridPosition>();
-        for (int column = 0; column < ColumnCount; column++)
-        {
-            for (int row = 0; row < RowCount; row++)
-            {
-                if (slotView.IsScatterWheelAt(column, row))
-                {
-                    positions.Add(
-                        new ServerGridPosition
-                        {
-                            row = row,
-                            col = column
-                        });
-                }
-            }
-        }
-
-        return positions;
-    }
-
-    private bool TryResolvePosition(
-        ServerScatterWheelSpin wheelSpin,
-        int spinIndex,
-        List<ServerGridPosition> triggerPositions,
-        List<ServerGridPosition> displayedPositions,
-        out int row,
-        out int column)
-    {
-        row = 0;
-        column = 0;
-
-        if (wheelSpin.hasPosition)
-        {
-            row = wheelSpin.row;
-            column = wheelSpin.col;
-        }
-        else if (triggerPositions != null &&
-                 spinIndex < triggerPositions.Count &&
-                 triggerPositions[spinIndex] != null)
-        {
-            row = triggerPositions[spinIndex].row;
-            column = triggerPositions[spinIndex].col;
-        }
-        else if (displayedPositions != null &&
-                 spinIndex < displayedPositions.Count)
-        {
-            row = displayedPositions[spinIndex].row;
-            column = displayedPositions[spinIndex].col;
-        }
-        else
-        {
-            return false;
-        }
-
-        return column >= 0 &&
-               column < ColumnCount &&
-               row >= 0 &&
-               row < RowCount &&
-               slotView.IsScatterWheelAt(column, row);
-    }
-
-    private List<string> ResolveWheelValues(
-        ServerScatterWheelSpin wheelSpin,
-        ScatterWheelConfig scatterWheelConfig)
+    private List<string> GetValidatedServerValues(
+        ServerScatterWheelSpin wheelSpin)
     {
         if (wheelSpin?.values != null &&
             wheelSpin.values.Count == SegmentCount)
@@ -722,79 +647,10 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
             return new List<string>(wheelSpin.values);
         }
 
-        if (wheelSpin?.awards != null &&
-            wheelSpin.awards.Count == SegmentCount)
-        {
-            var values = new List<string>(SegmentCount);
-            for (int valueIndex = 0;
-                 valueIndex < wheelSpin.awards.Count;
-                 valueIndex++)
-            {
-                values.Add(
-                    wheelSpin.awards[valueIndex].ToString(
-                        "0.##",
-                        CultureInfo.InvariantCulture));
-            }
-
-            return values;
-        }
-
-        if (scatterWheelConfig?.wheels != null)
-        {
-            for (int tableIndex = 0;
-                 tableIndex < scatterWheelConfig.wheels.Count;
-                 tableIndex++)
-            {
-                ScatterWheelAwardTable table =
-                    scatterWheelConfig.wheels[tableIndex];
-                if (table == null ||
-                    table.wheelId != wheelSpin.wheelIndex + 1 ||
-                    table.awards == null ||
-                    table.awards.Count != SegmentCount)
-                {
-                    continue;
-                }
-
-                var values =
-                    new List<string>(table.awards.Count);
-                for (int valueIndex = 0;
-                     valueIndex < table.awards.Count;
-                     valueIndex++)
-                {
-                    values.Add(
-                        table.awards[valueIndex].ToString(
-                            CultureInfo.InvariantCulture));
-                }
-
-                return values;
-            }
-        }
-
         Debug.LogError(
-            $"[ScatterWheel] Wheel {wheelSpin?.wheelIndex ?? 0} requires " +
-            $"{SegmentCount} server awards. The result currently supplies " +
-            "only awardValue, which is not enough to fill the wheel.");
+            $"[ScatterWheel] Wheel {wheelSpin?.wheelIndex ?? 0} did not " +
+            $"receive its validated {SegmentCount}-value server table.");
         return new List<string>();
-    }
-
-    private int ResolveWinningStopIndex(
-        ServerScatterWheelSpin wheelSpin)
-    {
-        if (wheelSpin == null)
-        {
-            return 0;
-        }
-
-        if (wheelSpin.stopIndex >= 0 &&
-            wheelSpin.stopIndex < SegmentCount)
-        {
-            return wheelSpin.stopIndex;
-        }
-
-        Debug.LogError(
-            $"[ScatterWheel] Wheel {wheelSpin.wheelIndex} received stopIndex " +
-            $"{wheelSpin.stopIndex}, expected 0-{SegmentCount - 1}.");
-        return Mathf.Clamp(wheelSpin.stopIndex, 0, SegmentCount - 1);
     }
 
     private void ShowAndMoveOutputText(

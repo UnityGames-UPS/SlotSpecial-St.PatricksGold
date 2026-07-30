@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
+using Best.HTTP.JSON;
 using DG.Tweening;
 using UnityEngine;
 
@@ -200,10 +202,6 @@ public class GameManager : MonoBehaviour
         latestWinningPaylineIndicesInternal.Clear();
 
         ResetUltraSlotState();
-        if (config != null && config.isSpecial)
-        {
-            UnlockUltraSlot(null, "parse-sheet isSpecial flag");
-        }
 
         SpinActivityChanged?.Invoke(false);
         GamePresentationChanged?.Invoke();
@@ -213,36 +211,41 @@ public class GameManager : MonoBehaviour
 
     private void ApplyUltraWheelServerValues()
     {
+        greenUltraWheel?.ClearServerValues();
+        blueUltraWheel?.ClearServerValues();
+        redUltraWheel?.ClearServerValues();
+
         UltraWheelConfig ultraWheelConfig = stPatricksGoldConfig?.ultraWheel;
         if (ultraWheelConfig == null)
         {
-            Debug.LogWarning(
-                "[GameManager] The server configuration contains no Ultra wheel value tables.");
+            Debug.LogError(
+                "[GameManager] The server configuration contains no Ultra " +
+                "wheel value tables. Ultra labels will remain blank.");
             return;
         }
 
-        bool appliedFullTable =
+        bool greenApplied =
             ApplyUltraWheelServerValues(
                 greenUltraWheel,
                 ultraWheelConfig.wheel1Awards,
                 1);
-        appliedFullTable |=
+        bool blueApplied =
             ApplyUltraWheelServerValues(
                 blueUltraWheel,
                 ultraWheelConfig.wheel2Awards,
                 2);
-        appliedFullTable |=
+        bool redApplied =
             ApplyUltraWheelServerValues(
                 redUltraWheel,
                 ultraWheelConfig.wheel3Awards,
                 3);
 
-        if (!appliedFullTable)
+        if (!greenApplied || !blueApplied || !redApplied)
         {
-            Debug.Log(
-                $"[GameManager] The server supplied Ultra wheel ranges but no full " +
-                $"{UltraWheelController.ServerValueCount}-value " +
-                "tables. Each winning segment will be updated from activeWheels.baseAward.");
+            Debug.LogError(
+                $"[GameManager] The server must supply a complete " +
+                $"{UltraWheelController.ServerValueCount}-value table for " +
+                "each Ultra wheel. Missing wheel labels remain blank.");
         }
     }
 
@@ -308,15 +311,12 @@ public class GameManager : MonoBehaviour
                 continue;
             }
 
-            if (serverWheel.awards?.Count ==
-                UltraWheelController.ServerValueCount)
+            if (serverWheel.awards != null &&
+                serverWheel.awards.Count ==
+                    UltraWheelController.ServerValueCount)
             {
                 wheelController.SetServerValues(serverWheel.awards);
             }
-
-            wheelController.SetServerValue(
-                serverWheel.stopIndex,
-                serverWheel.baseAward);
         }
 
         Debug.Log(
@@ -746,11 +746,16 @@ public class GameManager : MonoBehaviour
             : GameState.Idle;
         displayedWinAmount = ultraTriggered
             ? 0
-            : completedResult.winAmount;
+            : scatterTriggered
+                ? completedScatterBonus.totalAward
+                : completedResult.winAmount;
 
         if (!ultraTriggered)
         {
-            CompleteOptimisticBalanceTransaction(completedResult.winAmount);
+            CompleteOptimisticBalanceTransaction(
+                scatterTriggered
+                    ? completedScatterBonus.totalAward
+                    : completedResult.winAmount);
         }
 
         if (ultraTriggered && isAutoPlaying)
@@ -796,17 +801,16 @@ public class GameManager : MonoBehaviour
                 slotView != null &&
                 slotView.ShowScatterWheelFeature(
                     completedScatterBonus,
-                    stPatricksGoldConfig?.scatterWheel,
                     () =>
                         OnScatterWheelPresentationComplete(
                             shouldContinueAutoPlay,
-                            completedResult.winAmount));
+                            completedScatterBonus.totalAward));
 
             if (!presentationStarted)
             {
                 OnScatterWheelPresentationComplete(
                     shouldContinueAutoPlay,
-                    completedResult.winAmount);
+                    completedScatterBonus.totalAward);
             }
 
             Debug.Log(
@@ -959,6 +963,24 @@ public class GameManager : MonoBehaviour
             return;
         }
 
+        if (!TryCaptureServerBonusData(
+                rawJson,
+                serverResponse,
+                out string bonusCaptureError))
+        {
+            FailActiveSpin(bonusCaptureError);
+            return;
+        }
+
+        if (!TryValidateServerFeatureResults(
+                serverResponse,
+                resultMatrix,
+                out string featureValidationError))
+        {
+            FailActiveSpin(featureValidationError);
+            return;
+        }
+
         double currentBalance = hasOptimisticBalanceTransaction
             ? balanceBeforeActiveSpin
             : (playerData != null ? playerData.balance : 0);
@@ -974,30 +996,15 @@ public class GameManager : MonoBehaviour
         pendingSpinResult = spinResult;
         pendingResultMatrix = spinResult.resultMatrix;
 
-        if (IsUltraBonusTriggered(serverResponse.payload?.ultraBonus) ||
-            serverResponse.payload?.features?.ultraWheel?.triggered == true)
+        if (IsUltraBonusTriggered(serverResponse.payload?.ultraBonus))
         {
-            pendingUltraBonus = serverResponse.payload?.ultraBonus ??
-                                new ServerUltraBonus { isTriggered = true };
-            pendingUltraBonus.isTriggered = true;
+            pendingUltraBonus = serverResponse.payload.ultraBonus;
         }
 
         if (IsScatterBonusTriggered(
-                serverResponse.payload?.scatterBonus) ||
-            serverResponse.payload?.scatterTriggered == true ||
-            serverResponse.payload?.features?.scatterWheel?.triggered == true)
+                serverResponse.payload?.scatterBonus))
         {
-            pendingScatterBonus =
-                serverResponse.payload?.scatterBonus ??
-                new ServerScatterBonus
-                {
-                    isTriggered = true,
-                    triggerPositions =
-                        new List<ServerGridPosition>(),
-                    wheelSpins =
-                        new List<ServerScatterWheelSpin>()
-                };
-            pendingScatterBonus.isTriggered = true;
+            pendingScatterBonus = serverResponse.payload.scatterBonus;
         }
     }
 
@@ -1425,7 +1432,7 @@ public class GameManager : MonoBehaviour
                 GetUltraWheelFinalAward(latestUltraBonus, 1),
                 GetUltraWheelFinalAward(latestUltraBonus, 2),
                 GetUltraWheelFinalAward(latestUltraBonus, 3),
-                latestUltraBonus?.totalAward ?? 0d,
+                latestUltraBonus.totalAward,
                 () => totalWinCountCompleted = true);
 
         if (popupStarted)
@@ -1467,9 +1474,8 @@ public class GameManager : MonoBehaviour
             if (activeWheel != null &&
                 activeWheel.wheelIndex == wheelNumber)
             {
-                wheelAward =
-                    (wheelAward ?? 0d) +
-                    Math.Max(0d, activeWheel.finalAward);
+                wheelAward = activeWheel.finalAward;
+                break;
             }
         }
 
@@ -1478,9 +1484,7 @@ public class GameManager : MonoBehaviour
 
     private void PrepareCompletedUltraWin()
     {
-        displayedWinAmount = latestUltraBonus != null
-            ? Math.Max(0, latestUltraBonus.totalAward)
-            : 0;
+        displayedWinAmount = latestUltraBonus.totalAward;
 
         GamePresentationChanged?.Invoke();
     }
@@ -1550,6 +1554,16 @@ public class GameManager : MonoBehaviour
 
     private void UnlockUltraSlot(ServerUltraBonus ultraBonus, string source)
     {
+        if (!TryBuildUltraSlotResult(
+                ultraBonus,
+                out List<int> serverResult))
+        {
+            Debug.LogError(
+                "[GameManager] Ultra was not opened because its complete " +
+                "server reel result is unavailable or invalid.");
+            return;
+        }
+
         if (isAutoPlaying)
         {
             StopAutoPlay();
@@ -1559,7 +1573,7 @@ public class GameManager : MonoBehaviour
         popupManager?.HideUltraWinImmediate();
         latestUltraBonus = ultraBonus;
         ApplyUltraWheelResultValues(ultraBonus);
-        pendingUltraSlotResult = null;
+        pendingUltraSlotResult = serverResult;
         hasUltraSlotStarted = false;
         isUltraSlotSpinning = false;
         areUltraWheelsReady = false;
@@ -1574,23 +1588,16 @@ public class GameManager : MonoBehaviour
             ultraWheelPanel.SetActive(false);
         }
 
-        if (TryBuildUltraSlotResult(ultraBonus, out List<int> serverResult))
-        {
-            pendingUltraSlotResult = serverResult;
-        }
-
         if (ultraSlotView != null)
         {
-            ultraSlotView.SetInitialResult(UltraSlotView.CreateDefaultInitialResult());
+            ultraSlotView.ShowConfiguredInitialResult();
         }
 
         PlayUltraTriggerAnimationThenEnter(ultraBonus);
 
         Debug.Log(
             $"[GameManager] Ultra slot unlocked by {source}. " +
-            (pendingUltraSlotResult != null
-                ? "Waiting for the Ultra Start button."
-                : "Waiting for a server reel result before Start can be used."));
+            "Waiting for the Ultra Start button.");
     }
 
     private void ResetUltraSlotState()
@@ -1802,42 +1809,6 @@ public class GameManager : MonoBehaviour
                         positions.Add(flatIndex);
                     }
                 }
-            }
-        }
-
-        // Prefer the displayed matrix because it guarantees the highlighted
-        // images are Ultra Wheel symbols. Trigger positions are a fallback for
-        // compact server responses that omit the full display matrix.
-        if (positions.Count > 0 || ultraBonus?.triggerPositions == null)
-        {
-            return positions;
-        }
-
-        int columnCount = stPatricksGoldConfig?.reelCount > 0
-            ? stPatricksGoldConfig.reelCount
-            : StPatricksGoldDefinition.ReelCount;
-        int rowCount = stPatricksGoldConfig?.rowCount > 0
-            ? stPatricksGoldConfig.rowCount
-            : StPatricksGoldDefinition.RowCount;
-
-        foreach (ServerGridPosition triggerPosition in ultraBonus.triggerPositions)
-        {
-            if (triggerPosition == null)
-            {
-                continue;
-            }
-
-            int row = triggerPosition.row;
-            int column = triggerPosition.col;
-            if (row < 0 || row >= rowCount || column < 0 || column >= columnCount)
-            {
-                continue;
-            }
-
-            int flatIndex = row * columnCount + column;
-            if (uniquePositions.Add(flatIndex))
-            {
-                positions.Add(flatIndex);
             }
         }
 
@@ -2306,6 +2277,1303 @@ public class GameManager : MonoBehaviour
         isUltraSlotTransitioning = false;
     }
 
+    private bool TryCaptureServerBonusData(
+        string rawJson,
+        ServerSpinResponse serverResponse,
+        out string error)
+    {
+        error = null;
+        bool decodedSuccessfully = false;
+        object decoded = Json.Decode(rawJson, ref decodedSuccessfully);
+        if (!decodedSuccessfully ||
+            !(decoded is IDictionary<string, object> root))
+        {
+            error =
+                "The raw server response could not be decoded for strict " +
+                "bonus-result validation.";
+            return false;
+        }
+
+        if (!root.TryGetValue("payload", out object payloadValue) ||
+            !(payloadValue is IDictionary<string, object> rawPayload))
+        {
+            error =
+                "The raw server response contains no payload object.";
+            return false;
+        }
+
+        ServerPayload payload = serverResponse?.payload;
+        if (payload?.ultraBonus != null)
+        {
+            if (!rawPayload.TryGetValue(
+                    "ultraBonus",
+                    out object ultraBonusValue) ||
+                !(ultraBonusValue is
+                  IDictionary<string, object> rawUltraBonus) ||
+                !TryCaptureUltraBonus(
+                    rawUltraBonus,
+                    payload.ultraBonus,
+                    out error))
+            {
+                error ??=
+                    "The raw server response contains an invalid ultraBonus.";
+                return false;
+            }
+        }
+
+        if (payload?.scatterBonus != null)
+        {
+            if (!rawPayload.TryGetValue(
+                    "scatterBonus",
+                    out object scatterBonusValue) ||
+                !(scatterBonusValue is
+                  IDictionary<string, object> rawScatterBonus) ||
+                !TryCaptureScatterBonus(
+                    rawScatterBonus,
+                    payload.scatterBonus,
+                    out error))
+            {
+                error ??=
+                    "The raw server response contains an invalid scatterBonus.";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryCaptureUltraBonus(
+        IDictionary<string, object> rawBonus,
+        ServerUltraBonus bonus,
+        out string error)
+    {
+        error = null;
+        bonus.hasIsTriggered =
+            TryReadRawBool(
+                rawBonus,
+                "isTriggered",
+                out bool isTriggered);
+        if (bonus.hasIsTriggered)
+        {
+            bonus.isTriggered = isTriggered;
+        }
+
+        bonus.hasTotalAward =
+            TryReadRawDouble(
+                rawBonus,
+                "totalAward",
+                out double totalAward);
+        if (bonus.hasTotalAward)
+        {
+            bonus.totalAward = totalAward;
+        }
+
+        if (!TryReadRawPositions(
+                rawBonus,
+                "triggerPositions",
+                out List<ServerGridPosition> triggerPositions,
+                out error))
+        {
+            return false;
+        }
+
+        bonus.triggerPositions = triggerPositions;
+
+        if (!rawBonus.TryGetValue(
+                "reelResults",
+                out object reelResultsValue) ||
+            !(reelResultsValue is IList rawReelResults))
+        {
+            error =
+                "ultraBonus.reelResults must be a server array.";
+            return false;
+        }
+
+        bonus.reelResults =
+            new List<ServerUltraReelResult>(rawReelResults.Count);
+        for (int index = 0;
+             index < rawReelResults.Count;
+             index++)
+        {
+            if (!(rawReelResults[index] is
+                  IDictionary<string, object> rawReelResult))
+            {
+                error =
+                    $"ultraBonus.reelResults[{index}] must be an object.";
+                return false;
+            }
+
+            var reelResult = new ServerUltraReelResult();
+            reelResult.hasReelIndex =
+                TryReadRawInt(
+                    rawReelResult,
+                    "reelIndex",
+                    out reelResult.reelIndex);
+            reelResult.hasBonusWheelStopIndex =
+                TryReadRawInt(
+                    rawReelResult,
+                    "bonusWheelStopIndex",
+                    out reelResult.bonusWheelStopIndex);
+            reelResult.hasAssignedWheelIndex =
+                TryReadRawInt(
+                    rawReelResult,
+                    "assignedWheelIndex",
+                    out reelResult.assignedWheelIndex);
+            reelResult.hasWheelState =
+                TryReadRawString(
+                    rawReelResult,
+                    "wheelState",
+                    out reelResult.wheelState);
+            reelResult.hasMultiplierValue =
+                TryReadRawInt(
+                    rawReelResult,
+                    "multiplierValue",
+                    out reelResult.multiplierValue);
+            bonus.reelResults.Add(reelResult);
+        }
+
+        if (!rawBonus.TryGetValue(
+                "activeWheels",
+                out object activeWheelsValue) ||
+            !(activeWheelsValue is IList rawActiveWheels))
+        {
+            error =
+                "ultraBonus.activeWheels must be a server array.";
+            return false;
+        }
+
+        bonus.activeWheels =
+            new List<ServerUltraActiveWheel>(rawActiveWheels.Count);
+        for (int index = 0;
+             index < rawActiveWheels.Count;
+             index++)
+        {
+            if (!(rawActiveWheels[index] is
+                  IDictionary<string, object> rawActiveWheel))
+            {
+                error =
+                    $"ultraBonus.activeWheels[{index}] must be an object.";
+                return false;
+            }
+
+            var activeWheel = new ServerUltraActiveWheel();
+            activeWheel.hasWheelIndex =
+                TryReadRawInt(
+                    rawActiveWheel,
+                    "wheelIndex",
+                    out activeWheel.wheelIndex);
+            activeWheel.hasStopIndex =
+                TryReadRawInt(
+                    rawActiveWheel,
+                    "stopIndex",
+                    out activeWheel.stopIndex);
+            activeWheel.hasMultiplier =
+                TryReadRawInt(
+                    rawActiveWheel,
+                    "multiplier",
+                    out activeWheel.multiplier);
+            activeWheel.hasBaseAward =
+                TryReadRawDouble(
+                    rawActiveWheel,
+                    "baseAward",
+                    out activeWheel.baseAward);
+            activeWheel.hasFinalAward =
+                TryReadRawDouble(
+                    rawActiveWheel,
+                    "finalAward",
+                    out activeWheel.finalAward);
+
+            if (rawActiveWheel.TryGetValue(
+                    "awards",
+                    out object awardsValue))
+            {
+                if (!TryReadRawIntList(
+                        awardsValue,
+                        out activeWheel.awards))
+                {
+                    error =
+                        $"ultraBonus.activeWheels[{index}].awards must be an " +
+                        "integer array.";
+                    return false;
+                }
+            }
+
+            bonus.activeWheels.Add(activeWheel);
+        }
+
+        return true;
+    }
+
+    private static bool TryCaptureScatterBonus(
+        IDictionary<string, object> rawBonus,
+        ServerScatterBonus bonus,
+        out string error)
+    {
+        error = null;
+        bonus.hasIsTriggered =
+            TryReadRawBool(
+                rawBonus,
+                "isTriggered",
+                out bool isTriggered);
+        if (bonus.hasIsTriggered)
+        {
+            bonus.isTriggered = isTriggered;
+        }
+
+        bonus.hasTotalAward =
+            TryReadRawDouble(
+                rawBonus,
+                "totalAward",
+                out double totalAward);
+        if (bonus.hasTotalAward)
+        {
+            bonus.totalAward = totalAward;
+        }
+
+        if (!TryReadRawPositions(
+                rawBonus,
+                "triggerPositions",
+                out List<ServerGridPosition> triggerPositions,
+                out error))
+        {
+            return false;
+        }
+
+        bonus.triggerPositions = triggerPositions;
+
+        if (!rawBonus.TryGetValue(
+                "wheelSpins",
+                out object wheelSpinsValue) ||
+            !(wheelSpinsValue is IList rawWheelSpins))
+        {
+            error =
+                "scatterBonus.wheelSpins must be a server array.";
+            return false;
+        }
+
+        bonus.wheelSpins =
+            new List<ServerScatterWheelSpin>(rawWheelSpins.Count);
+        for (int index = 0;
+             index < rawWheelSpins.Count;
+             index++)
+        {
+            if (!(rawWheelSpins[index] is
+                  IDictionary<string, object> rawWheelSpin))
+            {
+                error =
+                    $"scatterBonus.wheelSpins[{index}] must be an object.";
+                return false;
+            }
+
+            var wheelSpin = new ServerScatterWheelSpin();
+            bool hasRow =
+                TryReadRawInt(
+                    rawWheelSpin,
+                    "row",
+                    out wheelSpin.row);
+            bool hasCol =
+                TryReadRawInt(
+                    rawWheelSpin,
+                    "col",
+                    out wheelSpin.col);
+            wheelSpin.hasPosition = hasRow && hasCol;
+            wheelSpin.hasWheelIndex =
+                TryReadRawInt(
+                    rawWheelSpin,
+                    "wheelIndex",
+                    out wheelSpin.wheelIndex);
+            wheelSpin.hasStopIndex =
+                TryReadRawInt(
+                    rawWheelSpin,
+                    "stopIndex",
+                    out wheelSpin.stopIndex);
+            wheelSpin.hasAwardValue =
+                TryReadRawDouble(
+                    rawWheelSpin,
+                    "awardValue",
+                    out wheelSpin.awardValue);
+
+            if (rawWheelSpin.TryGetValue(
+                    "awards",
+                    out object awardsValue))
+            {
+                if (!TryReadRawDoubleList(
+                        awardsValue,
+                        out wheelSpin.awards))
+                {
+                    error =
+                        $"scatterBonus.wheelSpins[{index}].awards must be a " +
+                        "numeric array.";
+                    return false;
+                }
+            }
+
+            if (rawWheelSpin.TryGetValue(
+                    "values",
+                    out object valuesValue))
+            {
+                if (!TryReadRawStringList(
+                        valuesValue,
+                        out wheelSpin.values))
+                {
+                    error =
+                        $"scatterBonus.wheelSpins[{index}].values must be a " +
+                        "non-null array.";
+                    return false;
+                }
+            }
+
+            bonus.wheelSpins.Add(wheelSpin);
+        }
+
+        return true;
+    }
+
+    private static bool TryReadRawPositions(
+        IDictionary<string, object> values,
+        string key,
+        out List<ServerGridPosition> positions,
+        out string error)
+    {
+        positions = new List<ServerGridPosition>();
+        error = null;
+        if (!values.TryGetValue(key, out object rawValue))
+        {
+            return true;
+        }
+
+        if (!(rawValue is IList rawPositions))
+        {
+            error = $"{key} must be a server array.";
+            return false;
+        }
+
+        positions =
+            new List<ServerGridPosition>(rawPositions.Count);
+        for (int index = 0;
+             index < rawPositions.Count;
+             index++)
+        {
+            if (!(rawPositions[index] is
+                  IDictionary<string, object> rawPosition))
+            {
+                error = $"{key}[{index}] must be an object.";
+                return false;
+            }
+
+            var position = new ServerGridPosition();
+            position.hasRow =
+                TryReadRawInt(
+                    rawPosition,
+                    "row",
+                    out position.row);
+            position.hasCol =
+                TryReadRawInt(
+                    rawPosition,
+                    "col",
+                    out position.col);
+            positions.Add(position);
+        }
+
+        return true;
+    }
+
+    private static bool TryReadRawBool(
+        IDictionary<string, object> values,
+        string key,
+        out bool result)
+    {
+        result = false;
+        if (!values.TryGetValue(key, out object value) ||
+            value == null)
+        {
+            return false;
+        }
+
+        if (value is bool boolean)
+        {
+            result = boolean;
+            return true;
+        }
+
+        return bool.TryParse(
+            Convert.ToString(value, CultureInfo.InvariantCulture),
+            out result);
+    }
+
+    private static bool TryReadRawInt(
+        IDictionary<string, object> values,
+        string key,
+        out int result)
+    {
+        result = 0;
+        if (!values.TryGetValue(key, out object value) ||
+            value == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            double numeric =
+                Convert.ToDouble(value, CultureInfo.InvariantCulture);
+            if (double.IsNaN(numeric) ||
+                double.IsInfinity(numeric) ||
+                numeric != Math.Truncate(numeric) ||
+                numeric < int.MinValue ||
+                numeric > int.MaxValue)
+            {
+                return false;
+            }
+
+            result = (int)numeric;
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryReadRawDouble(
+        IDictionary<string, object> values,
+        string key,
+        out double result)
+    {
+        result = 0d;
+        if (!values.TryGetValue(key, out object value) ||
+            value == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            result =
+                Convert.ToDouble(value, CultureInfo.InvariantCulture);
+            return !double.IsNaN(result) &&
+                   !double.IsInfinity(result);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryReadRawString(
+        IDictionary<string, object> values,
+        string key,
+        out string result)
+    {
+        result = null;
+        if (!values.TryGetValue(key, out object value) ||
+            value == null)
+        {
+            return false;
+        }
+
+        result =
+            Convert.ToString(value, CultureInfo.InvariantCulture);
+        return !string.IsNullOrWhiteSpace(result);
+    }
+
+    private static bool TryReadRawIntList(
+        object value,
+        out List<int> result)
+    {
+        result = null;
+        if (!(value is IList rawValues))
+        {
+            return false;
+        }
+
+        result = new List<int>(rawValues.Count);
+        for (int index = 0;
+             index < rawValues.Count;
+             index++)
+        {
+            var wrapper = new Dictionary<string, object>
+            {
+                { "value", rawValues[index] }
+            };
+            if (!TryReadRawInt(wrapper, "value", out int parsed))
+            {
+                return false;
+            }
+
+            result.Add(parsed);
+        }
+
+        return true;
+    }
+
+    private static bool TryReadRawDoubleList(
+        object value,
+        out List<double> result)
+    {
+        result = null;
+        if (!(value is IList rawValues))
+        {
+            return false;
+        }
+
+        result = new List<double>(rawValues.Count);
+        for (int index = 0;
+             index < rawValues.Count;
+             index++)
+        {
+            var wrapper = new Dictionary<string, object>
+            {
+                { "value", rawValues[index] }
+            };
+            if (!TryReadRawDouble(
+                    wrapper,
+                    "value",
+                    out double parsed))
+            {
+                return false;
+            }
+
+            result.Add(parsed);
+        }
+
+        return true;
+    }
+
+    private static bool TryReadRawStringList(
+        object value,
+        out List<string> result)
+    {
+        result = null;
+        if (!(value is IList rawValues))
+        {
+            return false;
+        }
+
+        result = new List<string>(rawValues.Count);
+        for (int index = 0;
+             index < rawValues.Count;
+             index++)
+        {
+            if (rawValues[index] == null)
+            {
+                return false;
+            }
+
+            result.Add(
+                Convert.ToString(
+                    rawValues[index],
+                    CultureInfo.InvariantCulture));
+        }
+
+        return true;
+    }
+
+    private bool TryValidateServerFeatureResults(
+        ServerSpinResponse serverResponse,
+        List<List<int>> resultMatrix,
+        out string error)
+    {
+        error = null;
+        ServerPayload payload = serverResponse?.payload;
+        bool ultraSignalled =
+            payload?.ultraBonus?.isTriggered == true ||
+            payload?.features?.ultraWheel?.triggered == true;
+        bool scatterSignalled =
+            payload?.scatterBonus?.isTriggered == true ||
+            payload?.scatterTriggered == true ||
+            payload?.features?.scatterWheel?.triggered == true;
+
+        if (ultraSignalled && scatterSignalled)
+        {
+            error =
+                "The server response triggered Ultra and Scatter in the same " +
+                "round. No bonus result will be displayed.";
+            return false;
+        }
+
+        if (ultraSignalled &&
+            !TryValidateUltraBonusResult(
+                payload?.ultraBonus,
+                resultMatrix,
+                out error))
+        {
+            return false;
+        }
+
+        if (scatterSignalled &&
+            !TryValidateScatterBonusResult(
+                payload?.scatterBonus,
+                resultMatrix,
+                out error))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool TryValidateUltraBonusResult(
+        ServerUltraBonus ultraBonus,
+        List<List<int>> resultMatrix,
+        out string error)
+    {
+        error = null;
+        if (stPatricksGoldConfig == null || resultMatrix == null)
+        {
+            error =
+                "The server Ultra result cannot be validated without the " +
+                "server game configuration and reel matrix.";
+            return false;
+        }
+
+        if (ultraBonus == null)
+        {
+            error =
+                "The server triggered Ultra without an ultraBonus result.";
+            return false;
+        }
+
+        if (!ultraBonus.hasIsTriggered || !ultraBonus.isTriggered)
+        {
+            error =
+                "The server Ultra result must explicitly contain " +
+                "isTriggered=true.";
+            return false;
+        }
+
+        if (!ultraBonus.hasTotalAward ||
+            !IsFiniteNonNegative(ultraBonus.totalAward))
+        {
+            error =
+                "The server Ultra result is missing a valid totalAward.";
+            return false;
+        }
+
+        int triggerSymbolCount = 0;
+        foreach (List<int> column in resultMatrix)
+        {
+            if (column == null)
+            {
+                continue;
+            }
+
+            foreach (int symbolId in column)
+            {
+                if (symbolId == stPatricksGoldConfig.ultraWheelSymbolId)
+                {
+                    triggerSymbolCount++;
+                }
+            }
+        }
+
+        int requiredTriggerCount = Math.Max(
+            1,
+            stPatricksGoldConfig.ultraWheel?.minTriggerCount ?? 1);
+        if (triggerSymbolCount < requiredTriggerCount)
+        {
+            error =
+                $"The server Ultra trigger is inconsistent with its reel " +
+                $"matrix: found {triggerSymbolCount} Ultra symbols, expected " +
+                $"at least {requiredTriggerCount}.";
+            return false;
+        }
+
+        if (ultraBonus.reelResults == null ||
+            ultraBonus.reelResults.Count != UltraSlotView.ReelCount)
+        {
+            error =
+                $"The server Ultra result must contain exactly " +
+                $"{UltraSlotView.ReelCount} reelResults.";
+            return false;
+        }
+
+        var assignedReels = new HashSet<int>();
+        var assignedActiveWheels = new HashSet<int>();
+        foreach (ServerUltraReelResult reelResult in ultraBonus.reelResults)
+        {
+            if (reelResult == null ||
+                !reelResult.hasReelIndex ||
+                !reelResult.hasBonusWheelStopIndex ||
+                !reelResult.hasWheelState)
+            {
+                error =
+                    "Every server Ultra reelResult must explicitly contain " +
+                    "reelIndex, bonusWheelStopIndex, and wheelState.";
+                return false;
+            }
+
+            if (reelResult.reelIndex < 1 ||
+                reelResult.reelIndex > UltraSlotView.ReelCount ||
+                !assignedReels.Add(reelResult.reelIndex))
+            {
+                error =
+                    $"The server Ultra reelIndex {reelResult.reelIndex} is " +
+                    "invalid or duplicated.";
+                return false;
+            }
+
+            if (!TryResolveUltraWheelState(
+                    reelResult.wheelState,
+                    out bool isActive,
+                    out bool hasStateMultiplier))
+            {
+                error =
+                    $"The server Ultra reel {reelResult.reelIndex} has an " +
+                    $"unsupported wheelState '{reelResult.wheelState}'.";
+                return false;
+            }
+
+            if (hasStateMultiplier &&
+                reelResult.hasMultiplierValue &&
+                reelResult.multiplierValue < 1)
+            {
+                error =
+                    $"The server Ultra reel {reelResult.reelIndex} contains " +
+                    $"an invalid multiplierValue {reelResult.multiplierValue}.";
+                return false;
+            }
+
+            if (!isActive)
+            {
+                continue;
+            }
+
+            if (!reelResult.hasAssignedWheelIndex ||
+                reelResult.assignedWheelIndex <
+                    UltraSlotView.GreenWheelSymbolId ||
+                reelResult.assignedWheelIndex >
+                    UltraSlotView.RedWheelSymbolId ||
+                !assignedActiveWheels.Add(
+                    reelResult.assignedWheelIndex))
+            {
+                error =
+                    $"The active server Ultra reel {reelResult.reelIndex} " +
+                    "must contain one unique assignedWheelIndex from 1 to 3.";
+                return false;
+            }
+        }
+
+        if (assignedActiveWheels.Count == 0)
+        {
+            error =
+                "The server triggered Ultra without an active wheel.";
+            return false;
+        }
+
+        if (ultraBonus.activeWheels == null ||
+            ultraBonus.activeWheels.Count != assignedActiveWheels.Count)
+        {
+            error =
+                "The server Ultra activeWheels results do not exactly match " +
+                "the active reel assignments.";
+            return false;
+        }
+
+        var receivedActiveWheels = new HashSet<int>();
+        double calculatedTotal = 0d;
+        foreach (ServerUltraActiveWheel activeWheel in
+                 ultraBonus.activeWheels)
+        {
+            if (activeWheel == null ||
+                !activeWheel.hasWheelIndex ||
+                !activeWheel.hasStopIndex ||
+                !activeWheel.hasBaseAward ||
+                !activeWheel.hasMultiplier ||
+                !activeWheel.hasFinalAward)
+            {
+                error =
+                    "Every server Ultra activeWheel must explicitly contain " +
+                    "wheelIndex, stopIndex, baseAward, multiplier, and " +
+                    "finalAward.";
+                return false;
+            }
+
+            if (!assignedActiveWheels.Contains(activeWheel.wheelIndex) ||
+                !receivedActiveWheels.Add(activeWheel.wheelIndex))
+            {
+                error =
+                    $"Server Ultra wheel {activeWheel.wheelIndex} is not " +
+                    "assigned by the reel result or is duplicated.";
+                return false;
+            }
+
+            if (activeWheel.stopIndex < 0 ||
+                activeWheel.stopIndex >=
+                    UltraWheelController.ServerValueCount)
+            {
+                error =
+                    $"Server Ultra wheel {activeWheel.wheelIndex} has invalid " +
+                    $"stopIndex {activeWheel.stopIndex}.";
+                return false;
+            }
+
+            if (!IsFiniteNonNegative(activeWheel.baseAward) ||
+                activeWheel.multiplier < 1 ||
+                !IsFiniteNonNegative(activeWheel.finalAward))
+            {
+                error =
+                    $"Server Ultra wheel {activeWheel.wheelIndex} contains " +
+                    "an invalid award or multiplier.";
+                return false;
+            }
+
+            IReadOnlyList<int> serverValues =
+                GetUltraWheelServerValues(activeWheel);
+            if (serverValues == null ||
+                serverValues.Count !=
+                    UltraWheelController.ServerValueCount)
+            {
+                error =
+                    $"Server Ultra wheel {activeWheel.wheelIndex} has no " +
+                    $"complete {UltraWheelController.ServerValueCount}-value " +
+                    "server table.";
+                return false;
+            }
+
+            for (int valueIndex = 0;
+                 valueIndex < serverValues.Count;
+                 valueIndex++)
+            {
+                if (serverValues[valueIndex] < 0)
+                {
+                    error =
+                        $"Server Ultra wheel {activeWheel.wheelIndex} contains " +
+                        $"a negative value at index {valueIndex}.";
+                    return false;
+                }
+            }
+
+            if (activeWheel.awards == null)
+            {
+                activeWheel.awards =
+                    new List<int>(serverValues);
+            }
+
+            if (!AmountsMatch(
+                    serverValues[activeWheel.stopIndex],
+                    activeWheel.baseAward))
+            {
+                error =
+                    $"Server Ultra wheel {activeWheel.wheelIndex} contains " +
+                    "a baseAward that does not match its stopIndex.";
+                return false;
+            }
+
+            calculatedTotal += activeWheel.finalAward;
+        }
+
+        if (!AmountsMatch(calculatedTotal, ultraBonus.totalAward))
+        {
+            error =
+                "The server Ultra totalAward does not equal the supplied " +
+                "active-wheel awards.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool TryValidateScatterBonusResult(
+        ServerScatterBonus scatterBonus,
+        List<List<int>> resultMatrix,
+        out string error)
+    {
+        error = null;
+        if (stPatricksGoldConfig == null || resultMatrix == null)
+        {
+            error =
+                "The server Scatter result cannot be validated without the " +
+                "server game configuration and reel matrix.";
+            return false;
+        }
+
+        if (scatterBonus == null)
+        {
+            error =
+                "The server triggered Scatter without a scatterBonus result.";
+            return false;
+        }
+
+        if (!scatterBonus.hasIsTriggered || !scatterBonus.isTriggered)
+        {
+            error =
+                "The server Scatter result must explicitly contain " +
+                "isTriggered=true.";
+            return false;
+        }
+
+        if (!scatterBonus.hasTotalAward ||
+            !IsFiniteNonNegative(scatterBonus.totalAward))
+        {
+            error =
+                "The server Scatter result is missing a valid totalAward.";
+            return false;
+        }
+
+        if (scatterBonus.wheelSpins == null ||
+            scatterBonus.wheelSpins.Count == 0)
+        {
+            error =
+                "The server Scatter result contains no wheelSpins.";
+            return false;
+        }
+
+        int scatterSymbolCount = 0;
+        foreach (List<int> column in resultMatrix)
+        {
+            if (column == null)
+            {
+                continue;
+            }
+
+            foreach (int symbolId in column)
+            {
+                if (symbolId ==
+                    stPatricksGoldConfig.scatterWheelSymbolId)
+                {
+                    scatterSymbolCount++;
+                }
+            }
+        }
+
+        if (scatterBonus.wheelSpins.Count != scatterSymbolCount)
+        {
+            error =
+                "The server Scatter wheelSpins count does not exactly match " +
+                "the Scatter Wheel symbols in its reel matrix.";
+            return false;
+        }
+
+        var occupiedPositions = new HashSet<int>();
+        double calculatedTotal = 0d;
+        for (int spinIndex = 0;
+             spinIndex < scatterBonus.wheelSpins.Count;
+             spinIndex++)
+        {
+            ServerScatterWheelSpin wheelSpin =
+                scatterBonus.wheelSpins[spinIndex];
+            if (wheelSpin == null ||
+                !wheelSpin.hasWheelIndex ||
+                !wheelSpin.hasStopIndex ||
+                !wheelSpin.hasAwardValue)
+            {
+                error =
+                    $"Server Scatter wheelSpins[{spinIndex}] must explicitly " +
+                    "contain wheelIndex, stopIndex, and awardValue.";
+                return false;
+            }
+
+            if (!wheelSpin.hasPosition)
+            {
+                if (scatterBonus.triggerPositions == null ||
+                    spinIndex >= scatterBonus.triggerPositions.Count)
+                {
+                    error =
+                        $"Server Scatter wheelSpins[{spinIndex}] has no server " +
+                        "row/column position.";
+                    return false;
+                }
+
+                ServerGridPosition serverPosition =
+                    scatterBonus.triggerPositions[spinIndex];
+                if (serverPosition == null ||
+                    !serverPosition.hasRow ||
+                    !serverPosition.hasCol)
+                {
+                    error =
+                        $"Server Scatter triggerPositions[{spinIndex}] is " +
+                        "incomplete.";
+                    return false;
+                }
+
+                wheelSpin.row = serverPosition.row;
+                wheelSpin.col = serverPosition.col;
+                wheelSpin.hasPosition = true;
+            }
+
+            if (wheelSpin.col < 0 ||
+                wheelSpin.col >= resultMatrix.Count ||
+                resultMatrix[wheelSpin.col] == null ||
+                wheelSpin.row < 0 ||
+                wheelSpin.row >= resultMatrix[wheelSpin.col].Count ||
+                resultMatrix[wheelSpin.col][wheelSpin.row] !=
+                    stPatricksGoldConfig.scatterWheelSymbolId)
+            {
+                error =
+                    $"Server Scatter wheelSpins[{spinIndex}] points to a " +
+                    "position that is not a Scatter Wheel symbol in the " +
+                    "server reel matrix.";
+                return false;
+            }
+
+            int flatPosition =
+                wheelSpin.row * resultMatrix.Count + wheelSpin.col;
+            if (!occupiedPositions.Add(flatPosition))
+            {
+                error =
+                    $"Server Scatter wheelSpins[{spinIndex}] duplicates a " +
+                    "wheel position.";
+                return false;
+            }
+
+            if (wheelSpin.wheelIndex < 0 ||
+                wheelSpin.stopIndex < 0 ||
+                wheelSpin.stopIndex >=
+                    ScatterWheelPresentationManager.ServerValueCount ||
+                !IsFiniteNonNegative(wheelSpin.awardValue))
+            {
+                error =
+                    $"Server Scatter wheelSpins[{spinIndex}] contains an " +
+                    "invalid wheelIndex, stopIndex, or awardValue.";
+                return false;
+            }
+
+            if (!TryGetScatterWheelServerValues(
+                    wheelSpin,
+                    out List<double> serverValues) ||
+                serverValues.Count !=
+                    ScatterWheelPresentationManager.ServerValueCount)
+            {
+                error =
+                    $"Server Scatter wheel {wheelSpin.wheelIndex} has no " +
+                    $"complete " +
+                    $"{ScatterWheelPresentationManager.ServerValueCount}-value " +
+                    "server table.";
+                return false;
+            }
+
+            wheelSpin.values =
+                new List<string>(serverValues.Count);
+            foreach (double serverValue in serverValues)
+            {
+                wheelSpin.values.Add(
+                    serverValue.ToString(
+                        "0.##",
+                        System.Globalization.CultureInfo.InvariantCulture));
+            }
+            wheelSpin.awards = null;
+
+            for (int valueIndex = 0;
+                 valueIndex < serverValues.Count;
+                 valueIndex++)
+            {
+                if (!IsFiniteNonNegative(serverValues[valueIndex]))
+                {
+                    error =
+                        $"Server Scatter wheel {wheelSpin.wheelIndex} contains " +
+                        $"an invalid value at index {valueIndex}.";
+                    return false;
+                }
+            }
+
+            if (!AmountsMatch(
+                    serverValues[wheelSpin.stopIndex],
+                    wheelSpin.awardValue))
+            {
+                error =
+                    $"Server Scatter wheel {wheelSpin.wheelIndex} awardValue " +
+                    "does not match its stopIndex.";
+                return false;
+            }
+
+            calculatedTotal += wheelSpin.awardValue;
+        }
+
+        if (!AmountsMatch(calculatedTotal, scatterBonus.totalAward))
+        {
+            error =
+                "The server Scatter totalAward does not equal the supplied " +
+                "wheel awards.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private IReadOnlyList<int> GetUltraWheelServerValues(
+        ServerUltraActiveWheel activeWheel)
+    {
+        if (activeWheel == null)
+        {
+            return null;
+        }
+
+        if (activeWheel.awards != null)
+        {
+            return activeWheel.awards.Count ==
+                   UltraWheelController.ServerValueCount
+                ? activeWheel.awards
+                : null;
+        }
+
+        UltraWheelConfig config = stPatricksGoldConfig?.ultraWheel;
+        switch (activeWheel.wheelIndex)
+        {
+            case 1:
+                return HasCompleteUltraWheelTable(config?.wheel1Awards)
+                    ? config.wheel1Awards
+                    : null;
+            case 2:
+                return HasCompleteUltraWheelTable(config?.wheel2Awards)
+                    ? config.wheel2Awards
+                    : null;
+            case 3:
+                return HasCompleteUltraWheelTable(config?.wheel3Awards)
+                    ? config.wheel3Awards
+                    : null;
+            default:
+                return null;
+        }
+    }
+
+    private static bool HasCompleteUltraWheelTable(
+        IReadOnlyList<int> values)
+    {
+        return values != null &&
+               values.Count == UltraWheelController.ServerValueCount;
+    }
+
+    private bool TryGetScatterWheelServerValues(
+        ServerScatterWheelSpin wheelSpin,
+        out List<double> values)
+    {
+        values = null;
+        if (wheelSpin == null)
+        {
+            return false;
+        }
+
+        if (wheelSpin.values != null)
+        {
+            if (wheelSpin.values.Count !=
+                ScatterWheelPresentationManager.ServerValueCount)
+            {
+                return false;
+            }
+
+            values = new List<double>(wheelSpin.values.Count);
+            for (int index = 0;
+                 index < wheelSpin.values.Count;
+                 index++)
+            {
+                if (!double.TryParse(
+                        wheelSpin.values[index],
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out double parsed))
+                {
+                    return false;
+                }
+
+                values.Add(parsed);
+            }
+
+            return true;
+        }
+
+        if (wheelSpin.awards != null)
+        {
+            if (wheelSpin.awards.Count !=
+                ScatterWheelPresentationManager.ServerValueCount)
+            {
+                return false;
+            }
+
+            values = new List<double>(wheelSpin.awards);
+            return true;
+        }
+
+        List<ScatterWheelAwardTable> tables =
+            stPatricksGoldConfig?.scatterWheel?.wheels;
+        if (tables == null)
+        {
+            return false;
+        }
+
+        foreach (ScatterWheelAwardTable table in tables)
+        {
+            if (table == null ||
+                table.wheelId != wheelSpin.wheelIndex + 1)
+            {
+                continue;
+            }
+
+            if (table.awards == null ||
+                table.awards.Count !=
+                    ScatterWheelPresentationManager.ServerValueCount)
+            {
+                return false;
+            }
+
+            values = new List<double>(table.awards.Count);
+            foreach (int value in table.awards)
+            {
+                values.Add(value);
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsFiniteNonNegative(double value)
+    {
+        return !double.IsNaN(value) &&
+               !double.IsInfinity(value) &&
+               value >= 0d;
+    }
+
+    private static bool AmountsMatch(double left, double right)
+    {
+        return Math.Abs(left - right) <= 0.005d;
+    }
+
+    private static bool TryResolveUltraWheelState(
+        string wheelState,
+        out bool isActive,
+        out bool hasMultiplier)
+    {
+        isActive = false;
+        hasMultiplier = false;
+
+        string normalizedState = wheelState?.Trim();
+        if (string.Equals(
+                normalizedState,
+                "inactive",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.Equals(
+                normalizedState,
+                "active",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            isActive = true;
+            return true;
+        }
+
+        const string activeStatePrefix = "active_";
+        if (normalizedState != null &&
+            normalizedState.StartsWith(
+                activeStatePrefix,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            isActive = true;
+            hasMultiplier =
+                normalizedState.IndexOf(
+                    "multiplier",
+                    activeStatePrefix.Length,
+                    StringComparison.OrdinalIgnoreCase) >= 0;
+            return true;
+        }
+
+        return false;
+    }
+
     private static bool IsUltraBonusTriggered(ServerUltraBonus ultraBonus)
     {
         return ultraBonus != null && ultraBonus.isTriggered;
@@ -2323,7 +3591,8 @@ public class GameManager : MonoBehaviour
         out List<int> result)
     {
         result = null;
-        if (ultraBonus?.reelResults == null || ultraBonus.reelResults.Count == 0)
+        if (ultraBonus?.reelResults == null ||
+            ultraBonus.reelResults.Count != UltraSlotView.ReelCount)
         {
             return false;
         }
@@ -2333,35 +3602,30 @@ public class GameManager : MonoBehaviour
 
         foreach (ServerUltraReelResult reelResult in ultraBonus.reelResults)
         {
-            if (reelResult == null)
+            if (reelResult == null ||
+                !reelResult.hasReelIndex ||
+                !reelResult.hasBonusWheelStopIndex ||
+                !reelResult.hasWheelState)
             {
-                continue;
+                return false;
             }
 
-            // The live SL-SPG response uses one-based reelIndex values 1, 2, 3.
-            int resultIndex = reelResult.reelIndex >= 1 &&
-                              reelResult.reelIndex <= UltraSlotView.ReelCount
-                ? reelResult.reelIndex - 1
-                : reelResult.reelIndex;
+            int resultIndex = reelResult.reelIndex - 1;
             if (resultIndex < 0 ||
                 resultIndex >= UltraSlotView.ReelCount ||
                 !assignedReels.Add(resultIndex))
             {
-                Debug.LogWarning(
-                    $"[GameManager] Ignoring invalid or duplicate ultra reel index {reelResult.reelIndex}.");
-                continue;
+                return false;
             }
 
-            bool explicitlyInactive = string.Equals(
-                reelResult.wheelState,
-                "inactive",
-                StringComparison.OrdinalIgnoreCase);
-            bool isActive = !explicitlyInactive &&
-                            (string.Equals(
-                                 reelResult.wheelState,
-                                 "active",
-                                 StringComparison.OrdinalIgnoreCase) ||
-                             reelResult.bonusWheelStopIndex > 0);
+            if (!TryResolveUltraWheelState(
+                    reelResult.wheelState,
+                    out bool isActive,
+                    out _))
+            {
+                return false;
+            }
+
             if (!isActive)
             {
                 converted[UltraSlotView.GetResultIndex(
@@ -2371,10 +3635,11 @@ public class GameManager : MonoBehaviour
             }
 
             int wheelSymbol = reelResult.assignedWheelIndex;
-            if (wheelSymbol < UltraSlotView.GreenWheelSymbolId ||
+            if (!reelResult.hasAssignedWheelIndex ||
+                wheelSymbol < UltraSlotView.GreenWheelSymbolId ||
                 wheelSymbol > UltraSlotView.RedWheelSymbolId)
             {
-                wheelSymbol = resultIndex + UltraSlotView.GreenWheelSymbolId;
+                return false;
             }
 
             converted[UltraSlotView.GetResultIndex(
