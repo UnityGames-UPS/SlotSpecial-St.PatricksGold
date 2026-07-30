@@ -887,6 +887,15 @@ public class UltraSlotView : MonoBehaviour
 
     private void SetImageSymbol(Image image, int symbolId, bool positionVisible)
     {
+        // Unity UI children can be destroyed before this view receives its
+        // teardown callbacks. Destroyed Unity objects compare equal to null,
+        // so skip them instead of trying to restore a component that no
+        // longer exists.
+        if (image == null)
+        {
+            return;
+        }
+
         bool hasSymbol = symbolId != EmptySymbolId;
         image.sprite = hasSymbol ? GetSymbolSprite(symbolId) : null;
 
@@ -1109,7 +1118,6 @@ public class UltraSlotView : MonoBehaviour
     private void OnDestroy()
     {
         KillReelTweens();
-        RestoreCurrentResultSprites();
     }
 }
 

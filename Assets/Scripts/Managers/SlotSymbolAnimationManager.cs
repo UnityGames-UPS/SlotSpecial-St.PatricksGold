@@ -972,13 +972,8 @@ public class SlotSymbolAnimationManager : MonoBehaviour
                 activeUltraWinningTargets[targetIndex];
             AlignOverlayWithoutResizing(target.AnimationImage);
             target.AnimationImage.gameObject.SetActive(true);
-            if (target.WinIndicatorImage != null)
-            {
-                target.WinIndicatorImage.gameObject.SetActive(true);
-            }
             SetAlpha(target.BaseImage, 0f);
             SetAlpha(target.AnimationImage, 1f);
-            SetAlpha(target.WinIndicatorImage, 1f);
         }
 
         int loopsToPlay =

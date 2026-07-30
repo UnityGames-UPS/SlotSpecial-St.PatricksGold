@@ -31,6 +31,12 @@ public class GameManager : MonoBehaviour
     [SerializeField, Min(0f)] private float ultraSlotSpinDuration = 2f;
     [SerializeField, Min(0.01f)] private float ultraSlotTransitionDuration = 1.2f;
     [SerializeField, Min(0f)] private float ultraSlotTransitionPadding = 100f;
+    [Tooltip(
+        "Duration of the small left/right shake before the Ultra slot slides down.")]
+    [SerializeField, Min(0f)] private float ultraSlotExitShakeDuration = 0.35f;
+    [Tooltip(
+        "Horizontal distance used by the Ultra slot shake before the wheels appear.")]
+    [SerializeField, Min(0f)] private float ultraSlotExitShakeStrength = 12f;
 
     [Header("Ultra Wheels")]
     [Tooltip("Server wheel 1: Green wheel, represented by Ultra result symbol 1.")]
@@ -40,9 +46,25 @@ public class GameManager : MonoBehaviour
     [SerializeField] private UltraWheelController blueUltraWheel;
     [Tooltip("Server wheel 3: Red wheel, represented by Ultra result symbol 3.")]
     [SerializeField] private UltraWheelController redUltraWheel;
+    [Tooltip(
+        "Delay after the Ultra slot leaves before the green wheel begins rising.")]
+    [SerializeField, Min(0f)] private float ultraFirstWheelRevealDelay = 1f;
+    [Tooltip(
+        "Delay between the green, blue, and red wheel rise start times.")]
+    [SerializeField, Min(0f)] private float ultraWheelRevealStagger = 0.06f;
     [SerializeField, Min(0f)] private float ultraResultAnimationHoldDuration = 1.2f;
-    [Tooltip("How long the final Ultra wheel result remains visible before returning to the normal slot.")]
+    [Tooltip(
+        "Fallback hold time used when the Ultra Wheel Reward popup is not assigned.")]
     [SerializeField, Min(0f)] private float ultraWheelResultHoldDuration = 1.2f;
+    [Tooltip(
+        "Duration of the small left/right shake before the completed Ultra wheel panel exits.")]
+    [SerializeField, Min(0f)] private float ultraRewardShakeDuration = 0.35f;
+    [Tooltip(
+        "Horizontal distance used by the completed Ultra wheel panel shake.")]
+    [SerializeField, Min(0f)] private float ultraRewardShakeStrength = 12f;
+    [Tooltip(
+        "Time used for each slow panel slide before the Take button becomes available.")]
+    [SerializeField, Min(0.01f)] private float ultraRewardExitDuration = 1.2f;
 
     [Header("Spin Settings")]
     [SerializeField] private float normalSpinDuration = 2.0f;
@@ -103,15 +125,24 @@ public class GameManager : MonoBehaviour
     private bool areUltraWheelsReady;
     private bool haveUltraWheelsStarted;
     private bool areUltraWheelsSpinning;
+    private bool isUltraStartButtonReady;
+    private bool isUltraTakeReady;
     private bool isUltraSlotTransitioning;
     private RectTransform normalSlotRectTransform;
     private RectTransform ultraSlotRectTransform;
     private RectTransform ultraWheelRectTransform;
+    private RectTransform greenUltraWheelRectTransform;
+    private RectTransform blueUltraWheelRectTransform;
+    private RectTransform redUltraWheelRectTransform;
     private Vector2 normalSlotRestingPosition;
     private Vector2 ultraSlotRestingPosition;
     private Vector2 ultraWheelRestingPosition;
+    private Vector2 greenUltraWheelRestingPosition;
+    private Vector2 blueUltraWheelRestingPosition;
+    private Vector2 redUltraWheelRestingPosition;
     private bool hasCachedUltraSlotLayout;
     private bool hasCachedUltraWheelLayout;
+    private bool hasCachedUltraWheelItemLayout;
     private Sequence ultraSlotTransitionSequence;
     private double displayedWinAmount;
     private bool hasOptimisticBalanceTransaction;
@@ -501,6 +532,8 @@ public class GameManager : MonoBehaviour
     private bool StartSpin()
     {
         popupManager?.HideScatterWinImmediate();
+        popupManager?.HideUltraStartImmediate();
+        popupManager?.HideUltraWinImmediate();
         pendingResultMatrix = null;
         pendingSpinResult = null;
         pendingScatterBonus = null;
@@ -1070,13 +1103,32 @@ public class GameManager : MonoBehaviour
     internal bool ShouldShowUltraStartButton()
     {
         return isUltraSlotUnlocked &&
-               !haveUltraWheelsStarted;
+               isUltraStartButtonReady &&
+               !isUltraTakeReady;
+    }
+
+    internal bool ShouldShowUltraTakeButton()
+    {
+        return isUltraSlotUnlocked &&
+               isUltraTakeReady;
+    }
+
+    internal bool CanTakeUltraWin()
+    {
+        return isInitialized &&
+               isUltraSlotUnlocked &&
+               isUltraTakeReady &&
+               !isUltraSlotTransitioning &&
+               !isUltraSlotSpinning &&
+               !areUltraWheelsSpinning &&
+               ultraWheelsCoroutine == null;
     }
 
     internal bool CanUseUltraStartButton()
     {
         if (!isInitialized ||
             !isUltraSlotUnlocked ||
+            !isUltraStartButtonReady ||
             isUltraSlotTransitioning)
         {
             return false;
@@ -1092,6 +1144,33 @@ public class GameManager : MonoBehaviour
         return !hasUltraSlotStarted
             ? RequestUltraSlotStart()
             : RequestUltraWheelsStart();
+    }
+
+    internal bool RequestUltraTake()
+    {
+        if (!CanTakeUltraWin())
+        {
+            Debug.LogWarning(
+                "[GameManager] Ultra Take ignored. The reward is not ready to be collected.");
+            return false;
+        }
+
+        isUltraTakeReady = false;
+
+        double totalRoundWin = latestSpinResult != null
+            ? latestSpinResult.winAmount
+            : displayedWinAmount;
+        CompleteOptimisticBalanceTransaction(totalRoundWin);
+
+        UltraWheelsCompleted?.Invoke();
+        popupManager?.HideUltraWinImmediate();
+        ResetUltraSlotState();
+        GamePresentationChanged?.Invoke();
+
+        Debug.Log(
+            $"[GameManager] Ultra reward taken. Credited {Math.Max(0d, totalRoundWin):0.00}; " +
+            "the normal Spin button is available again.");
+        return true;
     }
 
     private bool CanStartUltraSlot()
@@ -1129,6 +1208,7 @@ public class GameManager : MonoBehaviour
             return false;
         }
 
+        popupManager?.HideUltraStartImmediate();
         hasUltraSlotStarted = true;
         isUltraSlotSpinning = true;
         GamePresentationChanged?.Invoke();
@@ -1336,9 +1416,26 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator ShowUltraWinThenReturnToNormal()
     {
-        ShowCompletedUltraWin();
+        PrepareCompletedUltraWin();
 
-        if (ultraWheelResultHoldDuration > 0f)
+        bool totalWinCountCompleted = false;
+        bool popupStarted =
+            popupManager != null &&
+            popupManager.ShowUltraWin(
+                GetUltraWheelFinalAward(latestUltraBonus, 1),
+                GetUltraWheelFinalAward(latestUltraBonus, 2),
+                GetUltraWheelFinalAward(latestUltraBonus, 3),
+                latestUltraBonus?.totalAward ?? 0d,
+                () => totalWinCountCompleted = true);
+
+        if (popupStarted)
+        {
+            while (isUltraSlotUnlocked && !totalWinCountCompleted)
+            {
+                yield return null;
+            }
+        }
+        else if (ultraWheelResultHoldDuration > 0f)
         {
             yield return new WaitForSecondsRealtime(
                 ultraWheelResultHoldDuration);
@@ -1351,22 +1448,40 @@ public class GameManager : MonoBehaviour
         ultraWheelsCoroutine = null;
         if (isUltraSlotUnlocked)
         {
-            PlayUltraSlotExitTransition();
+            PlayUltraRewardReturnTransition();
         }
     }
 
-    private void ShowCompletedUltraWin()
+    private static double? GetUltraWheelFinalAward(
+        ServerUltraBonus ultraBonus,
+        int wheelNumber)
+    {
+        if (ultraBonus?.activeWheels == null)
+        {
+            return null;
+        }
+
+        double? wheelAward = null;
+        foreach (ServerUltraActiveWheel activeWheel in ultraBonus.activeWheels)
+        {
+            if (activeWheel != null &&
+                activeWheel.wheelIndex == wheelNumber)
+            {
+                wheelAward =
+                    (wheelAward ?? 0d) +
+                    Math.Max(0d, activeWheel.finalAward);
+            }
+        }
+
+        return wheelAward;
+    }
+
+    private void PrepareCompletedUltraWin()
     {
         displayedWinAmount = latestUltraBonus != null
             ? Math.Max(0, latestUltraBonus.totalAward)
             : 0;
 
-        double totalRoundWin = latestSpinResult != null
-            ? latestSpinResult.winAmount
-            : displayedWinAmount;
-        CompleteOptimisticBalanceTransaction(totalRoundWin);
-
-        UltraWheelsCompleted?.Invoke();
         GamePresentationChanged?.Invoke();
     }
 
@@ -1410,6 +1525,17 @@ public class GameManager : MonoBehaviour
     /// </summary>
     internal void CompleteUltraSlotFeature()
     {
+        if (haveUltraWheelsStarted)
+        {
+            if (!RequestUltraTake())
+            {
+                Debug.LogWarning(
+                    "[GameManager] Ultra feature cannot close until the reward " +
+                    "transition finishes and Take is available.");
+            }
+            return;
+        }
+
         if (isUltraSlotSpinning ||
             ultraWheelsCoroutine != null ||
             areUltraWheelsSpinning)
@@ -1429,6 +1555,8 @@ public class GameManager : MonoBehaviour
             StopAutoPlay();
         }
 
+        popupManager?.HideUltraStartImmediate();
+        popupManager?.HideUltraWinImmediate();
         latestUltraBonus = ultraBonus;
         ApplyUltraWheelResultValues(ultraBonus);
         pendingUltraSlotResult = null;
@@ -1437,6 +1565,8 @@ public class GameManager : MonoBehaviour
         areUltraWheelsReady = false;
         haveUltraWheelsStarted = false;
         areUltraWheelsSpinning = false;
+        isUltraStartButtonReady = false;
+        isUltraTakeReady = false;
         isUltraSlotUnlocked = true;
 
         if (ultraWheelPanel != null)
@@ -1466,6 +1596,8 @@ public class GameManager : MonoBehaviour
     private void ResetUltraSlotState()
     {
         KillUltraSlotTransition();
+        popupManager?.HideUltraStartImmediate();
+        popupManager?.HideUltraWinImmediate();
         slotView?.CancelWinAnimation();
         StopActiveUltraWheels();
 
@@ -1485,6 +1617,8 @@ public class GameManager : MonoBehaviour
         areUltraWheelsReady = false;
         haveUltraWheelsStarted = false;
         areUltraWheelsSpinning = false;
+        isUltraStartButtonReady = false;
+        isUltraTakeReady = false;
         RestoreUltraSlotLayout();
 
         if (ultraSlotPanel != null)
@@ -1569,6 +1703,8 @@ public class GameManager : MonoBehaviour
 
         CacheUltraSlotLayout();
         RestoreUltraSlotLayout();
+        popupManager?.HideUltraStartImmediate();
+        isUltraStartButtonReady = false;
         isUltraSlotTransitioning = true;
         normalSlotPanel?.SetActive(true);
         ultraSlotPanel?.SetActive(false);
@@ -1602,6 +1738,30 @@ public class GameManager : MonoBehaviour
     private void OnUltraEntryTransitionComplete()
     {
         isUltraSlotTransitioning = false;
+
+        if (!isUltraSlotUnlocked)
+        {
+            return;
+        }
+
+        bool popupStarted =
+            popupManager != null &&
+            popupManager.ShowUltraStart(() =>
+            {
+                if (!isUltraSlotUnlocked)
+                {
+                    return;
+                }
+
+                isUltraStartButtonReady = true;
+                GamePresentationChanged?.Invoke();
+            });
+
+        if (!popupStarted)
+        {
+            isUltraStartButtonReady = true;
+        }
+
         GamePresentationChanged?.Invoke();
     }
 
@@ -1715,6 +1875,32 @@ public class GameManager : MonoBehaviour
                 hasCachedUltraWheelLayout = true;
             }
         }
+
+        if (!hasCachedUltraWheelItemLayout)
+        {
+            greenUltraWheelRectTransform = greenUltraWheel != null
+                ? greenUltraWheel.GetComponent<RectTransform>()
+                : null;
+            blueUltraWheelRectTransform = blueUltraWheel != null
+                ? blueUltraWheel.GetComponent<RectTransform>()
+                : null;
+            redUltraWheelRectTransform = redUltraWheel != null
+                ? redUltraWheel.GetComponent<RectTransform>()
+                : null;
+
+            if (greenUltraWheelRectTransform != null &&
+                blueUltraWheelRectTransform != null &&
+                redUltraWheelRectTransform != null)
+            {
+                greenUltraWheelRestingPosition =
+                    greenUltraWheelRectTransform.anchoredPosition;
+                blueUltraWheelRestingPosition =
+                    blueUltraWheelRectTransform.anchoredPosition;
+                redUltraWheelRestingPosition =
+                    redUltraWheelRectTransform.anchoredPosition;
+                hasCachedUltraWheelItemLayout = true;
+            }
+        }
     }
 
     private void PlayUltraWheelsEnterTransition()
@@ -1732,7 +1918,9 @@ public class GameManager : MonoBehaviour
 
         areUltraWheelsReady = false;
 
-        if (!hasCachedUltraSlotLayout || !hasCachedUltraWheelLayout)
+        if (!hasCachedUltraSlotLayout ||
+            !hasCachedUltraWheelLayout ||
+            !hasCachedUltraWheelItemLayout)
         {
             ultraSlotPanel?.SetActive(false);
             ultraWheelPanel.SetActive(true);
@@ -1748,24 +1936,105 @@ public class GameManager : MonoBehaviour
         ultraWheelPanel.SetActive(true);
 
         ultraSlotRectTransform.anchoredPosition = ultraSlotRestingPosition;
-        ultraWheelRectTransform.anchoredPosition =
-            ultraWheelRestingPosition +
-            Vector2.down * GetUltraSlotSlideDistance(ultraWheelRectTransform);
+        ultraWheelRectTransform.anchoredPosition = ultraWheelRestingPosition;
+
+        greenUltraWheelRectTransform.anchoredPosition =
+            greenUltraWheelRestingPosition +
+            Vector2.down * GetUltraSlotSlideDistance(
+                greenUltraWheelRectTransform);
+        blueUltraWheelRectTransform.anchoredPosition =
+            blueUltraWheelRestingPosition +
+            Vector2.down * GetUltraSlotSlideDistance(
+                blueUltraWheelRectTransform);
+        redUltraWheelRectTransform.anchoredPosition =
+            redUltraWheelRestingPosition +
+            Vector2.down * GetUltraSlotSlideDistance(
+                redUltraWheelRectTransform);
 
         float duration = Mathf.Max(0.01f, ultraSlotTransitionDuration);
+        float shakeDuration = Mathf.Max(0f, ultraSlotExitShakeDuration);
+        float shakeStrength = Mathf.Max(0f, ultraSlotExitShakeStrength);
+        float effectiveShakeDuration = 0f;
+        Vector2 ultraSlotExitPosition =
+            ultraSlotRestingPosition +
+            Vector2.down * GetUltraSlotSlideDistance(
+                ultraSlotRectTransform);
+
         ultraSlotTransitionSequence = DOTween.Sequence()
-            .SetUpdate(true)
+            .SetUpdate(true);
+
+        if (shakeDuration > 0f && shakeStrength > 0f)
+        {
+            float shakeStepDuration =
+                Mathf.Max(0.01f, shakeDuration / 4f);
+            effectiveShakeDuration = shakeStepDuration * 4f;
+            ultraSlotTransitionSequence
+                .Append(
+                    ultraSlotRectTransform
+                        .DOAnchorPos(
+                            ultraSlotRestingPosition +
+                            Vector2.right * shakeStrength,
+                            shakeStepDuration)
+                        .SetEase(Ease.Linear))
+                .Append(
+                    ultraSlotRectTransform
+                        .DOAnchorPos(
+                            ultraSlotRestingPosition +
+                            Vector2.left * shakeStrength,
+                            shakeStepDuration)
+                        .SetEase(Ease.Linear))
+                .Append(
+                    ultraSlotRectTransform
+                        .DOAnchorPos(
+                            ultraSlotRestingPosition +
+                            Vector2.right * (shakeStrength * 0.5f),
+                            shakeStepDuration)
+                        .SetEase(Ease.Linear))
+                .Append(
+                    ultraSlotRectTransform
+                        .DOAnchorPos(
+                            ultraSlotRestingPosition,
+                            shakeStepDuration)
+                        .SetEase(Ease.Linear));
+        }
+
+        ultraSlotTransitionSequence
             .Append(
                 ultraSlotRectTransform
                     .DOAnchorPos(
-                        ultraSlotRestingPosition +
-                        Vector2.down * GetUltraSlotSlideDistance(ultraSlotRectTransform),
+                        ultraSlotExitPosition,
                         duration)
                     .SetEase(Ease.InCubic))
-            .AppendCallback(() => ultraSlotPanel.SetActive(false))
-            .Append(
-                ultraWheelRectTransform
-                    .DOAnchorPos(ultraWheelRestingPosition, duration)
+            .AppendCallback(() => ultraSlotPanel.SetActive(false));
+
+        float greenRevealTime =
+            effectiveShakeDuration +
+            duration +
+            Mathf.Max(0f, ultraFirstWheelRevealDelay);
+        float revealStagger =
+            Mathf.Max(0f, ultraWheelRevealStagger);
+
+        ultraSlotTransitionSequence
+            .Insert(
+                greenRevealTime,
+                greenUltraWheelRectTransform
+                    .DOAnchorPos(
+                        greenUltraWheelRestingPosition,
+                        duration)
+                    .SetEase(Ease.OutCubic))
+            .Insert(
+                greenRevealTime + revealStagger,
+                blueUltraWheelRectTransform
+                    .DOAnchorPos(
+                        blueUltraWheelRestingPosition,
+                        duration)
+                    .SetEase(Ease.OutCubic))
+            .Insert(
+                greenRevealTime + (revealStagger * 2f),
+                redUltraWheelRectTransform
+                    .DOAnchorPos(
+                        redUltraWheelRestingPosition,
+                        duration)
                     .SetEase(Ease.OutCubic))
             .OnComplete(() =>
             {
@@ -1773,6 +2042,123 @@ public class GameManager : MonoBehaviour
                 isUltraSlotTransitioning = false;
                 areUltraWheelsReady = true;
                 GamePresentationChanged?.Invoke();
+            });
+
+        GamePresentationChanged?.Invoke();
+    }
+
+    private void PlayUltraRewardReturnTransition()
+    {
+        if (!isUltraSlotUnlocked)
+        {
+            return;
+        }
+
+        KillUltraSlotTransition();
+        slotView?.CancelWinAnimation();
+        StopActiveUltraWheels();
+        CacheUltraSlotLayout();
+
+        isUltraTakeReady = false;
+        areUltraWheelsReady = false;
+
+        if (!hasCachedUltraSlotLayout ||
+            !hasCachedUltraWheelLayout ||
+            ultraWheelPanel == null ||
+            normalSlotPanel == null)
+        {
+            RestoreUltraSlotLayout();
+            ultraSlotPanel?.SetActive(false);
+            ultraWheelPanel?.SetActive(false);
+            normalSlotPanel?.SetActive(true);
+            isUltraSlotTransitioning = false;
+            isUltraTakeReady = true;
+            GamePresentationChanged?.Invoke();
+            Debug.LogWarning(
+                "[GameManager] Ultra reward return requires panel RectTransforms; " +
+                "used an instant swap before enabling Take.");
+            return;
+        }
+
+        isUltraSlotTransitioning = true;
+        ultraWheelPanel.SetActive(true);
+        normalSlotPanel.SetActive(true);
+        ultraWheelRectTransform.anchoredPosition =
+            ultraWheelRestingPosition;
+        normalSlotRectTransform.anchoredPosition =
+            normalSlotRestingPosition +
+            Vector2.down * GetUltraSlotSlideDistance(
+                normalSlotRectTransform);
+
+        float shakeDuration = Mathf.Max(0f, ultraRewardShakeDuration);
+        float shakeStrength = Mathf.Max(0f, ultraRewardShakeStrength);
+        float slideDuration = Mathf.Max(0.01f, ultraRewardExitDuration);
+        Vector2 wheelExitPosition =
+            ultraWheelRestingPosition +
+            Vector2.down * GetUltraSlotSlideDistance(
+                ultraWheelRectTransform);
+
+        ultraSlotTransitionSequence = DOTween.Sequence()
+            .SetUpdate(true);
+
+        if (shakeDuration > 0f && shakeStrength > 0f)
+        {
+            float shakeStepDuration =
+                Mathf.Max(0.01f, shakeDuration / 4f);
+            ultraSlotTransitionSequence
+                .Append(
+                    ultraWheelRectTransform
+                        .DOAnchorPos(
+                            ultraWheelRestingPosition +
+                            Vector2.right * shakeStrength,
+                            shakeStepDuration)
+                        .SetEase(Ease.Linear))
+                .Append(
+                    ultraWheelRectTransform
+                        .DOAnchorPos(
+                            ultraWheelRestingPosition +
+                            Vector2.left * shakeStrength,
+                            shakeStepDuration)
+                        .SetEase(Ease.Linear))
+                .Append(
+                    ultraWheelRectTransform
+                        .DOAnchorPos(
+                            ultraWheelRestingPosition +
+                            Vector2.right * (shakeStrength * 0.5f),
+                            shakeStepDuration)
+                        .SetEase(Ease.Linear))
+                .Append(
+                    ultraWheelRectTransform
+                        .DOAnchorPos(
+                            ultraWheelRestingPosition,
+                            shakeStepDuration)
+                        .SetEase(Ease.Linear));
+        }
+
+        ultraSlotTransitionSequence
+            .Append(
+                ultraWheelRectTransform
+                    .DOAnchorPos(
+                        wheelExitPosition,
+                        slideDuration)
+                    .SetEase(Ease.InCubic))
+            .AppendCallback(
+                () => ultraWheelPanel.SetActive(false))
+            .Append(
+                normalSlotRectTransform
+                    .DOAnchorPos(
+                        normalSlotRestingPosition,
+                        slideDuration)
+                    .SetEase(Ease.OutCubic))
+            .OnComplete(() =>
+            {
+                ultraSlotTransitionSequence = null;
+                isUltraSlotTransitioning = false;
+                isUltraTakeReady = true;
+                GamePresentationChanged?.Invoke();
+                Debug.Log(
+                    "[GameManager] Normal slot restored. The Ultra reward remains " +
+                    "visible and the Take button is now active.");
             });
 
         GamePresentationChanged?.Invoke();
@@ -1893,6 +2279,16 @@ public class GameManager : MonoBehaviour
         if (hasCachedUltraWheelLayout)
         {
             ultraWheelRectTransform.anchoredPosition = ultraWheelRestingPosition;
+        }
+
+        if (hasCachedUltraWheelItemLayout)
+        {
+            greenUltraWheelRectTransform.anchoredPosition =
+                greenUltraWheelRestingPosition;
+            blueUltraWheelRectTransform.anchoredPosition =
+                blueUltraWheelRestingPosition;
+            redUltraWheelRectTransform.anchoredPosition =
+                redUltraWheelRestingPosition;
         }
     }
 

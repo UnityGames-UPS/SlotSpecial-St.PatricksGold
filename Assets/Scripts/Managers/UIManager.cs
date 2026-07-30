@@ -17,6 +17,9 @@ public class UIManager : MonoBehaviour
     [Header("Ultra Slot")]
     [Tooltip("Shown only after the server or parse sheet unlocks the Ultra slot.")]
     [SerializeField] private Button ultraStartButton;
+    [Tooltip(
+        "Shown after the Ultra reward count and return transition finish.")]
+    [SerializeField] private Button ultraTakeButton;
 
     [Header("Spin Mode Cycle Buttons")]
     [SerializeField] private Button normalSpinButton;
@@ -95,6 +98,11 @@ public class UIManager : MonoBehaviour
     [SerializeField] private Button infoPageButton;
     [SerializeField] private Button infoPageBackButton;
 
+    [Header("Guide Page")]
+    [SerializeField] private GameObject guidePagePanel;
+    [SerializeField] private Button guidePageButton;
+    [SerializeField] private Button guidePageBackButton;
+
     private bool isAutoPlayPanelOpen;
     private bool isSpinPointerHeld;
     private bool suppressNextSpinClick;
@@ -142,6 +150,17 @@ public class UIManager : MonoBehaviour
         {
             Debug.LogError(
                 "[UIManager] Ultra Start Button is not assigned and no scene Button named 'Start' was found.");
+        }
+
+        if (ultraTakeButton == null)
+        {
+            ultraTakeButton = FindButtonByName("Take");
+        }
+
+        if (ultraTakeButton == null)
+        {
+            Debug.LogError(
+                "[UIManager] Ultra Take Button is not assigned and no scene Button named 'Take' was found.");
         }
 
         if (normalSpinButton == null)
@@ -284,6 +303,19 @@ public class UIManager : MonoBehaviour
             ResetInfoPage();
         }
 
+        ResolveGuidePageReferences();
+        if (guidePagePanel == null ||
+            guidePageButton == null ||
+            guidePageBackButton == null)
+        {
+            Debug.LogError(
+                "[UIManager] Guide Page panel, Guide button, and Back button must be assigned.");
+        }
+        else
+        {
+            ResetGuidePage();
+        }
+
         if (gameManager == null)
         {
             Debug.LogError("[UIManager] GameManager is not assigned.");
@@ -382,6 +414,11 @@ public class UIManager : MonoBehaviour
             ultraStartButton.onClick.AddListener(OnUltraStartButtonClicked);
         }
 
+        if (ultraTakeButton != null)
+        {
+            ultraTakeButton.onClick.AddListener(OnUltraTakeButtonClicked);
+        }
+
         if (normalSpinButton != null)
         {
             normalSpinButton.onClick.AddListener(OnNormalSpinButtonClicked);
@@ -429,6 +466,10 @@ public class UIManager : MonoBehaviour
             infoPageButton.onClick.AddListener(OpenInfoPage);
         if (infoPageBackButton != null)
             infoPageBackButton.onClick.AddListener(CloseInfoPage);
+        if (guidePageButton != null)
+            guidePageButton.onClick.AddListener(OpenGuidePage);
+        if (guidePageBackButton != null)
+            guidePageBackButton.onClick.AddListener(CloseGuidePage);
 
         if (gameManager != null)
         {
@@ -472,6 +513,11 @@ public class UIManager : MonoBehaviour
         if (ultraStartButton != null)
         {
             ultraStartButton.onClick.RemoveListener(OnUltraStartButtonClicked);
+        }
+
+        if (ultraTakeButton != null)
+        {
+            ultraTakeButton.onClick.RemoveListener(OnUltraTakeButtonClicked);
         }
 
         if (normalSpinButton != null)
@@ -521,6 +567,10 @@ public class UIManager : MonoBehaviour
             infoPageButton.onClick.RemoveListener(OpenInfoPage);
         if (infoPageBackButton != null)
             infoPageBackButton.onClick.RemoveListener(CloseInfoPage);
+        if (guidePageButton != null)
+            guidePageButton.onClick.RemoveListener(OpenGuidePage);
+        if (guidePageBackButton != null)
+            guidePageBackButton.onClick.RemoveListener(CloseGuidePage);
 
         if (gameManager != null)
         {
@@ -596,6 +646,22 @@ public class UIManager : MonoBehaviour
         }
 
         if (!gameManager.RequestUltraStart())
+        {
+            RefreshSpinControls();
+        }
+    }
+
+    private void OnUltraTakeButtonClicked()
+    {
+        if (gameManager == null)
+        {
+            Debug.LogError(
+                "[UIManager] Cannot take the Ultra reward because GameManager is not assigned.");
+            RefreshSpinControls();
+            return;
+        }
+
+        if (!gameManager.RequestUltraTake())
         {
             RefreshSpinControls();
         }
@@ -1185,6 +1251,31 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    private void ResolveGuidePageReferences()
+    {
+        if (guidePagePanel == null)
+        {
+            guidePagePanel =
+                FindOutermostGameObjectByName("GuidePage");
+        }
+
+        if (guidePageButton == null)
+        {
+            guidePageButton =
+                FindButtonByName("Guide") ??
+                FindButtonByName("Bulb");
+        }
+
+        if (guidePageBackButton == null &&
+            guidePagePanel != null)
+        {
+            guidePageBackButton =
+                FindButtonInChildrenByName(
+                    guidePagePanel,
+                    "BackButton");
+        }
+    }
+
     private static GameObject FindGameObjectByName(string objectName)
     {
         Transform[] sceneTransforms = FindObjectsByType<Transform>(
@@ -1207,6 +1298,66 @@ public class UIManager : MonoBehaviour
         return null;
     }
 
+    private static GameObject FindOutermostGameObjectByName(
+        string objectName)
+    {
+        Transform[] sceneTransforms = FindObjectsByType<Transform>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+        GameObject fallback = null;
+
+        foreach (Transform sceneTransform in sceneTransforms)
+        {
+            if (sceneTransform == null ||
+                !sceneTransform.gameObject.scene.IsValid() ||
+                !string.Equals(
+                    sceneTransform.name,
+                    objectName,
+                    System.StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            fallback ??= sceneTransform.gameObject;
+            if (sceneTransform.parent == null ||
+                !string.Equals(
+                    sceneTransform.parent.name,
+                    objectName,
+                    System.StringComparison.Ordinal))
+            {
+                return sceneTransform.gameObject;
+            }
+        }
+
+        return fallback;
+    }
+
+    private static Button FindButtonInChildrenByName(
+        GameObject parent,
+        string buttonName)
+    {
+        if (parent == null)
+        {
+            return null;
+        }
+
+        Button[] buttons =
+            parent.GetComponentsInChildren<Button>(true);
+        foreach (Button button in buttons)
+        {
+            if (button != null &&
+                string.Equals(
+                    button.name,
+                    buttonName,
+                    System.StringComparison.Ordinal))
+            {
+                return button;
+            }
+        }
+
+        return null;
+    }
+
     private void OpenInfoPage()
     {
         if (infoPagePanel == null)
@@ -1217,6 +1368,7 @@ public class UIManager : MonoBehaviour
 
         CloseAutoPlayPanel();
         ResetHamburgerMenu();
+        CloseGuidePage();
         infoPagePanel.SetActive(true);
     }
 
@@ -1233,6 +1385,34 @@ public class UIManager : MonoBehaviour
         CloseInfoPage();
     }
 
+    private void OpenGuidePage()
+    {
+        if (guidePagePanel == null)
+        {
+            Debug.LogError(
+                "[UIManager] Cannot open Guide Page because its panel is not assigned.");
+            return;
+        }
+
+        CloseAutoPlayPanel();
+        ResetHamburgerMenu();
+        CloseInfoPage();
+        guidePagePanel.SetActive(true);
+    }
+
+    private void CloseGuidePage()
+    {
+        if (guidePagePanel != null)
+        {
+            guidePagePanel.SetActive(false);
+        }
+    }
+
+    private void ResetGuidePage()
+    {
+        CloseGuidePage();
+    }
+
     private void RefreshSpinControls()
     {
         bool isRoundActive = gameManager != null && gameManager.IsSpinRoundActive();
@@ -1242,29 +1422,48 @@ public class UIManager : MonoBehaviour
     private void ApplySpinControlState(bool isRoundActive)
     {
         bool isUltraUnlocked = gameManager != null && gameManager.IsUltraSlotUnlocked();
-        bool showSpinButton = !isUltraUnlocked;
+        bool showUltraTake =
+            isUltraUnlocked &&
+            gameManager != null &&
+            gameManager.ShouldShowUltraTakeButton();
+        bool showUltraStart =
+            isUltraUnlocked &&
+            !showUltraTake &&
+            gameManager != null &&
+            gameManager.ShouldShowUltraStartButton();
+        bool showStopButton =
+            !isUltraUnlocked &&
+            gameManager != null &&
+            gameManager.IsSpinning();
+        bool showSpinButton =
+            !showStopButton &&
+            !showUltraStart &&
+            !showUltraTake;
 
         if (spinButton != null)
         {
             spinButton.gameObject.SetActive(showSpinButton);
-            // Keep the normal SPIN visual unchanged throughout the round.
-            // OnSpinButtonClicked ignores input until CanRequestSpin is true.
-            spinButton.interactable = showSpinButton;
+            // Keep the visible control in its normal visual state. The click
+            // handler asks GameManager whether the action is currently valid.
+            spinButton.interactable = true;
         }
 
         if (stopButton != null)
         {
-            stopButton.gameObject.SetActive(false);
-            stopButton.interactable = false;
+            stopButton.gameObject.SetActive(showStopButton);
+            stopButton.interactable = true;
         }
 
         if (ultraStartButton != null)
         {
-            bool showUltraStart = isUltraUnlocked &&
-                                  gameManager != null &&
-                                  gameManager.ShouldShowUltraStartButton();
             ultraStartButton.gameObject.SetActive(showUltraStart);
-            ultraStartButton.interactable = showUltraStart;
+            ultraStartButton.interactable = true;
+        }
+
+        if (ultraTakeButton != null)
+        {
+            ultraTakeButton.gameObject.SetActive(showUltraTake);
+            ultraTakeButton.interactable = true;
         }
     }
 
