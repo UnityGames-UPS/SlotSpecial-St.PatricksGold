@@ -268,6 +268,7 @@ public sealed class PopupManager : MonoBehaviour
             return;
         }
 
+        AudioController.Instance?.PlayUiButton();
         GameObject closingPopup = currentActivePopup;
         bool shouldExitGame = isErrorCritical;
 
@@ -328,6 +329,7 @@ public sealed class PopupManager : MonoBehaviour
             return;
         }
 
+        AudioController.Instance?.PlayUiButton();
         GameObject closingPopup = currentActivePopup;
         SetExitGameButtonsInteractable(false);
 
@@ -444,6 +446,7 @@ public sealed class PopupManager : MonoBehaviour
 
         CacheScatterWinPanelScale();
         KillScatterWinSequence();
+        AudioController.Instance?.PlayTotalWin();
 
         double sanitizedTotalWin = Math.Max(0d, totalWin);
         double displayedTotalWin = 0d;
@@ -550,6 +553,7 @@ public sealed class PopupManager : MonoBehaviour
 
         CacheUltraWheelRewardPanelScale();
         KillUltraWinSequence();
+        AudioController.Instance?.PlayTotalWin();
 
         double? sanitizedGreenWin = greenWheelWin.HasValue
             ? Math.Max(0d, greenWheelWin.Value)
@@ -665,17 +669,15 @@ public sealed class PopupManager : MonoBehaviour
 
     internal void CloseDisconnectionPopup()
     {
-        CloseCurrentErrorPopup();
+        if (currentActivePopup == errorPopup && isErrorCritical)
+        {
+            CloseCurrentPopup();
+        }
     }
 
     internal void CloseInsufficientBalancePopup()
     {
-        CloseCurrentErrorPopup();
-    }
-
-    private void CloseCurrentErrorPopup()
-    {
-        if (currentActivePopup == errorPopup)
+        if (currentActivePopup == errorPopup && !isErrorCritical)
         {
             CloseCurrentPopup();
         }

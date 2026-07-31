@@ -548,6 +548,7 @@ public class GameManager : MonoBehaviour
         activeSpinSpeed = currentSpinSpeed;
 
         slotView.StartSpin(activeSpinSpeed);
+        AudioController.Instance?.PlaySpinButton();
         SpinActivityChanged?.Invoke(true);
         GamePresentationChanged?.Invoke();
 
@@ -708,6 +709,7 @@ public class GameManager : MonoBehaviour
 
     private void OnReelsStoppedComplete()
     {
+        AudioController.Instance?.PlayAllReelsStopped();
         pendingResultMatrix = null;
         manualStopRequested = false;
 
@@ -807,6 +809,11 @@ public class GameManager : MonoBehaviour
                         OnScatterWheelPresentationComplete(
                             shouldContinueAutoPlay,
                             completedScatterBonus.totalAward));
+
+            if (presentationStarted)
+            {
+                AudioController.Instance?.PlayRichesWheel();
+            }
 
             if (!presentationStarted)
             {
@@ -1217,6 +1224,7 @@ public class GameManager : MonoBehaviour
             return false;
         }
 
+        AudioController.Instance?.PlayBonusReelSpinning();
         popupManager?.HideUltraStartImmediate();
         hasUltraSlotStarted = true;
         isUltraSlotSpinning = true;
@@ -1254,6 +1262,7 @@ public class GameManager : MonoBehaviour
 
     private void OnUltraSlotStopped()
     {
+        AudioController.Instance?.PlayBonusReelThreeNumberIcon();
         isUltraSlotSpinning = false;
 
         if (ultraWheelsCoroutine != null)
@@ -1347,6 +1356,10 @@ public class GameManager : MonoBehaviour
         yield return null;
 
         HashSet<int> activeWheelNumbers = GetActiveUltraWheelNumbersFromResult();
+        if (activeWheelNumbers.Count == 3)
+        {
+            AudioController.Instance?.PlayUltraWheelAllThree();
+        }
         var serverResultsByWheel = new Dictionary<int, ServerUltraActiveWheel>();
         if (latestUltraBonus?.activeWheels != null)
         {
@@ -1701,6 +1714,7 @@ public class GameManager : MonoBehaviour
     {
         KillUltraSlotTransition();
         isUltraSlotTransitioning = true;
+        AudioController.Instance?.PlayUltraWheelBonus();
 
         List<int> ultraWheelPositions = GetUltraWheelTriggerPositions(ultraBonus);
         bool startedAnimation =
@@ -2056,6 +2070,7 @@ public class GameManager : MonoBehaviour
         slotView?.CancelWinAnimation();
         StopActiveUltraWheels();
         CacheUltraSlotLayout();
+        AudioController.Instance?.PlayBonusGoingDown();
 
         isUltraTakeReady = false;
         areUltraWheelsReady = false;
@@ -3266,24 +3281,19 @@ public class GameManager : MonoBehaviour
 
         ScatterWheelConfig scatterWheelConfig =
             stPatricksGoldConfig.scatterWheel;
-        int configuredWheelCount =
-            scatterWheelConfig != null
-                ? scatterWheelConfig.wheelCount
-                : 0;
-        if (configuredWheelCount <= 0 &&
-            scatterWheelConfig?.wheels != null)
-        {
-            configuredWheelCount =
-                scatterWheelConfig.wheels.Count;
-        }
-
-        if (configuredWheelCount <= 0)
+        if (scatterWheelConfig == null ||
+            scatterWheelConfig.wheelCount <= 0 ||
+            scatterWheelConfig.wheels == null ||
+            scatterWheelConfig.wheels.Count !=
+                scatterWheelConfig.wheelCount)
         {
             error =
-                "The server Scatter configuration contains no valid wheel " +
-                "count or wheel tables.";
+                "The init Scatter configuration must contain wheelCount " +
+                "and the same number of wheel award tables.";
             return false;
         }
+
+        int configuredWheelCount = scatterWheelConfig.wheelCount;
 
         int expectedWheelSpinCount =
             Math.Min(scatterSymbolCount, configuredWheelCount);
@@ -3382,74 +3392,42 @@ public class GameManager : MonoBehaviour
                 return false;
             }
 
-            if (!TryGetScatterWheelServerValues(
+            if (!TryGetScatterWheelInitValues(
                     wheelSpin,
-                    out List<double> serverValues,
-                    out bool valuesAreBetMultipliers) ||
-                serverValues.Count !=
+                    out List<double> initValues) ||
+                initValues.Count !=
                     ScatterWheelPresentationManager.ServerValueCount)
             {
                 error =
                     $"Server Scatter wheel {wheelSpin.wheelIndex} has no " +
                     $"complete " +
                     $"{ScatterWheelPresentationManager.ServerValueCount}-value " +
-                    "server table.";
+                    "award table in game:init.";
                 return false;
             }
 
-            if (valuesAreBetMultipliers)
-            {
-                if (!IsFiniteNonNegative(currentBetAmount) ||
-                    currentBetAmount <= 0d)
-                {
-                    error =
-                        "The configured Scatter wheel values cannot be " +
-                        "scaled because the active bet is invalid.";
-                    return false;
-                }
-
-                for (int valueIndex = 0;
-                     valueIndex < serverValues.Count;
-                     valueIndex++)
-                {
-                    serverValues[valueIndex] *= currentBetAmount;
-                }
-            }
-
             wheelSpin.values =
-                new List<string>(serverValues.Count);
-            foreach (double serverValue in serverValues)
+                new List<string>(initValues.Count);
+            foreach (double initValue in initValues)
             {
                 wheelSpin.values.Add(
-                    serverValue.ToString(
+                    initValue.ToString(
                         "0.##",
                         System.Globalization.CultureInfo.InvariantCulture));
             }
             wheelSpin.awards = null;
 
             for (int valueIndex = 0;
-                 valueIndex < serverValues.Count;
+                 valueIndex < initValues.Count;
                  valueIndex++)
             {
-                if (!IsFiniteNonNegative(serverValues[valueIndex]))
+                if (!IsFiniteNonNegative(initValues[valueIndex]))
                 {
                     error =
                         $"Server Scatter wheel {wheelSpin.wheelIndex} contains " +
                         $"an invalid value at index {valueIndex}.";
                     return false;
                 }
-            }
-
-            if (!AmountsMatch(
-                    serverValues[wheelSpin.stopIndex],
-                    wheelSpin.awardValue))
-            {
-                error =
-                    $"Server Scatter wheel {wheelSpin.wheelIndex} stopIndex " +
-                    $"{wheelSpin.stopIndex} resolves to " +
-                    $"{serverValues[wheelSpin.stopIndex]:0.##}, but its " +
-                    $"awardValue is {wheelSpin.awardValue:0.##}.";
-                return false;
             }
 
             calculatedTotal += wheelSpin.awardValue;
@@ -3509,91 +3487,55 @@ public class GameManager : MonoBehaviour
                values.Count == UltraWheelController.ServerValueCount;
     }
 
-    private bool TryGetScatterWheelServerValues(
+    private bool TryGetScatterWheelInitValues(
         ServerScatterWheelSpin wheelSpin,
-        out List<double> values,
-        out bool valuesAreBetMultipliers)
+        out List<double> values)
     {
         values = null;
-        valuesAreBetMultipliers = false;
         if (wheelSpin == null)
         {
             return false;
         }
 
-        if (wheelSpin.values != null)
-        {
-            if (wheelSpin.values.Count !=
-                ScatterWheelPresentationManager.ServerValueCount)
-            {
-                return false;
-            }
-
-            values = new List<double>(wheelSpin.values.Count);
-            for (int index = 0;
-                 index < wheelSpin.values.Count;
-                 index++)
-            {
-                if (!double.TryParse(
-                        wheelSpin.values[index],
-                        System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        out double parsed))
-                {
-                    return false;
-                }
-
-                values.Add(parsed);
-            }
-
-            return true;
-        }
-
-        if (wheelSpin.awards != null)
-        {
-            if (wheelSpin.awards.Count !=
-                ScatterWheelPresentationManager.ServerValueCount)
-            {
-                return false;
-            }
-
-            values = new List<double>(wheelSpin.awards);
-            return true;
-        }
-
-        List<ScatterWheelAwardTable> tables =
+        List<ScatterWheelAwardTable> initWheelTables =
             stPatricksGoldConfig?.scatterWheel?.wheels;
-        if (tables == null)
+        if (initWheelTables == null)
         {
             return false;
         }
 
-        foreach (ScatterWheelAwardTable table in tables)
+        int initWheelId = wheelSpin.wheelIndex + 1;
+        ScatterWheelAwardTable matchedTable = null;
+        foreach (ScatterWheelAwardTable initWheelTable in initWheelTables)
         {
-            if (table == null ||
-                table.wheelId != wheelSpin.wheelIndex + 1)
+            if (initWheelTable == null ||
+                initWheelTable.wheelId != initWheelId)
             {
                 continue;
             }
 
-            if (table.awards == null ||
-                table.awards.Count !=
-                    ScatterWheelPresentationManager.ServerValueCount)
+            if (matchedTable != null)
             {
                 return false;
             }
 
-            values = new List<double>(table.awards.Count);
-            foreach (int value in table.awards)
-            {
-                values.Add(value);
-            }
-
-            valuesAreBetMultipliers = true;
-            return true;
+            matchedTable = initWheelTable;
         }
 
-        return false;
+        if (matchedTable?.awards == null ||
+            matchedTable.awards.Count !=
+                ScatterWheelPresentationManager.ServerValueCount)
+        {
+            return false;
+        }
+
+        values = new List<double>(matchedTable.awards.Count);
+        foreach (int initAward in matchedTable.awards)
+        {
+            values.Add(initAward);
+        }
+
+        return true;
     }
 
     private static bool IsFiniteNonNegative(double value)
@@ -3771,6 +3713,26 @@ public class GameManager : MonoBehaviour
         return playerData != null ? playerData.balance : 0;
     }
 
+    internal void UpdateBalanceDisplay(double newBalance)
+    {
+        if (playerData == null)
+        {
+            playerData = new PlayerData();
+        }
+
+        playerData.balance = newBalance;
+        GamePresentationChanged?.Invoke();
+
+        if (CanAffordBet())
+        {
+            popupManager?.CloseInsufficientBalancePopup();
+        }
+        else
+        {
+            popupManager?.ShowInsufficientFundsError();
+        }
+    }
+
     internal double GetDisplayedBetAmount()
     {
         return currentBetAmount;
@@ -3922,8 +3884,7 @@ public class GameManager : MonoBehaviour
         currentState = GameState.Idle;
         SpinActivityChanged?.Invoke(false);
         GamePresentationChanged?.Invoke();
-        // Note: The disconnection popup is shown by SocketIOManager.OnSocketDisconnected()
-        // to avoid duplicates. GameManager only cleans up state here.
+        popupManager?.ShowDisconnectionPopup();
     }
 
     internal void ExitGame()

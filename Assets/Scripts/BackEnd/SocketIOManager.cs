@@ -6,6 +6,7 @@ using UnityEngine;
 using Best.SocketIO;
 using Best.SocketIO.Events;
 using Best.HTTP.JSON;
+using Newtonsoft.Json;
 
 public class SocketIOManager : MonoBehaviour
 {
@@ -42,6 +43,13 @@ public class SocketIOManager : MonoBehaviour
     private const float PING_INTERVAL = 2f;
     private const float PONG_TIMEOUT = 5f;
 
+    private bool hasFocus = true;
+    private float focusLostTime;
+    private Coroutine focusCheckRoutine;
+    private float maxBackgroundTime = 60f;
+    private bool isBeingDestroyed;
+    private bool hasNotifiedUnexpectedDisconnection;
+
     #region Initialization
 
     private void Awake()
@@ -49,6 +57,9 @@ public class SocketIOManager : MonoBehaviour
         isInitialized = false;
         isConnected = false;
         isExiting = false;
+        hasFocus = true;
+        isBeingDestroyed = false;
+        hasNotifiedUnexpectedDisconnection = false;
     }
 
     private void Start()
@@ -64,6 +75,7 @@ public class SocketIOManager : MonoBehaviour
     private IEnumerator CloseGameRoutine()
     {
         isExiting = true;
+        StopFocusTimeoutRoutine();
 
         if (RaycastBlocker) RaycastBlocker.SetActive(true);
 
@@ -160,12 +172,13 @@ public class SocketIOManager : MonoBehaviour
 
         gameSocket.On<ConnectResponse>(SocketIOEventTypes.Connect, OnSocketConnected);
         gameSocket.On(SocketIOEventTypes.Disconnect, OnSocketDisconnected);
-        gameSocket.On<Error>(SocketIOEventTypes.Error, OnSocketError);
+        gameSocket.On<Error>(SocketIOEventTypes.Error, OnError);
 
         gameSocket.On<string>("game:init", OnStPatricksGoldConfigReceived);
         gameSocket.On<string>("result", OnResultReceived);
         gameSocket.On<string>("pong", OnPongReceived);
         gameSocket.On<string>("AnotherDevice", OnAnotherDevice);
+        gameSocket.On<string>("balance:sync", OnBalanceSync);
 
         socketManager.Open();
     }
@@ -182,6 +195,7 @@ public class SocketIOManager : MonoBehaviour
         waitingForPong = false;
         missedPongs = 0;
         lastPongTime = Time.time;
+        hasNotifiedUnexpectedDisconnection = false;
 
         StartPingRoutine();
     }
@@ -191,6 +205,7 @@ public class SocketIOManager : MonoBehaviour
         Debug.Log("[SocketIO] Disconnected");
 
         isConnected = false;
+        StopFocusTimeoutRoutine();
         StopPingRoutine();
 
         if (isExiting)
@@ -201,35 +216,40 @@ public class SocketIOManager : MonoBehaviour
         else
         {
             // Unexpected disconnection — show the regular disconnection popup
-            if (gameManager != null)
-            {
-                gameManager.OnDisconnected();
-            }
+            NotifyUnexpectedDisconnection();
         }
     }
 
-    private void OnSocketError(Error err)
+    private void OnError(Error err)
     {
-        Debug.LogError($"[SocketIO] Error: {err.message}");
+        string errorMessage = err != null ? err.message : null;
+        Debug.LogError("[SocketIO] Error: " + (errorMessage ?? "<null>"));
 
-        if (!gameManager.isInitialized)
+        if (gameManager != null && !gameManager.isInitialized)
         {
             gameManager.initializationFailed = true;
         }
 
-        if (!string.IsNullOrEmpty(err.message) && err.message.Contains("Session expired"))
+        if (!string.IsNullOrEmpty(errorMessage) &&
+            errorMessage.Contains("Session expired"))
         {
             Debug.LogWarning("Session expired detected");
             OnSocketDisconnected();
 #if UNITY_WEBGL && !UNITY_EDITOR
-        JSManager.SendCustomMessage("session_expired");
+            if (JSManager != null)
+            {
+                JSManager.SendCustomMessage("session_expired");
+            }
 #endif
         }
         else
         {
 
 #if UNITY_WEBGL && !UNITY_EDITOR
-        JSManager.SendCustomMessage("error");
+            if (JSManager != null)
+            {
+                JSManager.SendCustomMessage("error");
+            }
 #endif
         }
     }
@@ -1220,11 +1240,103 @@ public class SocketIOManager : MonoBehaviour
         Debug.LogWarning("[SocketIO] Another device login");
     }
 
+    private void OnBalanceSync(string data)
+    {
+        BalanceSyncPayload syncPayload =
+            JsonConvert.DeserializeObject<BalanceSyncPayload>(data);
+        if (syncPayload == null)
+        {
+            return;
+        }
+
+        gameManager?.UpdateBalanceDisplay(syncPayload.balance);
+    }
+
     #endregion
 
     internal void SetRaycastBlocker(bool active)
     {
         if (RaycastBlocker != null) RaycastBlocker.SetActive(active);
+    }
+
+    internal void HandleFocusChange(bool focus)
+    {
+        hasFocus = focus;
+
+        if (!focus)
+        {
+            focusLostTime = Time.time;
+            if (focusCheckRoutine == null &&
+                !isExiting &&
+                !isBeingDestroyed)
+            {
+                focusCheckRoutine = StartCoroutine(FocusTimeoutCheck());
+            }
+
+            return;
+        }
+
+        StopFocusTimeoutRoutine();
+    }
+
+    private IEnumerator FocusTimeoutCheck()
+    {
+        while (!hasFocus && !isExiting && !isBeingDestroyed)
+        {
+            if (Time.time - focusLostTime >= maxBackgroundTime)
+            {
+                Debug.LogWarning(
+                    "[SOCKET] Background timeout - closing connection");
+                isConnected = false;
+                StopPingRoutine();
+
+                if (socketManager != null)
+                {
+                    try
+                    {
+                        socketManager.Close();
+                    }
+                    catch (Exception exception)
+                    {
+                        Debug.LogWarning(
+                            "[SOCKET] Focus close error: " +
+                            exception.Message);
+                    }
+                }
+
+                NotifyUnexpectedDisconnection();
+                focusCheckRoutine = null;
+                yield break;
+            }
+
+            yield return new WaitForSecondsRealtime(1f);
+        }
+
+        focusCheckRoutine = null;
+    }
+
+    private void StopFocusTimeoutRoutine()
+    {
+        if (focusCheckRoutine == null)
+        {
+            return;
+        }
+
+        StopCoroutine(focusCheckRoutine);
+        focusCheckRoutine = null;
+    }
+
+    private void NotifyUnexpectedDisconnection()
+    {
+        if (isExiting ||
+            isBeingDestroyed ||
+            hasNotifiedUnexpectedDisconnection)
+        {
+            return;
+        }
+
+        hasNotifiedUnexpectedDisconnection = true;
+        gameManager?.OnDisconnected();
     }
 
     #region Ping/Pong Health Check
@@ -1296,8 +1408,6 @@ public class SocketIOManager : MonoBehaviour
         if (missedPongs > 0)
         {
             missedPongs = 0;
-
-            Debug.Log("[SocketIO] Pong received after missed ping.");
         }
     }
 
@@ -1348,6 +1458,7 @@ public class SocketIOManager : MonoBehaviour
         // Mark as intentional exit BEFORE closing so OnSocketDisconnected shows
         // the loading popup (with its animation) instead of the disconnect popup.
         isExiting = true;
+        StopFocusTimeoutRoutine();
 
         if (RaycastBlocker) RaycastBlocker.SetActive(true);
 
@@ -1380,11 +1491,14 @@ public class SocketIOManager : MonoBehaviour
 
     private void OnDisable()
     {
+        StopFocusTimeoutRoutine();
         StopPingRoutine();
     }
 
     private void OnDestroy()
     {
+        isBeingDestroyed = true;
+        StopFocusTimeoutRoutine();
         CloseSocket();
     }
 

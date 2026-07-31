@@ -112,6 +112,7 @@ public class UIManager : MonoBehaviour
     [SerializeField] private GameObject soundPanel;
     [SerializeField] private Button soundPanelButton;
     [SerializeField] private Button soundPanelCloseButton;
+    [SerializeField] private AudioController audioController;
 
     [Header("Platform Navigation")]
     [SerializeField] private JSFunctCalls jsFunctCalls;
@@ -496,6 +497,12 @@ public class UIManager : MonoBehaviour
             soundPanel.SetActive(false);
         }
 
+        if (audioController == null)
+        {
+            audioController = FindFirstObjectByType<AudioController>(
+                FindObjectsInactive.Include);
+        }
+
         if (jsFunctCalls == null ||
             homeButton == null ||
             portraitHomeButton == null ||
@@ -522,6 +529,11 @@ public class UIManager : MonoBehaviour
         {
             Debug.LogError(
                 "[UIManager] PopupManager is not assigned and could not be found.");
+        }
+
+        if (jsFunctCalls != null)
+        {
+            jsFunctCalls.RegisterVisibilityListener(gameObject.name);
         }
     }
 
@@ -616,6 +628,74 @@ public class UIManager : MonoBehaviour
         {
             button.onClick.RemoveListener(callback);
         }
+    }
+
+    private IEnumerable<Button> GetGenericAudioButtons()
+    {
+        yield return autoPlay10Button;
+        yield return autoPlay50Button;
+        yield return autoPlay100Button;
+        yield return autoPlay200Button;
+        yield return autoPlay500Button;
+        yield return autoPlayInfiniteButton;
+        yield return autoPlayStopButton;
+        yield return hamburgerMenuButton;
+        yield return hamburgerMenuDownButton;
+        yield return infoPageButton;
+        yield return infoPageBackButton;
+        yield return guidePageButton;
+        yield return guidePageBackButton;
+        yield return soundPanelButton;
+        yield return soundPanelCloseButton;
+        yield return homeButton;
+        yield return moreGamesButton;
+        yield return expandButton;
+        yield return shrinkButton;
+        yield return portraitAutoPlay10Button;
+        yield return portraitAutoPlay50Button;
+        yield return portraitAutoPlay100Button;
+        yield return portraitAutoPlay200Button;
+        yield return portraitAutoPlay500Button;
+        yield return portraitAutoPlayInfiniteButton;
+        yield return portraitAutoPlayStopButton;
+        yield return portraitHamburgerMenuButton;
+        yield return portraitHamburgerMenuDownButton;
+        yield return portraitInfoPageButton;
+        yield return portraitGuidePageButton;
+        yield return portraitSoundPanelButton;
+        yield return portraitHomeButton;
+        yield return portraitMoreGamesButton;
+        yield return portraitExpandButton;
+        yield return portraitShrinkButton;
+    }
+
+    private void RegisterGenericUiAudio()
+    {
+        var registeredButtons = new HashSet<Button>();
+        foreach (Button button in GetGenericAudioButtons())
+        {
+            if (button != null && registeredButtons.Add(button))
+            {
+                button.onClick.AddListener(PlayGenericUiButtonAudio);
+            }
+        }
+    }
+
+    private void UnregisterGenericUiAudio()
+    {
+        var registeredButtons = new HashSet<Button>();
+        foreach (Button button in GetGenericAudioButtons())
+        {
+            if (button != null && registeredButtons.Add(button))
+            {
+                button.onClick.RemoveListener(PlayGenericUiButtonAudio);
+            }
+        }
+    }
+
+    private void PlayGenericUiButtonAudio()
+    {
+        audioController?.PlayUiButton();
     }
 
     private void OnEnable()
@@ -780,6 +860,7 @@ public class UIManager : MonoBehaviour
         AddButtonListener(
             portraitShrinkButton,
             OnShrink);
+        RegisterGenericUiAudio();
 
         if (jsFunctCalls != null)
         {
@@ -814,6 +895,7 @@ public class UIManager : MonoBehaviour
         ResetAutoPlayPanelAnimation();
         ResetHamburgerMenu();
         UnregisterSpinHoldEvents();
+        UnregisterGenericUiAudio();
 
         if (orientationChange != null)
         {
@@ -1026,6 +1108,8 @@ public class UIManager : MonoBehaviour
             return;
         }
 
+        audioController?.PlayUiButton();
+
         // The GameManager rejects repeated stop requests. Keep the visible
         // button visually enabled so unavailable clicks simply do nothing.
     }
@@ -1058,7 +1142,10 @@ public class UIManager : MonoBehaviour
         if (!gameManager.RequestUltraTake())
         {
             RefreshSpinControls();
+            return;
         }
+
+        audioController?.PlayUiButton();
     }
 
     private void OnSpinActivityChanged(bool isRoundActive)
@@ -1084,6 +1171,16 @@ public class UIManager : MonoBehaviour
         if (gameManager == null || !gameManager.IncreaseBet())
         {
             RefreshBetControls();
+            return;
+        }
+
+        if (gameManager.CanIncreaseBet())
+        {
+            audioController?.PlayBetButton();
+        }
+        else
+        {
+            audioController?.PlayMaxBet();
         }
     }
 
@@ -1092,7 +1189,10 @@ public class UIManager : MonoBehaviour
         if (gameManager == null || !gameManager.DecreaseBet())
         {
             RefreshBetControls();
+            return;
         }
+
+        audioController?.PlayBetButton();
     }
 
     private void OnGamePresentationChanged()
@@ -1229,6 +1329,14 @@ public class UIManager : MonoBehaviour
         }
 
         gameManager.SetSpinSpeed(mode);
+        if (mode == SpinSpeed.Normal)
+        {
+            audioController?.PlayUiButton();
+        }
+        else
+        {
+            audioController?.PlayTurboRocket();
+        }
         RefreshSpinModeButtons();
     }
 
@@ -2265,6 +2373,16 @@ public class UIManager : MonoBehaviour
                 "1",
                 System.StringComparison.Ordinal);
         SetExpandShrinkButtons(browserIsExpanded);
+    }
+
+    public void OnFocusChanged(string value)
+    {
+        bool focused = value == "1";
+        Debug.Log(
+            "UNITY FOCUS CHANGED: " + value +
+            " (focused: " + focused + ")");
+        audioController?.SetMuteAll(!focused);
+        gameManager?.socketManager?.HandleFocusChange(focused);
     }
 
     private void SetExpandShrinkButtons(bool expanded)

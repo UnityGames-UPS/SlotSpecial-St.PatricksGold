@@ -730,6 +730,11 @@ public class SlotView : MonoBehaviour
         yield return stopPop.WaitForCompletion();
 
         ApplyStoppedReelLayout(columnIndex);
+        AudioController.Instance?.PlayReelStopHit();
+        if (targetSymbols.Contains(StPatricksGoldSymbolIds.GreenHat))
+        {
+            AudioController.Instance?.PlayHatAppearInReel();
+        }
         onStopped?.Invoke();
     }
 
@@ -1255,6 +1260,7 @@ public class SlotView : MonoBehaviour
         HashSet<int> allWinningPositions = new HashSet<int>();
         List<WinningLinePresentation> individualWinningLines =
             new List<WinningLinePresentation>();
+        bool hasQueenWin = false;
         foreach (WinLine winLine in winLines)
         {
             if (winLine?.positions == null) continue;
@@ -1270,6 +1276,8 @@ public class SlotView : MonoBehaviour
                 WildMultiplier = winLine.wildMultiplier,
                 WildDetails = winLine.wildDetails
             });
+            hasQueenWin |=
+                winLine.symbolId == StPatricksGoldSymbolIds.Queen;
 
             foreach (int flatIndex in linePositions)
             {
@@ -1287,6 +1295,11 @@ public class SlotView : MonoBehaviour
         // The separate TotalWin text remains visible for the complete-result
         // celebration. Per-row amounts begin with the individual lines below.
         WinLineAmountPresentationChanged?.Invoke(-1, 0);
+        AudioController.Instance?.PlayMagicalReelLine();
+        if (hasQueenWin)
+        {
+            AudioController.Instance?.PlayQueen();
+        }
         for (int lineIndex = 0; lineIndex < individualWinningLines.Count; lineIndex++)
         {
             ShowWildMultiplierIcons(
@@ -2213,6 +2226,21 @@ public class SlotView : MonoBehaviour
     internal bool IsSpinning()
     {
         return isSpinning;
+    }
+
+    internal Image GetVisibleSymbolImage(int column, int row)
+    {
+        if (column < 0 ||
+            column >= reelImagesList.Count ||
+            row < 0 ||
+            row >= StPatricksGoldDefinition.RowCount)
+        {
+            return null;
+        }
+
+        return GetSymbolImage(
+            column,
+            2 + GetVisualRow(column, row));
     }
 
     internal bool TryValidateResultMatrix(List<List<int>> matrix, out string error)
