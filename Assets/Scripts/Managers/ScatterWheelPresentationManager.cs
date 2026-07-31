@@ -460,8 +460,9 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
             yield return null;
         }
 
-        // A slow Background FX pass may outlast the wheel rotation. Keep the
-        // presentation alive until every one-shot FX sequence has completed.
+        // A slow Background FX pass may outlast the wheel rotation. Wait for
+        // every one-shot sequence to reach its last frame; that frame remains
+        // visible until the next Spin resets the Scatter presentation.
         while (completedBackgroundFxCount < activeWheels.Count)
         {
             yield return null;

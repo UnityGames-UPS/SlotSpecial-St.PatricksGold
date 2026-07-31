@@ -40,6 +40,15 @@ public sealed class OCController : MonoBehaviour
     [SerializeField] private Vector3 portraitSlotPosition =
         new Vector3(0f, -300f, 0f);
 
+    [Header("Game Name Logo")]
+    [Tooltip(
+        "Assign the Name RectTransform containing the St. Patrick's Gold logo.")]
+    [SerializeField] private RectTransform gameNameLogo;
+    [Tooltip(
+        "Additional local-position offset applied only in Mobile Portrait.")]
+    [SerializeField] private Vector2 portraitGameNameLogoOffset =
+        new Vector2(0f, 70f);
+
     [Header("Shared Page Content")]
     [SerializeField] private RectTransform infoPageScrollObject;
     [SerializeField] private RectTransform guideScrollObject;
@@ -49,9 +58,16 @@ public sealed class OCController : MonoBehaviour
 
     private readonly List<Tween> activeTweens = new List<Tween>();
     private bool isSubscribed;
+    private Vector3 landscapeGameNameLogoPosition;
 
     private void Awake()
     {
+        if (gameNameLogo != null)
+        {
+            landscapeGameNameLogoPosition =
+                gameNameLogo.localPosition;
+        }
+
         ValidateRequiredReferences(true);
     }
 
@@ -152,6 +168,20 @@ public sealed class OCController : MonoBehaviour
         TweenScale(slotObject, targetScale);
         TweenPosition(slotObject, targetPosition);
 
+        Vector3 gameNameLogoPosition =
+            landscapeGameNameLogoPosition;
+        if (isMobilePortrait)
+        {
+            gameNameLogoPosition += new Vector3(
+                portraitGameNameLogoOffset.x,
+                portraitGameNameLogoOffset.y,
+                0f);
+        }
+
+        TweenPosition(
+            gameNameLogo,
+            gameNameLogoPosition);
+
         float sharedPageHeight = isMobilePortrait ? 1920f : 1080f;
         TweenHeight(infoPageScrollObject, sharedPageHeight);
         TweenHeight(guideScrollObject, sharedPageHeight);
@@ -242,6 +272,11 @@ public sealed class OCController : MonoBehaviour
             nameof(slotObject),
             "Assign GameplayPresentationRoot, which contains SlotHolder and " +
             "the shared wheel/win presentation objects.",
+            logErrors);
+        valid &= ValidateReference(
+            gameNameLogo,
+            nameof(gameNameLogo),
+            "Assign the Name RectTransform inside SlotHolder.",
             logErrors);
         valid &= ValidateReference(
             landscapePanelObject,

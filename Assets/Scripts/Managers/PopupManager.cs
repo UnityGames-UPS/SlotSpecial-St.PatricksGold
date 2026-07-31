@@ -8,6 +8,11 @@ using UnityEngine.UI;
 [DisallowMultipleComponent]
 public sealed class PopupManager : MonoBehaviour
 {
+    private const string DefaultDisconnectionMessage =
+        "Game disconnected due to a network error. Please relaunch the game.";
+    private const string DefaultInsufficientBalanceMessage =
+        "Insufficient balance. Please add funds to continue.";
+
     [Header("Scatter Win Popup")]
     [Tooltip("Assign the complete ScatterWinPanel RectTransform.")]
     [SerializeField] private RectTransform scatterWinPanel;
@@ -31,32 +36,27 @@ public sealed class PopupManager : MonoBehaviour
     [Tooltip("Assign the award text below Icon3 (red wheel).")]
     [SerializeField] private TMP_Text redWheelWinText;
 
-    [Header("System Popup Parent")]
+    [Header("Popup Actions")]
     [Tooltip(
-        "Optional shared parent for the disconnection and insufficient balance panels.")]
-    [SerializeField] private GameObject systemPopupParent;
-
-    [Header("Disconnection Popup")]
-    [SerializeField] private RectTransform disconnectionPanel;
-    [SerializeField] private TMP_Text disconnectionMessageText;
-    [SerializeField] private Button disconnectionOkButton;
-    [SerializeField, TextArea]
-    private string defaultDisconnectionMessage =
-        "Game disconnected due to a network error. Please relaunch the game.";
-
-    [Header("Insufficient Balance Popup")]
-    [SerializeField] private RectTransform insufficientBalancePanel;
-    [SerializeField] private TMP_Text insufficientBalanceMessageText;
-    [SerializeField] private Button insufficientBalanceOkButton;
-    [SerializeField, TextArea]
-    private string defaultInsufficientBalanceMessage =
-        "Insufficient balance. Please add funds to continue.";
-
-    [Header("System Popup Actions")]
-    [Tooltip(
-        "Used only to exit after the disconnection popup is acknowledged. " +
+        "Used when a critical error or confirmed exit closes the game. " +
         "Found automatically when left empty.")]
     [SerializeField] private GameManager gameManager;
+
+    [Header("Reusable Error Popup")]
+    [Tooltip("Complete error popup GameObject.")]
+    [SerializeField] private GameObject errorPopup;
+    [Tooltip("Message TMP text inside the error popup.")]
+    [SerializeField] private TextMeshProUGUI errorMessageText;
+    [Tooltip("Cancel button used to acknowledge the error.")]
+    [SerializeField] private Button errorOkButton;
+
+    [Header("Exit Game Confirmation Popup")]
+    [Tooltip("Complete exit confirmation popup GameObject.")]
+    [SerializeField] private GameObject exitGamePopup;
+    [Tooltip("RectTransform animated when the exit popup opens and closes.")]
+    [SerializeField] private RectTransform exitGamePopupRect;
+    [SerializeField] private Button exitGameYesButton;
+    [SerializeField] private Button exitGameNoButton;
 
     [Header("Reward Popup Animation")]
     [Tooltip("Time used to grow the panel from scale 0 to its authored scale.")]
@@ -71,13 +71,14 @@ public sealed class PopupManager : MonoBehaviour
     private Vector3 scatterWinPanelNormalScale = Vector3.one;
     private Vector3 ultraWheelStartPanelNormalScale = Vector3.one;
     private Vector3 ultraWheelRewardPanelNormalScale = Vector3.one;
-    private Vector3 disconnectionPanelNormalScale = Vector3.one;
-    private Vector3 insufficientBalancePanelNormalScale = Vector3.one;
     private Sequence scatterWinSequence;
     private Sequence ultraStartSequence;
     private Sequence ultraWinSequence;
-    private Sequence systemPopupSequence;
-    private RectTransform currentSystemPopup;
+    private GameObject currentActivePopup;
+    private bool isErrorCritical;
+    private RectTransform errorPopupRect;
+    private Vector3 errorPopupNormalScale = Vector3.one;
+    private Tween currentPopupTween;
 
     private void Awake()
     {
@@ -90,46 +91,346 @@ public sealed class PopupManager : MonoBehaviour
         CacheScatterWinPanelScale();
         CacheUltraWheelStartPanelScale();
         CacheUltraWheelRewardPanelScale();
-        CacheSystemPopupScales();
-        HideScatterWinImmediate();
-        HideUltraStartImmediate();
-        HideUltraWinImmediate();
-        HideSystemPopupsImmediate();
+        ResolveErrorPopupRect();
+        ResolveExitGamePopupRect();
+        CachePanelScale(errorPopupRect, ref errorPopupNormalScale);
+        SetupButtons();
+        HideAllPopups();
     }
 
     private void OnEnable()
     {
-        if (disconnectionOkButton != null)
-        {
-            disconnectionOkButton.onClick.AddListener(
-                OnDisconnectionOkClicked);
-        }
-
-        if (insufficientBalanceOkButton != null)
-        {
-            insufficientBalanceOkButton.onClick.AddListener(
-                OnInsufficientBalanceOkClicked);
-        }
+        SetupButtons();
     }
 
     private void OnDisable()
     {
-        if (disconnectionOkButton != null)
+        if (errorOkButton != null)
         {
-            disconnectionOkButton.onClick.RemoveListener(
-                OnDisconnectionOkClicked);
+            errorOkButton.onClick.RemoveListener(OnErrorOkClicked);
+            errorOkButton.interactable = true;
         }
 
-        if (insufficientBalanceOkButton != null)
+        if (exitGameYesButton != null)
         {
-            insufficientBalanceOkButton.onClick.RemoveListener(
-                OnInsufficientBalanceOkClicked);
+            exitGameYesButton.onClick.RemoveListener(
+                OnExitGameYesClicked);
+            exitGameYesButton.interactable = true;
+        }
+
+        if (exitGameNoButton != null)
+        {
+            exitGameNoButton.onClick.RemoveListener(
+                OnExitGameNoClicked);
+            exitGameNoButton.interactable = true;
         }
 
         KillScatterWinSequence();
         KillUltraStartSequence();
         KillUltraWinSequence();
-        KillSystemPopupSequence();
+        KillCurrentPopupTween();
+    }
+
+    private void SetupButtons()
+    {
+        if (errorOkButton != null)
+        {
+            errorOkButton.onClick.RemoveListener(OnErrorOkClicked);
+            errorOkButton.onClick.AddListener(OnErrorOkClicked);
+        }
+
+        if (exitGameYesButton != null)
+        {
+            exitGameYesButton.onClick.RemoveListener(
+                OnExitGameYesClicked);
+            exitGameYesButton.onClick.AddListener(
+                OnExitGameYesClicked);
+        }
+
+        if (exitGameNoButton != null)
+        {
+            exitGameNoButton.onClick.RemoveListener(
+                OnExitGameNoClicked);
+            exitGameNoButton.onClick.AddListener(
+                OnExitGameNoClicked);
+        }
+    }
+
+    public void HideAllPopups()
+    {
+        HideScatterWinImmediate();
+        HideUltraStartImmediate();
+        HideUltraWinImmediate();
+        HideErrorPopupImmediate();
+        HideExitGamePopupImmediate();
+    }
+
+    public void ShowErrorPopup(
+        string message,
+        bool isCritical)
+    {
+        if (errorPopup == null)
+        {
+            return;
+        }
+
+        ResolveErrorPopupRect();
+        CachePanelScale(errorPopupRect, ref errorPopupNormalScale);
+
+        string popupMessage = message ?? string.Empty;
+
+        if (currentActivePopup == errorPopup &&
+            errorPopup.activeSelf &&
+            isErrorCritical == isCritical &&
+            (errorMessageText == null ||
+             errorMessageText.text == popupMessage))
+        {
+            return;
+        }
+
+        CloseCurrentPopup();
+
+        if (errorMessageText != null)
+        {
+            errorMessageText.text = popupMessage;
+        }
+
+        if (errorOkButton != null)
+        {
+            errorOkButton.interactable = true;
+        }
+
+        isErrorCritical = isCritical;
+        currentActivePopup = errorPopup;
+        errorPopup.SetActive(true);
+        AnimatePopupOpen(errorPopupRect);
+    }
+
+    public void ShowExitGamePopup()
+    {
+        if (exitGamePopup == null)
+        {
+            return;
+        }
+
+        if (currentActivePopup == exitGamePopup &&
+            exitGamePopup.activeSelf)
+        {
+            return;
+        }
+
+        CloseCurrentPopup();
+
+        SetExitGameButtonsInteractable(true);
+        currentActivePopup = exitGamePopup;
+        exitGamePopup.SetActive(true);
+        AnimatePopupOpen(exitGamePopupRect, 0.3f);
+    }
+
+    public void CloseCurrentPopup()
+    {
+        KillCurrentPopupTween();
+
+        if (currentActivePopup != null)
+        {
+            RectTransform activePopupRect =
+                currentActivePopup == errorPopup
+                    ? errorPopupRect
+                    : currentActivePopup == exitGamePopup
+                        ? exitGamePopupRect
+                        : currentActivePopup.GetComponent<RectTransform>();
+
+            if (activePopupRect != null)
+            {
+                activePopupRect.localScale =
+                    GetPopupNormalScale(activePopupRect);
+            }
+
+            currentActivePopup.SetActive(false);
+        }
+
+        currentActivePopup = null;
+        isErrorCritical = false;
+
+        if (errorOkButton != null)
+        {
+            errorOkButton.interactable = true;
+        }
+
+        SetExitGameButtonsInteractable(true);
+    }
+
+    private void OnErrorOkClicked()
+    {
+        if (currentActivePopup != errorPopup ||
+            errorPopup == null)
+        {
+            return;
+        }
+
+        GameObject closingPopup = currentActivePopup;
+        bool shouldExitGame = isErrorCritical;
+
+        if (errorOkButton != null)
+        {
+            errorOkButton.interactable = false;
+        }
+
+        AnimatePopupClose(
+            errorPopupRect,
+            () =>
+            {
+                if (closingPopup != null)
+                {
+                    closingPopup.SetActive(false);
+                }
+
+                if (errorPopupRect != null)
+                {
+                    errorPopupRect.localScale =
+                        errorPopupNormalScale;
+                }
+
+                if (currentActivePopup == closingPopup)
+                {
+                    currentActivePopup = null;
+                }
+
+                isErrorCritical = false;
+
+                if (errorOkButton != null)
+                {
+                    errorOkButton.interactable = true;
+                }
+
+                if (shouldExitGame)
+                {
+                    ExitGame();
+                }
+            });
+    }
+
+    private void OnExitGameYesClicked()
+    {
+        CloseExitGamePopup(true);
+    }
+
+    private void OnExitGameNoClicked()
+    {
+        CloseExitGamePopup(false);
+    }
+
+    private void CloseExitGamePopup(bool shouldExitGame)
+    {
+        if (currentActivePopup != exitGamePopup ||
+            exitGamePopup == null)
+        {
+            return;
+        }
+
+        GameObject closingPopup = currentActivePopup;
+        SetExitGameButtonsInteractable(false);
+
+        AnimatePopupClose(
+            exitGamePopupRect,
+            0.2f,
+            () =>
+            {
+                if (closingPopup != null)
+                {
+                    closingPopup.SetActive(false);
+                }
+
+                if (exitGamePopupRect != null)
+                {
+                    exitGamePopupRect.localScale = Vector3.one;
+                }
+
+                if (currentActivePopup == closingPopup)
+                {
+                    currentActivePopup = null;
+                }
+
+                SetExitGameButtonsInteractable(true);
+
+                if (shouldExitGame)
+                {
+                    ExitGame();
+                }
+            });
+    }
+
+    private void AnimatePopupOpen(RectTransform popupRect)
+    {
+        AnimatePopupOpen(
+            popupRect,
+            Mathf.Max(0.01f, scaleInDuration));
+    }
+
+    private void AnimatePopupOpen(
+        RectTransform popupRect,
+        float duration)
+    {
+        KillCurrentPopupTween();
+
+        if (popupRect == null)
+        {
+            return;
+        }
+
+        Vector3 targetScale = GetPopupNormalScale(popupRect);
+        popupRect.localScale = Vector3.zero;
+        currentPopupTween = popupRect
+            .DOScale(
+                targetScale,
+                Mathf.Max(0.01f, duration))
+            .SetEase(Ease.OutBack)
+            .SetUpdate(true)
+            .OnComplete(() =>
+            {
+                currentPopupTween = null;
+
+                if (popupRect != null)
+                {
+                    popupRect.localScale = targetScale;
+                }
+            });
+    }
+
+    private void AnimatePopupClose(
+        RectTransform popupRect,
+        Action onComplete)
+    {
+        AnimatePopupClose(
+            popupRect,
+            Mathf.Max(0.01f, scaleOutDuration),
+            onComplete);
+    }
+
+    private void AnimatePopupClose(
+        RectTransform popupRect,
+        float duration,
+        Action onComplete)
+    {
+        KillCurrentPopupTween();
+
+        if (popupRect == null)
+        {
+            onComplete?.Invoke();
+            return;
+        }
+
+        currentPopupTween = popupRect
+            .DOScale(
+                Vector3.zero,
+                Mathf.Max(0.01f, duration))
+            .SetEase(Ease.InBack)
+            .SetUpdate(true)
+            .OnComplete(() =>
+            {
+                currentPopupTween = null;
+                onComplete?.Invoke();
+            });
     }
 
     internal bool ShowScatterWin(double totalWin, Action onComplete)
@@ -314,45 +615,47 @@ public sealed class PopupManager : MonoBehaviour
     internal bool ShowDisconnectionPopup()
     {
         return ShowDisconnectionPopup(
-            defaultDisconnectionMessage);
+            DefaultDisconnectionMessage);
     }
 
     internal bool ShowDisconnectionPopup(string message)
     {
-        CachePanelScale(
-            disconnectionPanel,
-            ref disconnectionPanelNormalScale);
+        if (errorPopup == null)
+        {
+            Debug.LogError(
+                "[PopupManager] Assign the reusable Error Popup reference.");
+            return false;
+        }
 
-        return ShowSystemPopup(
-            disconnectionPanel,
-            disconnectionMessageText,
+        ShowErrorPopup(
             string.IsNullOrWhiteSpace(message)
-                ? defaultDisconnectionMessage
+                ? DefaultDisconnectionMessage
                 : message,
-            disconnectionPanelNormalScale,
-            "Disconnection Panel");
+            true);
+        return true;
     }
 
     internal bool ShowInsufficientBalancePopup()
     {
         return ShowInsufficientBalancePopup(
-            defaultInsufficientBalanceMessage);
+            DefaultInsufficientBalanceMessage);
     }
 
     internal bool ShowInsufficientBalancePopup(string message)
     {
-        CachePanelScale(
-            insufficientBalancePanel,
-            ref insufficientBalancePanelNormalScale);
+        if (errorPopup == null)
+        {
+            Debug.LogError(
+                "[PopupManager] Assign the reusable Error Popup reference.");
+            return false;
+        }
 
-        return ShowSystemPopup(
-            insufficientBalancePanel,
-            insufficientBalanceMessageText,
+        ShowErrorPopup(
             string.IsNullOrWhiteSpace(message)
-                ? defaultInsufficientBalanceMessage
+                ? DefaultInsufficientBalanceMessage
                 : message,
-            insufficientBalancePanelNormalScale,
-            "Insufficient Balance Panel");
+            false);
+        return true;
     }
 
     internal bool ShowInsufficientFundsError()
@@ -362,191 +665,20 @@ public sealed class PopupManager : MonoBehaviour
 
     internal void CloseDisconnectionPopup()
     {
-        CloseSystemPopup(disconnectionPanel, null);
+        CloseCurrentErrorPopup();
     }
 
     internal void CloseInsufficientBalancePopup()
     {
-        CloseSystemPopup(insufficientBalancePanel, null);
+        CloseCurrentErrorPopup();
     }
 
-    internal void HideSystemPopupsImmediate()
+    private void CloseCurrentErrorPopup()
     {
-        KillSystemPopupSequence();
-
-        HideSystemPopupImmediate(
-            disconnectionPanel,
-            disconnectionPanelNormalScale);
-        HideSystemPopupImmediate(
-            insufficientBalancePanel,
-            insufficientBalancePanelNormalScale);
-
-        currentSystemPopup = null;
-        UpdateSystemPopupParentState();
-    }
-
-    private bool ShowSystemPopup(
-        RectTransform panel,
-        TMP_Text messageText,
-        string message,
-        Vector3 normalScale,
-        string panelName)
-    {
-        if (panel == null)
+        if (currentActivePopup == errorPopup)
         {
-            Debug.LogError(
-                $"[PopupManager] Assign the {panelName} reference.");
-            return false;
+            CloseCurrentPopup();
         }
-
-        CloseCurrentSystemPopupImmediate();
-
-        if (systemPopupParent != null)
-        {
-            systemPopupParent.SetActive(true);
-        }
-
-        if (messageText != null)
-        {
-            messageText.text = message ?? string.Empty;
-        }
-
-        currentSystemPopup = panel;
-        panel.gameObject.SetActive(true);
-        panel.localScale = Vector3.zero;
-
-        systemPopupSequence = DOTween.Sequence()
-            .SetUpdate(true)
-            .Append(
-                panel
-                    .DOScale(
-                        normalScale,
-                        Mathf.Max(0.01f, scaleInDuration))
-                    .SetEase(Ease.OutBack))
-            .OnComplete(() =>
-            {
-                systemPopupSequence = null;
-                panel.localScale = normalScale;
-            });
-
-        return true;
-    }
-
-    private void OnDisconnectionOkClicked()
-    {
-        CloseSystemPopup(
-            disconnectionPanel,
-            () => gameManager?.ExitGame());
-    }
-
-    private void OnInsufficientBalanceOkClicked()
-    {
-        CloseSystemPopup(
-            insufficientBalancePanel,
-            null);
-    }
-
-    private void CloseSystemPopup(
-        RectTransform panel,
-        Action onComplete)
-    {
-        if (panel == null || !panel.gameObject.activeSelf)
-        {
-            onComplete?.Invoke();
-            return;
-        }
-
-        KillSystemPopupSequence();
-
-        Vector3 normalScale =
-            GetSystemPopupNormalScale(panel);
-        systemPopupSequence = DOTween.Sequence()
-            .SetUpdate(true)
-            .Append(
-                panel
-                    .DOScale(
-                        normalScale * 1.1f,
-                        0.1f)
-                    .SetEase(Ease.OutQuad))
-            .Append(
-                panel
-                    .DOScale(
-                        Vector3.zero,
-                        Mathf.Max(0.01f, scaleOutDuration))
-                    .SetEase(Ease.InBack))
-            .OnComplete(() =>
-            {
-                systemPopupSequence = null;
-                panel.localScale = normalScale;
-                panel.gameObject.SetActive(false);
-
-                if (currentSystemPopup == panel)
-                {
-                    currentSystemPopup = null;
-                }
-
-                UpdateSystemPopupParentState();
-                onComplete?.Invoke();
-            });
-    }
-
-    private void CloseCurrentSystemPopupImmediate()
-    {
-        KillSystemPopupSequence();
-
-        if (currentSystemPopup == null)
-        {
-            return;
-        }
-
-        RectTransform panel = currentSystemPopup;
-        currentSystemPopup = null;
-        panel.localScale = GetSystemPopupNormalScale(panel);
-        panel.gameObject.SetActive(false);
-    }
-
-    private void UpdateSystemPopupParentState()
-    {
-        if (systemPopupParent == null)
-        {
-            return;
-        }
-
-        bool hasActivePopup =
-            (disconnectionPanel != null &&
-             disconnectionPanel.gameObject.activeSelf) ||
-            (insufficientBalancePanel != null &&
-             insufficientBalancePanel.gameObject.activeSelf);
-        systemPopupParent.SetActive(hasActivePopup);
-    }
-
-    private static void HideSystemPopupImmediate(
-        RectTransform panel,
-        Vector3 normalScale)
-    {
-        if (panel == null)
-        {
-            return;
-        }
-
-        panel.localScale = normalScale;
-        panel.gameObject.SetActive(false);
-    }
-
-    private Vector3 GetSystemPopupNormalScale(
-        RectTransform panel)
-    {
-        if (panel == disconnectionPanel)
-        {
-            return disconnectionPanelNormalScale;
-        }
-
-        if (panel == insufficientBalancePanel)
-        {
-            return insufficientBalancePanelNormalScale;
-        }
-
-        return Vector3.one;
     }
 
     internal void HideScatterWinImmediate()
@@ -605,6 +737,101 @@ public sealed class PopupManager : MonoBehaviour
         }
     }
 
+    private void HideErrorPopupImmediate()
+    {
+        KillCurrentPopupTween();
+
+        if (errorPopupRect != null)
+        {
+            errorPopupRect.localScale = errorPopupNormalScale;
+        }
+
+        if (errorPopup != null)
+        {
+            errorPopup.SetActive(false);
+        }
+
+        currentActivePopup = null;
+        isErrorCritical = false;
+
+        if (errorOkButton != null)
+        {
+            errorOkButton.interactable = true;
+        }
+    }
+
+    private void HideExitGamePopupImmediate()
+    {
+        KillCurrentPopupTween();
+
+        if (exitGamePopupRect != null)
+        {
+            exitGamePopupRect.localScale = Vector3.one;
+        }
+
+        if (exitGamePopup != null)
+        {
+            exitGamePopup.SetActive(false);
+        }
+
+        if (currentActivePopup == exitGamePopup)
+        {
+            currentActivePopup = null;
+        }
+
+        SetExitGameButtonsInteractable(true);
+    }
+
+    private void ResolveErrorPopupRect()
+    {
+        if (errorPopupRect == null && errorPopup != null)
+        {
+            errorPopupRect =
+                errorPopup.GetComponent<RectTransform>();
+        }
+    }
+
+    private void ResolveExitGamePopupRect()
+    {
+        if (exitGamePopupRect == null && exitGamePopup != null)
+        {
+            exitGamePopupRect =
+                exitGamePopup.GetComponent<RectTransform>();
+        }
+    }
+
+    private void SetExitGameButtonsInteractable(bool interactable)
+    {
+        if (exitGameYesButton != null)
+        {
+            exitGameYesButton.interactable = interactable;
+        }
+
+        if (exitGameNoButton != null)
+        {
+            exitGameNoButton.interactable = interactable;
+        }
+    }
+
+    private void ExitGame()
+    {
+        if (gameManager == null)
+        {
+            Debug.LogError(
+                "[PopupManager] Cannot exit because GameManager is not assigned.");
+            return;
+        }
+
+        gameManager.ExitGame();
+    }
+
+    private Vector3 GetPopupNormalScale(RectTransform popupRect)
+    {
+        return popupRect == errorPopupRect
+            ? errorPopupNormalScale
+            : Vector3.one;
+    }
+
     private void CacheScatterWinPanelScale()
     {
         if (scatterWinPanel == null)
@@ -647,16 +874,6 @@ public sealed class PopupManager : MonoBehaviour
         }
     }
 
-    private void CacheSystemPopupScales()
-    {
-        CachePanelScale(
-            disconnectionPanel,
-            ref disconnectionPanelNormalScale);
-        CachePanelScale(
-            insufficientBalancePanel,
-            ref insufficientBalancePanelNormalScale);
-    }
-
     private static void CachePanelScale(
         RectTransform panel,
         ref Vector3 cachedScale)
@@ -691,10 +908,10 @@ public sealed class PopupManager : MonoBehaviour
         ultraStartSequence = null;
     }
 
-    private void KillSystemPopupSequence()
+    private void KillCurrentPopupTween()
     {
-        systemPopupSequence?.Kill();
-        systemPopupSequence = null;
+        currentPopupTween?.Kill();
+        currentPopupTween = null;
     }
 
     private static string FormatWinAmount(double amount)

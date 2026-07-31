@@ -618,9 +618,10 @@ public static class GameDataConverter
 
     private static bool IsSymbolType(StPatricksGoldSymbol symbol, string typeName)
     {
+        // Descriptions often name other symbols as substitution exclusions,
+        // so they cannot safely identify the symbol's own type.
         return ContainsIgnoreCase(symbol.name, typeName) ||
-               ContainsIgnoreCase(symbol.group, typeName) ||
-               ContainsIgnoreCase(symbol.description, typeName);
+               ContainsIgnoreCase(symbol.group, typeName);
     }
 
     private static bool ContainsIgnoreCase(string value, string search)

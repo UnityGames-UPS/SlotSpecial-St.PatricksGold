@@ -28,7 +28,10 @@ public sealed class OrientationChange : MonoBehaviour
 
     [Header("Device Detection Settings")]
     [SerializeField] private string mobileKeyword = "mobile";
+    [SerializeField] private string androidKeyword = "MB";
+    [SerializeField] private string iphoneKeyword = "IP";
     [SerializeField] private string currentDevice = "";
+
 
     public event Action<OrientationMode, int, int> OnOrientationChangedInstance;
 
@@ -83,7 +86,7 @@ public sealed class OrientationChange : MonoBehaviour
         ApplyDimensions(Screen.width, Screen.height);
     }
 
-    public void DeviceCheck(string device)
+    public void DiviceCheck(string device)
     {
         currentDevice = device ?? string.Empty;
 
@@ -96,12 +99,11 @@ public sealed class OrientationChange : MonoBehaviour
     {
         if (!string.IsNullOrEmpty(currentDevice))
         {
-            return !string.IsNullOrEmpty(mobileKeyword) &&
-                   currentDevice.IndexOf(
-                       mobileKeyword,
-                       StringComparison.OrdinalIgnoreCase) >= 0;
+            string dev = currentDevice.ToLower();
+            return (!string.IsNullOrEmpty(androidKeyword) && dev.Contains(androidKeyword.ToLower())) || 
+                   (!string.IsNullOrEmpty(iphoneKeyword) && dev.Contains(iphoneKeyword.ToLower())) ||
+                   (!string.IsNullOrEmpty(mobileKeyword) && dev.Contains(mobileKeyword.ToLower()));
         }
-
         return SystemInfo.deviceType == DeviceType.Handheld;
     }
 
@@ -413,7 +415,7 @@ public sealed class OrientationChange : MonoBehaviour
                 currentDevice.IndexOf(
                     mobileKeyword,
                     StringComparison.OrdinalIgnoreCase) >= 0;
-            DeviceCheck(currentlyMobile ? "desktop" : "mobile");
+            DiviceCheck(currentlyMobile ? "desktop" : "mobile");
         }
     }
 

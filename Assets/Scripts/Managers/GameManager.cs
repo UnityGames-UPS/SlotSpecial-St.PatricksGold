@@ -504,6 +504,7 @@ public class GameManager : MonoBehaviour
             Debug.LogWarning(
                 $"[GameManager] Spin rejected because balance {GetDisplayedBalance():0.00} " +
                 $"is lower than total bet {GetDisplayedTotalBetAmount():0.00}.");
+            popupManager?.ShowInsufficientFundsError();
             return false;
         }
 
@@ -779,6 +780,7 @@ public class GameManager : MonoBehaviour
             {
                 Debug.LogWarning("[GameManager] Autoplay stopped because the balance is insufficient for another spin.");
                 StopAutoPlay();
+                popupManager?.ShowInsufficientFundsError();
             }
             else
             {
@@ -1384,9 +1386,12 @@ public class GameManager : MonoBehaviour
                 continue;
             }
 
+            int completedWheelNumber = wheelNumber;
             bool started = wheelController.SpinToServerStopIndex(
                 serverWheel.stopIndex,
-                () => completedWheelCount++);
+                () => CompleteUltraWheelStopPresentation(
+                    completedWheelNumber,
+                    () => completedWheelCount++));
             if (started)
             {
                 startedWheelCount++;
@@ -1419,6 +1424,26 @@ public class GameManager : MonoBehaviour
         yield return ShowUltraWinThenReturnToNormal();
         Debug.Log(
             $"[GameManager] All {startedWheelCount} active Ultra wheel(s) finished.");
+    }
+
+    private void CompleteUltraWheelStopPresentation(
+        int wheelNumber,
+        Action onComplete)
+    {
+        bool usesStopResultAnimation =
+            wheelNumber == UltraSlotView.BlueWheelSymbolId ||
+            wheelNumber == UltraSlotView.RedWheelSymbolId;
+        bool animationStarted =
+            usesStopResultAnimation &&
+            symbolAnimationManager != null &&
+            symbolAnimationManager.PlayUltraWheelStopResultAnimation(
+                wheelNumber,
+                onComplete);
+
+        if (!animationStarted)
+        {
+            onComplete?.Invoke();
+        }
     }
 
     private IEnumerator ShowUltraWinThenReturnToNormal()
@@ -1649,6 +1674,8 @@ public class GameManager : MonoBehaviour
             StopCoroutine(ultraWheelsCoroutine);
             ultraWheelsCoroutine = null;
         }
+
+        symbolAnimationManager?.StopUltraWheelStopResultAnimations();
 
         var stoppedControllers = new HashSet<UltraWheelController>();
         UltraWheelController[] wheelControllers =
@@ -3237,11 +3264,37 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        if (scatterBonus.wheelSpins.Count != scatterSymbolCount)
+        ScatterWheelConfig scatterWheelConfig =
+            stPatricksGoldConfig.scatterWheel;
+        int configuredWheelCount =
+            scatterWheelConfig != null
+                ? scatterWheelConfig.wheelCount
+                : 0;
+        if (configuredWheelCount <= 0 &&
+            scatterWheelConfig?.wheels != null)
+        {
+            configuredWheelCount =
+                scatterWheelConfig.wheels.Count;
+        }
+
+        if (configuredWheelCount <= 0)
         {
             error =
-                "The server Scatter wheelSpins count does not exactly match " +
-                "the Scatter Wheel symbols in its reel matrix.";
+                "The server Scatter configuration contains no valid wheel " +
+                "count or wheel tables.";
+            return false;
+        }
+
+        int expectedWheelSpinCount =
+            Math.Min(scatterSymbolCount, configuredWheelCount);
+        if (scatterBonus.wheelSpins.Count != expectedWheelSpinCount)
+        {
+            error =
+                $"The server Scatter supplied " +
+                $"{scatterBonus.wheelSpins.Count} wheelSpins, but " +
+                $"{expectedWheelSpinCount} were expected from " +
+                $"{scatterSymbolCount} Scatter Wheel symbols with a " +
+                $"{configuredWheelCount}-wheel maximum.";
             return false;
         }
 
@@ -3331,7 +3384,8 @@ public class GameManager : MonoBehaviour
 
             if (!TryGetScatterWheelServerValues(
                     wheelSpin,
-                    out List<double> serverValues) ||
+                    out List<double> serverValues,
+                    out bool valuesAreBetMultipliers) ||
                 serverValues.Count !=
                     ScatterWheelPresentationManager.ServerValueCount)
             {
@@ -3341,6 +3395,25 @@ public class GameManager : MonoBehaviour
                     $"{ScatterWheelPresentationManager.ServerValueCount}-value " +
                     "server table.";
                 return false;
+            }
+
+            if (valuesAreBetMultipliers)
+            {
+                if (!IsFiniteNonNegative(currentBetAmount) ||
+                    currentBetAmount <= 0d)
+                {
+                    error =
+                        "The configured Scatter wheel values cannot be " +
+                        "scaled because the active bet is invalid.";
+                    return false;
+                }
+
+                for (int valueIndex = 0;
+                     valueIndex < serverValues.Count;
+                     valueIndex++)
+                {
+                    serverValues[valueIndex] *= currentBetAmount;
+                }
             }
 
             wheelSpin.values =
@@ -3372,8 +3445,10 @@ public class GameManager : MonoBehaviour
                     wheelSpin.awardValue))
             {
                 error =
-                    $"Server Scatter wheel {wheelSpin.wheelIndex} awardValue " +
-                    "does not match its stopIndex.";
+                    $"Server Scatter wheel {wheelSpin.wheelIndex} stopIndex " +
+                    $"{wheelSpin.stopIndex} resolves to " +
+                    $"{serverValues[wheelSpin.stopIndex]:0.##}, but its " +
+                    $"awardValue is {wheelSpin.awardValue:0.##}.";
                 return false;
             }
 
@@ -3436,9 +3511,11 @@ public class GameManager : MonoBehaviour
 
     private bool TryGetScatterWheelServerValues(
         ServerScatterWheelSpin wheelSpin,
-        out List<double> values)
+        out List<double> values,
+        out bool valuesAreBetMultipliers)
     {
         values = null;
+        valuesAreBetMultipliers = false;
         if (wheelSpin == null)
         {
             return false;
@@ -3512,6 +3589,7 @@ public class GameManager : MonoBehaviour
                 values.Add(value);
             }
 
+            valuesAreBetMultipliers = true;
             return true;
         }
 
@@ -3729,6 +3807,7 @@ public class GameManager : MonoBehaviour
         if (!CanAffordBet())
         {
             Debug.LogWarning("[GameManager] Insufficient funds.");
+            popupManager?.ShowInsufficientFundsError();
             return false;
         }
 
@@ -3766,7 +3845,14 @@ public class GameManager : MonoBehaviour
 
     internal bool CanStartAutoPlay()
     {
-        return !isAutoPlaying && CanRequestSpin();
+        return !isAutoPlaying &&
+               isInitialized &&
+               currentState == GameState.Idle &&
+               !isUltraSlotUnlocked &&
+               socketManager != null &&
+               socketManager.isConnected &&
+               slotView != null &&
+               !slotView.IsSpinning();
     }
 
     private void QueueNextAutoPlaySpin()

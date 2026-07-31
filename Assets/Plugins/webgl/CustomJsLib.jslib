@@ -121,6 +121,17 @@ mergeInto(LibraryManager.library, {
         // Send fullscreen state to Unity
         function sendToUnity(isFS) {
             try {
+                if (typeof SendMessage === 'function') {
+                    SendMessage(
+                        gameObjectName,
+                        'OnFullscreenChanged',
+                        isFS ? '1' : '0');
+                    console.log(
+                        '[JS] Sent fullscreen state to Unity: ' +
+                        (isFS ? 'EXPANDED' : 'SHRINK'));
+                    return;
+                }
+
                 var instance = getUnityInstance();
                 if (instance && instance.SendMessage) {
                     instance.SendMessage(gameObjectName, 'OnFullscreenChanged', isFS ? '1' : '0');
@@ -155,6 +166,11 @@ mergeInto(LibraryManager.library, {
         document.addEventListener('MSFullscreenChange',     window._unityFullscreenCallback);
 
         console.log('[JS] Fullscreen event listeners registered for:', gameObjectName);
+
+        // Synchronize Unity with the browser's current state immediately.
+        setTimeout(function() {
+            sendToUnity(isCurrentlyFullscreen());
+        }, 0);
     },
 
     InitializeOrientationChangeBridge: function(gameObjectNamePtr) {

@@ -80,6 +80,14 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         "deactivated during the swap.")]
     [SerializeField] private Image ultraEntryTransitionImage;
     [Tooltip(
+        "Ultra Wheel Bonus text shown over the entry transition. It grows " +
+        "from zero to its authored RectTransform scale, then shrinks after " +
+        "the transition finishes.")]
+    [SerializeField] private RectTransform ultraWheelBonusText;
+    [Tooltip("Time used to grow and shrink the Ultra Wheel Bonus text.")]
+    [SerializeField, Min(0.01f)]
+    private float ultraWheelBonusTextScaleDuration = 0.3f;
+    [Tooltip(
         "Drag every Ultra entry transition sprite here in playback order. " +
         "The panels swap halfway through this sequence.")]
     [SerializeField] private Sprite[] ultraEntryTransitionFrames =
@@ -106,6 +114,31 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         "before opening the next panel.")]
     [SerializeField, Min(1)]
     private int ultraWinningSymbolLoopCount = 3;
+
+    [Header("Ultra Wheel Stop Result Animations")]
+    [Tooltip(
+        "Image used for the one-shot animation after the Blue Ultra wheel " +
+        "stops on its server result.")]
+    [SerializeField] private Image blueUltraWheelStopResultImage;
+    [Tooltip(
+        "Blue Ultra wheel stop-result frames in playback order. These play " +
+        "once; they do not loop.")]
+    [SerializeField] private Sprite[] blueUltraWheelStopResultFrames =
+        new Sprite[0];
+    [Tooltip(
+        "Image used for the one-shot animation after the Red Ultra wheel " +
+        "stops on its server result.")]
+    [SerializeField] private Image redUltraWheelStopResultImage;
+    [Tooltip(
+        "Red Ultra wheel stop-result frames in playback order. These play " +
+        "once; they do not loop.")]
+    [SerializeField] private Sprite[] redUltraWheelStopResultFrames =
+        new Sprite[0];
+    [Tooltip(
+        "Duration of each Blue/Red Ultra wheel stop-result frame. " +
+        "0.03333 is 30 FPS.")]
+    [SerializeField, Min(0.001f)]
+    private float ultraWheelStopResultFrameDuration = 1f / 30f;
 
     [Header("Win Animation Timing")]
     [Tooltip("Duration in seconds of one complete winning-symbol loop at 1x speed. Lower values play faster.")]
@@ -139,7 +172,11 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             new List<UltraWinningSymbolAnimationTarget>();
 
     private Coroutine ultraEntryTransitionCoroutine;
+    private Coroutine ultraWheelBonusTextScaleCoroutine;
     private Coroutine ultraWinningSymbolCoroutine;
+    private Coroutine blueUltraWheelStopResultCoroutine;
+    private Coroutine redUltraWheelStopResultCoroutine;
+    private Vector3 ultraWheelBonusTextOriginalScale = Vector3.one;
 
     private sealed class ActiveSymbolAnimation
     {
@@ -154,10 +191,28 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         public float CurrentVisualSize01;
     }
 
+    private void Awake()
+    {
+        if (ultraWheelBonusText != null)
+        {
+            ultraWheelBonusTextOriginalScale =
+                ultraWheelBonusText.localScale;
+            if (ultraWheelBonusTextOriginalScale == Vector3.zero)
+            {
+                ultraWheelBonusTextOriginalScale = Vector3.one;
+            }
+
+            HideUltraWheelBonusTextImmediate();
+        }
+
+        StopUltraWheelStopResultAnimations();
+    }
+
     private void OnDisable()
     {
         StopUltraEntryTransition();
         StopUltraWinningSymbolAnimations();
+        StopUltraWheelStopResultAnimations();
         StopAllAnimations();
         StopAllScatterWheelHandoffs();
         StopAllScatterWheelResultTextMoves();
@@ -168,6 +223,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
     {
         StopUltraEntryTransition();
         StopUltraWinningSymbolAnimations();
+        StopUltraWheelStopResultAnimations();
         StopAllAnimations();
         StopAllScatterWheelHandoffs();
         StopAllScatterWheelResultTextMoves();
@@ -757,6 +813,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             ultraEntryTransitionCoroutine = null;
         }
 
+        HideUltraWheelBonusTextImmediate();
         HideUltraEntryTransitionImage();
     }
 
@@ -834,6 +891,67 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         }
 
         RestoreUltraWinningSymbolTargets();
+    }
+
+    public bool PlayUltraWheelStopResultAnimation(
+        int wheelNumber,
+        Action onComplete = null)
+    {
+        Image resultImage;
+        Sprite[] resultFrames;
+
+        switch (wheelNumber)
+        {
+            case UltraSlotView.BlueWheelSymbolId:
+                resultImage = blueUltraWheelStopResultImage;
+                resultFrames = blueUltraWheelStopResultFrames;
+                break;
+            case UltraSlotView.RedWheelSymbolId:
+                resultImage = redUltraWheelStopResultImage;
+                resultFrames = redUltraWheelStopResultFrames;
+                break;
+            default:
+                return false;
+        }
+
+        StopUltraWheelStopResultAnimation(wheelNumber);
+        if (resultImage == null ||
+            resultFrames == null ||
+            resultFrames.Length == 0)
+        {
+            Debug.LogWarning(
+                "[SlotSymbolAnimationManager] Assign the " +
+                $"{GetUltraWheelColorName(wheelNumber)} Ultra wheel " +
+                "Stop Result Image and ordered frames.",
+                this);
+            return false;
+        }
+
+        Coroutine resultCoroutine = StartCoroutine(
+            PlayUltraWheelStopResultFrames(
+                wheelNumber,
+                resultImage,
+                resultFrames,
+                onComplete));
+
+        if (wheelNumber == UltraSlotView.BlueWheelSymbolId)
+        {
+            blueUltraWheelStopResultCoroutine = resultCoroutine;
+        }
+        else
+        {
+            redUltraWheelStopResultCoroutine = resultCoroutine;
+        }
+
+        return true;
+    }
+
+    public void StopUltraWheelStopResultAnimations()
+    {
+        StopUltraWheelStopResultAnimation(
+            UltraSlotView.BlueWheelSymbolId);
+        StopUltraWheelStopResultAnimation(
+            UltraSlotView.RedWheelSymbolId);
     }
 
     private bool TryGetFrames(int symbolId, out Sprite[] frames)
@@ -916,6 +1034,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
     {
         ultraEntryTransitionImage.gameObject.SetActive(true);
         SetAlpha(ultraEntryTransitionImage, 1f);
+        ShowUltraWheelBonusText();
 
         float frameDuration =
             Mathf.Max(0.001f, ultraEntryTransitionFrameDuration);
@@ -952,8 +1071,10 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             onMidpoint?.Invoke();
         }
 
-        ultraEntryTransitionCoroutine = null;
         HideUltraEntryTransitionImage();
+        yield return HideUltraWheelBonusTextAnimated();
+
+        ultraEntryTransitionCoroutine = null;
         onComplete?.Invoke();
     }
 
@@ -1010,6 +1131,89 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         onComplete?.Invoke();
     }
 
+    private IEnumerator PlayUltraWheelStopResultFrames(
+        int wheelNumber,
+        Image resultImage,
+        Sprite[] resultFrames,
+        Action onComplete)
+    {
+        resultImage.gameObject.SetActive(true);
+        SetAlpha(resultImage, 1f);
+
+        float frameDuration = Mathf.Max(
+            0.001f,
+            ultraWheelStopResultFrameDuration);
+        for (int frameIndex = 0;
+             frameIndex < resultFrames.Length;
+             frameIndex++)
+        {
+            if (resultImage == null)
+            {
+                break;
+            }
+
+            Sprite frame = resultFrames[frameIndex];
+            if (frame != null)
+            {
+                resultImage.sprite = frame;
+            }
+
+            yield return new WaitForSecondsRealtime(frameDuration);
+        }
+
+        HideUltraWheelStopResultImage(resultImage);
+        SetUltraWheelStopResultCoroutine(wheelNumber, null);
+        onComplete?.Invoke();
+    }
+
+    private void StopUltraWheelStopResultAnimation(int wheelNumber)
+    {
+        Coroutine resultCoroutine =
+            wheelNumber == UltraSlotView.BlueWheelSymbolId
+                ? blueUltraWheelStopResultCoroutine
+                : redUltraWheelStopResultCoroutine;
+        if (resultCoroutine != null)
+        {
+            StopCoroutine(resultCoroutine);
+        }
+
+        if (wheelNumber == UltraSlotView.BlueWheelSymbolId)
+        {
+            blueUltraWheelStopResultCoroutine = null;
+            HideUltraWheelStopResultImage(
+                blueUltraWheelStopResultImage);
+        }
+        else if (wheelNumber == UltraSlotView.RedWheelSymbolId)
+        {
+            redUltraWheelStopResultCoroutine = null;
+            HideUltraWheelStopResultImage(
+                redUltraWheelStopResultImage);
+        }
+    }
+
+    private void SetUltraWheelStopResultCoroutine(
+        int wheelNumber,
+        Coroutine resultCoroutine)
+    {
+        if (wheelNumber == UltraSlotView.BlueWheelSymbolId)
+        {
+            blueUltraWheelStopResultCoroutine = resultCoroutine;
+        }
+        else if (wheelNumber == UltraSlotView.RedWheelSymbolId)
+        {
+            redUltraWheelStopResultCoroutine = resultCoroutine;
+        }
+    }
+
+    private static void HideUltraWheelStopResultImage(Image resultImage)
+    {
+        SetAlpha(resultImage, 0f);
+        if (resultImage != null)
+        {
+            resultImage.gameObject.SetActive(false);
+        }
+    }
+
     private void RestoreUltraWinningSymbolTargets()
     {
         for (int targetIndex = 0;
@@ -1046,6 +1250,95 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         {
             ultraEntryTransitionImage.gameObject.SetActive(false);
         }
+    }
+
+    private void ShowUltraWheelBonusText()
+    {
+        if (ultraWheelBonusText == null)
+        {
+            return;
+        }
+
+        StopUltraWheelBonusTextScaleAnimation();
+        ultraWheelBonusText.gameObject.SetActive(true);
+        ultraWheelBonusText.localScale = Vector3.zero;
+        ultraWheelBonusTextScaleCoroutine = StartCoroutine(
+            AnimateUltraWheelBonusTextScale(
+                Vector3.zero,
+                ultraWheelBonusTextOriginalScale));
+    }
+
+    private IEnumerator HideUltraWheelBonusTextAnimated()
+    {
+        if (ultraWheelBonusText == null)
+        {
+            yield break;
+        }
+
+        StopUltraWheelBonusTextScaleAnimation();
+        ultraWheelBonusTextScaleCoroutine = StartCoroutine(
+            AnimateUltraWheelBonusTextScale(
+                ultraWheelBonusText.localScale,
+                Vector3.zero));
+        yield return ultraWheelBonusTextScaleCoroutine;
+
+        if (ultraWheelBonusText != null)
+        {
+            ultraWheelBonusText.localScale = Vector3.zero;
+            ultraWheelBonusText.gameObject.SetActive(false);
+        }
+    }
+
+    private IEnumerator AnimateUltraWheelBonusTextScale(
+        Vector3 startScale,
+        Vector3 endScale)
+    {
+        float duration = Mathf.Max(
+            0.01f,
+            ultraWheelBonusTextScaleDuration);
+        float elapsed = 0f;
+
+        while (elapsed < duration && ultraWheelBonusText != null)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float progress = Mathf.Clamp01(elapsed / duration);
+            float easedProgress = Mathf.SmoothStep(0f, 1f, progress);
+            ultraWheelBonusText.localScale = Vector3.LerpUnclamped(
+                startScale,
+                endScale,
+                easedProgress);
+            yield return null;
+        }
+
+        if (ultraWheelBonusText != null)
+        {
+            ultraWheelBonusText.localScale = endScale;
+        }
+
+        ultraWheelBonusTextScaleCoroutine = null;
+    }
+
+    private void HideUltraWheelBonusTextImmediate()
+    {
+        StopUltraWheelBonusTextScaleAnimation();
+        if (ultraWheelBonusText == null)
+        {
+            return;
+        }
+
+        ultraWheelBonusText.localScale = Vector3.zero;
+        ultraWheelBonusText.gameObject.SetActive(false);
+    }
+
+    private void StopUltraWheelBonusTextScaleAnimation()
+    {
+        if (ultraWheelBonusTextScaleCoroutine == null)
+        {
+            return;
+        }
+
+        StopCoroutine(ultraWheelBonusTextScaleCoroutine);
+        ultraWheelBonusTextScaleCoroutine = null;
     }
 
     private static string GetUltraWheelColorName(int symbolId)
@@ -1509,8 +1802,21 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             yield break;
         }
 
-        activeAnimations.Remove(overlayImage);
-        RestoreAnimationLayers(activeAnimation);
+        activeAnimation.PlaybackRoutine = null;
+        if (hasBackgroundFx)
+        {
+            // Keep the completed Background FX visible on its final frame.
+            // The next Spin resets this active Scatter presentation, so a
+            // later Scatter trigger starts again from frame zero.
+            RestorePrimaryAnimationLayer(activeAnimation);
+            HoldSecondaryAnimationLastFrame(activeAnimation);
+        }
+        else
+        {
+            activeAnimations.Remove(overlayImage);
+            RestoreAnimationLayers(activeAnimation);
+        }
+
         onBackgroundFxComplete?.Invoke();
     }
 
@@ -1565,6 +1871,31 @@ public class SlotSymbolAnimationManager : MonoBehaviour
 
         SetAlpha(activeAnimation.BaseImage, 1f);
         SetAlpha(activeAnimation.OverlayImage, 0f);
+    }
+
+    private static void HoldSecondaryAnimationLastFrame(
+        ActiveSymbolAnimation activeAnimation)
+    {
+        Image secondaryImage =
+            activeAnimation?.SecondaryOverlayImage;
+        Sprite[] secondaryFrames =
+            activeAnimation?.SecondaryFrames;
+        if (secondaryImage == null ||
+            secondaryFrames == null ||
+            secondaryFrames.Length == 0)
+        {
+            return;
+        }
+
+        Sprite lastFrame =
+            secondaryFrames[secondaryFrames.Length - 1];
+        if (lastFrame != null)
+        {
+            secondaryImage.sprite = lastFrame;
+        }
+
+        secondaryImage.gameObject.SetActive(true);
+        SetAlpha(secondaryImage, 1f);
     }
 
     private static void RestoreAnimationLayers(

@@ -11,6 +11,10 @@ public class UIManager : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private GameManager gameManager;
+    [Tooltip(
+        "Shows shared error and exit confirmation popups. " +
+        "Found automatically when left empty.")]
+    [SerializeField] private PopupManager popupManager;
     [SerializeField] private OrientationChange orientationChange;
     [SerializeField] private Button spinButton;
     [SerializeField] private Button stopButton;
@@ -113,8 +117,10 @@ public class UIManager : MonoBehaviour
     [SerializeField] private JSFunctCalls jsFunctCalls;
     [SerializeField] private Button homeButton;
     [SerializeField] private Button moreGamesButton;
-    [SerializeField] private Button fullScreenButton;
-    [SerializeField] private Button smallScreenButton;
+    [UnityEngine.Serialization.FormerlySerializedAs("fullScreenButton")]
+    [SerializeField] private Button expandButton;
+    [UnityEngine.Serialization.FormerlySerializedAs("smallScreenButton")]
+    [SerializeField] private Button shrinkButton;
 
     [Header("Portrait Main Controls")]
     [SerializeField] private Button portraitSpinButton;
@@ -163,8 +169,12 @@ public class UIManager : MonoBehaviour
     [Header("Portrait Platform Navigation")]
     [SerializeField] private Button portraitHomeButton;
     [SerializeField] private Button portraitMoreGamesButton;
-    [SerializeField] private Button portraitFullScreenButton;
-    [SerializeField] private Button portraitSmallScreenButton;
+    [UnityEngine.Serialization.FormerlySerializedAs(
+        "portraitFullScreenButton")]
+    [SerializeField] private Button portraitExpandButton;
+    [UnityEngine.Serialization.FormerlySerializedAs(
+        "portraitSmallScreenButton")]
+    [SerializeField] private Button portraitShrinkButton;
 
     private bool isAutoPlayPanelOpen;
     private bool isSpinPointerHeld;
@@ -176,11 +186,14 @@ public class UIManager : MonoBehaviour
     private AutoPlayPanelAnimationState portraitAutoPlayPanelAnimation;
     private bool isWaitingForStoppedAutoPlayRound;
     private bool waitForAutoPlayDismissPointerRelease;
+    private bool isExpanded;
     private readonly List<RaycastResult> autoPlayDismissRaycastResults = new List<RaycastResult>();
     private CanvasGroup hamburgerMenuCanvasGroup;
     private CanvasGroup portraitHamburgerMenuCanvasGroup;
     private Tween hamburgerMenuTween;
     private Tween portraitHamburgerMenuTween;
+    private Coroutine hamburgerMenuShowCoroutine;
+    private Coroutine portraitHamburgerMenuShowCoroutine;
     private bool isHamburgerMenuOpen;
     private bool isPortraitPresentationActive;
     private Sequence winLineAmountFontSizeSequence;
@@ -206,6 +219,12 @@ public class UIManager : MonoBehaviour
 
     private void Awake()
     {
+        if (popupManager == null)
+        {
+            popupManager = FindFirstObjectByType<PopupManager>(
+                FindObjectsInactive.Include);
+        }
+
         if (orientationChange == null)
         {
             orientationChange = FindFirstObjectByType<OrientationChange>(
@@ -413,6 +432,7 @@ public class UIManager : MonoBehaviour
             {
                 hamburgerMenuCanvasGroup = hamburgerMenuPanel.AddComponent<CanvasGroup>();
             }
+
         }
 
         if (portraitHamburgerMenuPanel == null ||
@@ -431,6 +451,7 @@ public class UIManager : MonoBehaviour
                 portraitHamburgerMenuCanvasGroup =
                     portraitHamburgerMenuPanel.AddComponent<CanvasGroup>();
             }
+
         }
 
         ResetHamburgerMenu();
@@ -480,21 +501,27 @@ public class UIManager : MonoBehaviour
             portraitHomeButton == null ||
             moreGamesButton == null ||
             portraitMoreGamesButton == null ||
-            fullScreenButton == null ||
-            smallScreenButton == null ||
-            portraitFullScreenButton == null ||
-            portraitSmallScreenButton == null)
+            expandButton == null ||
+            shrinkButton == null ||
+            portraitExpandButton == null ||
+            portraitShrinkButton == null)
         {
             Debug.LogError(
                 "[UIManager] JSCall and both landscape/portrait Home, " +
                 "MoreGames, FullScreen, and SmallScreen buttons must be assigned.");
         }
 
-        SetFullscreenState(false);
+        SetExpandShrinkButtons(false);
 
         if (gameManager == null)
         {
             Debug.LogError("[UIManager] GameManager is not assigned.");
+        }
+
+        if (popupManager == null)
+        {
+            Debug.LogError(
+                "[UIManager] PopupManager is not assigned and could not be found.");
         }
     }
 
@@ -679,8 +706,8 @@ public class UIManager : MonoBehaviour
         AddButtonListener(soundPanelCloseButton, CloseSoundPanel);
         AddButtonListener(homeButton, OnHomeButtonClicked);
         AddButtonListener(moreGamesButton, OnMoreGamesButtonClicked);
-        AddButtonListener(fullScreenButton, OnFullScreenButtonClicked);
-        AddButtonListener(smallScreenButton, OnSmallScreenButtonClicked);
+        AddButtonListener(expandButton, OnExpand);
+        AddButtonListener(shrinkButton, OnShrink);
 
         AddButtonListener(portraitSpinButton, OnSpinButtonClicked);
         AddButtonListener(portraitStopButton, OnStopButtonClicked);
@@ -748,11 +775,11 @@ public class UIManager : MonoBehaviour
             portraitMoreGamesButton,
             OnMoreGamesButtonClicked);
         AddButtonListener(
-            portraitFullScreenButton,
-            OnFullScreenButtonClicked);
+            portraitExpandButton,
+            OnExpand);
         AddButtonListener(
-            portraitSmallScreenButton,
-            OnSmallScreenButtonClicked);
+            portraitShrinkButton,
+            OnShrink);
 
         if (jsFunctCalls != null)
         {
@@ -869,8 +896,8 @@ public class UIManager : MonoBehaviour
         RemoveButtonListener(soundPanelCloseButton, CloseSoundPanel);
         RemoveButtonListener(homeButton, OnHomeButtonClicked);
         RemoveButtonListener(moreGamesButton, OnMoreGamesButtonClicked);
-        RemoveButtonListener(fullScreenButton, OnFullScreenButtonClicked);
-        RemoveButtonListener(smallScreenButton, OnSmallScreenButtonClicked);
+        RemoveButtonListener(expandButton, OnExpand);
+        RemoveButtonListener(shrinkButton, OnShrink);
 
         RemoveButtonListener(portraitSpinButton, OnSpinButtonClicked);
         RemoveButtonListener(portraitStopButton, OnStopButtonClicked);
@@ -938,11 +965,11 @@ public class UIManager : MonoBehaviour
             portraitMoreGamesButton,
             OnMoreGamesButtonClicked);
         RemoveButtonListener(
-            portraitFullScreenButton,
-            OnFullScreenButtonClicked);
+            portraitExpandButton,
+            OnExpand);
         RemoveButtonListener(
-            portraitSmallScreenButton,
-            OnSmallScreenButtonClicked);
+            portraitShrinkButton,
+            OnShrink);
 
         if (gameManager != null)
         {
@@ -975,11 +1002,6 @@ public class UIManager : MonoBehaviour
         {
             Debug.LogError("[UIManager] Cannot spin because GameManager is not assigned.");
             RefreshSpinControls();
-            return;
-        }
-
-        if (!gameManager.CanRequestSpin())
-        {
             return;
         }
 
@@ -1696,6 +1718,11 @@ public class UIManager : MonoBehaviour
         animationState.Tween?.Kill();
         animationState.Tween = null;
         animationState.IsClosing = false;
+        if (animationState.RectTransform == null)
+        {
+            return;
+        }
+
         animationState.RectTransform.localPosition =
             animationState.RestingLocalPosition;
         animationState.RectTransform.localScale =
@@ -1708,7 +1735,7 @@ public class UIManager : MonoBehaviour
         SetHamburgerMenuImmediate(
             !isPortraitPresentationActive,
             false);
-        ShowHamburgerMenuAnimated(
+        ScheduleHamburgerMenuOpen(
             isPortraitPresentationActive);
     }
 
@@ -1720,6 +1747,7 @@ public class UIManager : MonoBehaviour
         }
 
         isHamburgerMenuOpen = false;
+        CancelHamburgerMenuOpenCoroutines();
         SetHamburgerMenuImmediate(
             !isPortraitPresentationActive,
             false);
@@ -1730,19 +1758,90 @@ public class UIManager : MonoBehaviour
     private void ResetHamburgerMenu()
     {
         isHamburgerMenuOpen = false;
+        CancelHamburgerMenuOpenCoroutines();
         SetHamburgerMenuImmediate(false, false);
         SetHamburgerMenuImmediate(true, false);
     }
 
     private void SynchronizeHamburgerMenusForOrientation()
     {
+        CancelHamburgerMenuOpenCoroutines();
         SetHamburgerMenuImmediate(false, false);
         SetHamburgerMenuImmediate(true, false);
 
         if (isHamburgerMenuOpen)
         {
-            ShowHamburgerMenuAnimated(
+            ScheduleHamburgerMenuOpen(
                 isPortraitPresentationActive);
+        }
+    }
+
+    private void ScheduleHamburgerMenuOpen(
+        bool usePortrait)
+    {
+        Coroutine existingCoroutine =
+            usePortrait
+                ? portraitHamburgerMenuShowCoroutine
+                : hamburgerMenuShowCoroutine;
+        if (existingCoroutine != null)
+        {
+            StopCoroutine(existingCoroutine);
+        }
+
+        Coroutine showCoroutine = StartCoroutine(
+            ShowHamburgerMenuAfterPointerDispatch(
+                usePortrait));
+        if (usePortrait)
+        {
+            portraitHamburgerMenuShowCoroutine =
+                showCoroutine;
+        }
+        else
+        {
+            hamburgerMenuShowCoroutine =
+                showCoroutine;
+        }
+    }
+
+    private IEnumerator ShowHamburgerMenuAfterPointerDispatch(
+        bool usePortrait)
+    {
+        // Enabling a hierarchy of Selectables from inside Button.OnClick can
+        // corrupt Unity's internal Selectable registry. Resume next frame,
+        // after the EventSystem has finished dispatching the pointer event.
+        yield return null;
+
+        if (usePortrait)
+        {
+            portraitHamburgerMenuShowCoroutine = null;
+        }
+        else
+        {
+            hamburgerMenuShowCoroutine = null;
+        }
+
+        if (!isHamburgerMenuOpen ||
+            usePortrait != isPortraitPresentationActive)
+        {
+            yield break;
+        }
+
+        ShowHamburgerMenuAnimated(usePortrait);
+    }
+
+    private void CancelHamburgerMenuOpenCoroutines()
+    {
+        if (hamburgerMenuShowCoroutine != null)
+        {
+            StopCoroutine(hamburgerMenuShowCoroutine);
+            hamburgerMenuShowCoroutine = null;
+        }
+
+        if (portraitHamburgerMenuShowCoroutine != null)
+        {
+            StopCoroutine(
+                portraitHamburgerMenuShowCoroutine);
+            portraitHamburgerMenuShowCoroutine = null;
         }
     }
 
@@ -1817,7 +1916,10 @@ public class UIManager : MonoBehaviour
         }
 
         KillHamburgerMenuTween(usePortrait);
-        canvasGroup.interactable = false;
+        // Keep the buttons in their normal visual state while the menu fades.
+        // Setting interactable to false makes their disabled sprites flash
+        // before the panel disappears. Raycasts are still blocked immediately.
+        canvasGroup.interactable = true;
         canvasGroup.blocksRaycasts = false;
 
         Tween fadeTween = canvasGroup
@@ -1845,9 +1947,6 @@ public class UIManager : MonoBehaviour
         bool usePortrait,
         bool isOpen)
     {
-        GameObject panel = usePortrait
-            ? portraitHamburgerMenuPanel
-            : hamburgerMenuPanel;
         CanvasGroup canvasGroup = usePortrait
             ? portraitHamburgerMenuCanvasGroup
             : hamburgerMenuCanvasGroup;
@@ -1863,10 +1962,13 @@ public class UIManager : MonoBehaviour
         if (canvasGroup != null)
         {
             canvasGroup.alpha = isOpen ? 1f : 0f;
-            canvasGroup.interactable = isOpen;
+            canvasGroup.interactable = true;
             canvasGroup.blocksRaycasts = isOpen;
         }
 
+        GameObject panel = usePortrait
+            ? portraitHamburgerMenuPanel
+            : hamburgerMenuPanel;
         if (panel != null)
         {
             panel.SetActive(isOpen);
@@ -2125,7 +2227,15 @@ public class UIManager : MonoBehaviour
 
     private void OnHomeButtonClicked()
     {
-        gameManager?.ExitGame();
+        if (popupManager == null)
+        {
+            Debug.LogError(
+                "[UIManager] Cannot show the exit confirmation because " +
+                "PopupManager is not assigned.");
+            return;
+        }
+
+        popupManager.ShowExitGamePopup();
     }
 
     private void OnMoreGamesButtonClicked()
@@ -2133,48 +2243,49 @@ public class UIManager : MonoBehaviour
         jsFunctCalls?.SendCustomMessage("MoreGames");
     }
 
-    private void OnFullScreenButtonClicked()
+    private void OnExpand()
     {
+        isExpanded = true;
         jsFunctCalls?.RequestExpandGame();
-        SetFullscreenState(true);
+        SetExpandShrinkButtons(isExpanded);
     }
 
-    private void OnSmallScreenButtonClicked()
+    private void OnShrink()
     {
+        isExpanded = false;
         jsFunctCalls?.RequestShrinkGame();
-        SetFullscreenState(false);
+        SetExpandShrinkButtons(isExpanded);
     }
 
-    public void OnFullscreenChanged(string fullscreenValue)
+    public void OnFullscreenChanged(string isFullscreen)
     {
-        SetFullscreenState(
+        bool browserIsExpanded =
             string.Equals(
-                fullscreenValue,
+                isFullscreen,
                 "1",
-                System.StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(
-                fullscreenValue,
-                "true",
-                System.StringComparison.OrdinalIgnoreCase));
+                System.StringComparison.Ordinal);
+        SetExpandShrinkButtons(browserIsExpanded);
     }
 
-    private void SetFullscreenState(bool isFullscreen)
+    private void SetExpandShrinkButtons(bool expanded)
     {
+        isExpanded = expanded;
+
         SetActionButtonState(
-            fullScreenButton,
-            !isFullscreen,
+            expandButton,
+            !isExpanded,
             true);
         SetActionButtonState(
-            smallScreenButton,
-            isFullscreen,
+            shrinkButton,
+            isExpanded,
             true);
         SetActionButtonState(
-            portraitFullScreenButton,
-            !isFullscreen,
+            portraitExpandButton,
+            !isExpanded,
             true);
         SetActionButtonState(
-            portraitSmallScreenButton,
-            isFullscreen,
+            portraitShrinkButton,
+            isExpanded,
             true);
     }
 
