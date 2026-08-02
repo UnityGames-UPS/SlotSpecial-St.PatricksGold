@@ -812,7 +812,7 @@ public class GameManager : MonoBehaviour
 
             if (presentationStarted)
             {
-                AudioController.Instance?.PlayRichesWheel();
+                AudioController.Instance?.PlayScatterWheel();
             }
 
             if (!presentationStarted)
@@ -839,6 +839,7 @@ public class GameManager : MonoBehaviour
         {
             slotView.ShowWinLineAnimation(
                 completedResult.winLines,
+                completedResult.winAmount,
                 shouldContinueAutoPlay ? QueueNextAutoPlaySpin : null
             );
         }
@@ -1224,7 +1225,6 @@ public class GameManager : MonoBehaviour
             return false;
         }
 
-        AudioController.Instance?.PlayBonusReelSpinning();
         popupManager?.HideUltraStartImmediate();
         hasUltraSlotStarted = true;
         isUltraSlotSpinning = true;
@@ -1418,6 +1418,9 @@ public class GameManager : MonoBehaviour
             yield break;
         }
 
+        // This clip belongs to the green, blue, and red Ultra prize wheels,
+        // not the three-reel Ultra slot or the Scatter Wheel feature.
+        AudioController.Instance?.PlayBonusReelSpinning();
         areUltraWheelsSpinning = true;
         GamePresentationChanged?.Invoke();
 

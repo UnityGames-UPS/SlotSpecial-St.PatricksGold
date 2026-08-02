@@ -2638,7 +2638,10 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    private void OnWinLineAmountPresentationChanged(int row, double winAmount)
+    private void OnWinLineAmountPresentationChanged(
+        int row,
+        double winAmount,
+        bool countUpAmount)
     {
         ResetWinLineAmountDisplay();
 
@@ -2653,25 +2656,43 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        rowText.text = winAmount.ToString("0.00");
+        double displayedAmount = countUpAmount ? 0d : winAmount;
+        rowText.text = displayedAmount.ToString("0.00");
         rowText.fontSize = 0f;
         rowText.gameObject.SetActive(true);
 
+        float growDuration = Mathf.Max(0.01f, winLineGrowDuration);
         float peakFontSize = Mathf.Max(1f, winLinePeakFontSize);
         float finalFontSize = Mathf.Clamp(
             winLineFinalFontSize,
             1f,
             peakFontSize);
 
-        winLineAmountFontSizeSequence = DOTween.Sequence()
-            .SetUpdate(true)
-            .Append(
+        winLineAmountFontSizeSequence = DOTween.Sequence().SetUpdate(true);
+        winLineAmountFontSizeSequence.Append(
+            DOTween.To(
+                () => rowText.fontSize,
+                value => rowText.fontSize = value,
+                peakFontSize,
+                growDuration)
+                .SetEase(Ease.OutCubic));
+
+        if (countUpAmount)
+        {
+            winLineAmountFontSizeSequence.Join(
                 DOTween.To(
-                    () => rowText.fontSize,
-                    value => rowText.fontSize = value,
-                    peakFontSize,
-                    Mathf.Max(0.01f, winLineGrowDuration))
-                    .SetEase(Ease.OutCubic))
+                    () => displayedAmount,
+                    value =>
+                    {
+                        displayedAmount = value;
+                        rowText.text = value.ToString("0.00");
+                    },
+                    winAmount,
+                    growDuration)
+                    .SetEase(Ease.Linear));
+        }
+
+        winLineAmountFontSizeSequence
             .Append(
                 DOTween.To(
                     () => rowText.fontSize,
@@ -2682,6 +2703,7 @@ public class UIManager : MonoBehaviour
             .OnComplete(() =>
             {
                 winLineAmountFontSizeSequence = null;
+                rowText.text = winAmount.ToString("0.00");
                 rowText.fontSize = finalFontSize;
             });
     }

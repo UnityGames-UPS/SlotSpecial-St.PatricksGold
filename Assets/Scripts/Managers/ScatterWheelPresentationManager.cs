@@ -90,6 +90,14 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
     private ScatterWheelColumnReferences column5 =
         new ScatterWheelColumnReferences();
 
+    [Header("Output Text Blink")]
+    [Tooltip("Lowest opacity reached while the Scatter award text blinks.")]
+    [SerializeField, Range(0f, 1f)]
+    private float outputTextBlinkMinimumAlpha = 0.15f;
+    [Tooltip("Time used to fade from fully visible to the lowest opacity.")]
+    [SerializeField, Min(0.05f)]
+    private float outputTextBlinkHalfCycleDuration = 0.35f;
+
     private readonly List<ActiveScatterWheel> activeWheels =
         new List<ActiveScatterWheel>();
     private Coroutine presentationCoroutine;
@@ -117,6 +125,9 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
         public Vector3 RestingLeafScale;
         public Vector2 RestingOutputTextPosition;
         public Tween SpinTween;
+        public Tween OutputTextBlinkTween;
+        public Color OutputTmpOriginalColor = Color.white;
+        public Color OutputLegacyOriginalColor = Color.white;
     }
 
     private void Awake()
@@ -356,6 +367,12 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
                 OutputTextTransform = outputText,
                 OutputTmpText = outputTmpText,
                 OutputLegacyText = outputLegacyText,
+                OutputTmpOriginalColor = outputTmpText != null
+                    ? outputTmpText.color
+                    : Color.white,
+                OutputLegacyOriginalColor = outputLegacyText != null
+                    ? outputLegacyText.color
+                    : Color.white,
                 TextParent = textParent,
                 ServerValues = serverValues,
                 WinningAwardText =
@@ -461,8 +478,8 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
         }
 
         // A slow Background FX pass may outlast the wheel rotation. Wait for
-        // every one-shot sequence to reach its last frame; that frame remains
-        // visible until the next Spin resets the Scatter presentation.
+        // every forward pass and its short fade-out to finish before
+        // completing the feature presentation.
         while (completedBackgroundFxCount < activeWheels.Count)
         {
             yield return null;
@@ -682,19 +699,102 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
         SetActive(outputText, true);
         if (presentation.LeafTransform == null)
         {
+            StartOutputTextBlink(presentation);
             onComplete?.Invoke();
             return;
         }
 
+        Action onMoveComplete = () =>
+        {
+            StartOutputTextBlink(presentation);
+            onComplete?.Invoke();
+        };
         bool moveStarted =
             symbolAnimationManager != null &&
             symbolAnimationManager.PlayScatterWheelResultTextMove(
                 outputText,
                 presentation.LeafTransform.anchoredPosition.y,
-                onComplete);
+                onMoveComplete);
         if (!moveStarted)
         {
-            onComplete?.Invoke();
+            onMoveComplete();
+        }
+    }
+
+    private void StartOutputTextBlink(ActiveScatterWheel presentation)
+    {
+        if (presentation == null)
+        {
+            return;
+        }
+
+        StopOutputTextBlink(presentation);
+
+        float minimumAlpha = Mathf.Clamp01(outputTextBlinkMinimumAlpha);
+        float halfCycleDuration = Mathf.Max(
+            0.05f,
+            outputTextBlinkHalfCycleDuration);
+        Sequence blinkSequence = DOTween.Sequence().SetUpdate(true);
+        bool hasBlinkTarget = false;
+
+        if (presentation.OutputTmpText != null)
+        {
+            Tween fade = presentation.OutputTmpText
+                .DOFade(
+                    presentation.OutputTmpOriginalColor.a * minimumAlpha,
+                    halfCycleDuration)
+                .SetEase(Ease.InOutSine);
+            blinkSequence.Append(fade);
+            hasBlinkTarget = true;
+        }
+
+        if (presentation.OutputLegacyText != null)
+        {
+            Tween fade = presentation.OutputLegacyText
+                .DOFade(
+                    presentation.OutputLegacyOriginalColor.a * minimumAlpha,
+                    halfCycleDuration)
+                .SetEase(Ease.InOutSine);
+            if (hasBlinkTarget)
+            {
+                blinkSequence.Join(fade);
+            }
+            else
+            {
+                blinkSequence.Append(fade);
+                hasBlinkTarget = true;
+            }
+        }
+
+        if (!hasBlinkTarget)
+        {
+            blinkSequence.Kill();
+            return;
+        }
+
+        presentation.OutputTextBlinkTween = blinkSequence
+            .SetLoops(-1, LoopType.Yoyo);
+    }
+
+    private static void StopOutputTextBlink(
+        ActiveScatterWheel presentation)
+    {
+        if (presentation == null)
+        {
+            return;
+        }
+
+        presentation.OutputTextBlinkTween?.Kill();
+        presentation.OutputTextBlinkTween = null;
+        if (presentation.OutputTmpText != null)
+        {
+            presentation.OutputTmpText.color =
+                presentation.OutputTmpOriginalColor;
+        }
+        if (presentation.OutputLegacyText != null)
+        {
+            presentation.OutputLegacyText.color =
+                presentation.OutputLegacyOriginalColor;
         }
     }
 
@@ -956,6 +1056,7 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
             false);
         if (presentation.OutputTextTransform != null)
         {
+            StopOutputTextBlink(presentation);
             if (symbolAnimationManager != null)
             {
                 symbolAnimationManager.StopScatterWheelResultTextMove(
@@ -967,6 +1068,10 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
             SetActive(
                 presentation.OutputTextTransform,
                 false);
+        }
+        else
+        {
+            StopOutputTextBlink(presentation);
         }
 
         if (presentation.SymbolImage != null)

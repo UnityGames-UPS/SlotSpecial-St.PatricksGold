@@ -37,9 +37,9 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
     [Tooltip("Gold used only for the X5, X4, and X3 payout labels.")]
     [SerializeField] private Color payoutLabelColor =
         new Color(1f, 0.78f, 0f, 1f);
-    [Tooltip("Horizontal position of the white payout-value column.")]
-    [SerializeField, Range(0f, 100f)]
-    private float payoutValueColumnPercent = 60f;
+    [Tooltip("Font size of the lowercase x in x5, x4, and x3.")]
+    [SerializeField, Range(25f, 100f)]
+    private float payoutMultiplierXSizePercent = 70f;
     [SerializeField] private float payoutLineSpacing = 10f;
     [SerializeField] private float descriptionLineSpacing;
     [SerializeField, Min(1f)] private float descriptionMinimumFontSize = 10f;
@@ -53,6 +53,7 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
         new List<ClickRegistration>();
     private Coroutine hideCoroutine;
     private float authoredInfoFontSize = 36f;
+    private float authoredInfoWordWrappingRatio = 0.4f;
 
     private sealed class ClickRegistration
     {
@@ -69,6 +70,8 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
         if (infoText != null)
         {
             authoredInfoFontSize = Mathf.Max(1f, infoText.fontSize);
+            authoredInfoWordWrappingRatio =
+                Mathf.Clamp01(infoText.wordWrappingRatios);
         }
         HideImmediate();
     }
@@ -378,7 +381,10 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
         if (isStandardPaySymbol)
         {
             infoText.horizontalAlignment =
-                HorizontalAlignmentOptions.Left;
+                HorizontalAlignmentOptions.Flush;
+            // Give each payout line one real word gap and make TMP put all
+            // Flush expansion into that gap, never between x and its count.
+            infoText.wordWrappingRatios = 0f;
             infoText.enableAutoSizing = false;
             infoText.textWrappingMode = TextWrappingModes.NoWrap;
             infoText.lineSpacing = payoutLineSpacing;
@@ -386,6 +392,7 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
         }
 
         infoText.horizontalAlignment = HorizontalAlignmentOptions.Center;
+        infoText.wordWrappingRatios = authoredInfoWordWrappingRatio;
         infoText.enableAutoSizing = true;
         infoText.textWrappingMode = TextWrappingModes.Normal;
         infoText.fontSizeMin = Mathf.Min(
@@ -435,10 +442,17 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
             return false;
         }
 
-        bool isSpecialSymbol = string.Equals(
-            symbol.group,
-            "special",
-            StringComparison.OrdinalIgnoreCase);
+        bool isSpecialSymbol =
+            string.Equals(
+                symbol.group,
+                "special",
+                StringComparison.OrdinalIgnoreCase) ||
+            symbol.isWild ||
+            symbol.isScatter ||
+            symbol.id == StPatricksGoldSymbolIds.Wild ||
+            symbol.id == StPatricksGoldSymbolIds.ScatterWheel ||
+            symbol.id == StPatricksGoldSymbolIds.UltraWheel ||
+            symbol.id == StPatricksGoldSymbolIds.TempleRiches;
         isStandardPaySymbol = !isSpecialSymbol;
 
         if (isSpecialSymbol)
@@ -471,14 +485,15 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
     private string BuildPayoutLine(int matchCount, double value)
     {
         string goldHex = ColorUtility.ToHtmlStringRGB(payoutLabelColor);
-        string valueColumn = Mathf.Clamp(
-                payoutValueColumnPercent,
-                0f,
+        string multiplierXSize = Mathf.Clamp(
+                payoutMultiplierXSizePercent,
+                25f,
                 100f)
             .ToString("0.##", CultureInfo.InvariantCulture);
         return
-            $"<color=#{goldHex}>X{matchCount}</color>" +
-            $"<pos={valueColumn}%>{FormatValue(value)}";
+            $"<color=#{goldHex}><size={multiplierXSize}%>x</size>" +
+            $"{matchCount}</color>" +
+            $" {FormatValue(value)}";
     }
 
     private static bool TryGetPayouts(
@@ -572,9 +587,9 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
     private void OnValidate()
     {
         horizontalGap = Mathf.Max(0f, horizontalGap);
-        payoutValueColumnPercent = Mathf.Clamp(
-            payoutValueColumnPercent,
-            0f,
+        payoutMultiplierXSizePercent = Mathf.Clamp(
+            payoutMultiplierXSizePercent,
+            25f,
             100f);
         descriptionMinimumFontSize = Mathf.Max(
             1f,

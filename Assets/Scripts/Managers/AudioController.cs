@@ -52,7 +52,8 @@ public sealed class AudioController : MonoBehaviour
     [SerializeField] private AudioClip totalWinClip;
 
     [Header("Scatter and Ultra Features")]
-    [SerializeField] private AudioClip richesWheelClip;
+    [UnityEngine.Serialization.FormerlySerializedAs("richesWheelClip")]
+    [SerializeField] private AudioClip scatterWheelClip;
     [SerializeField] private AudioClip ultraWheelBonusClip;
     [SerializeField] private AudioClip ultraWheelAllThreeClip;
     [SerializeField] private AudioClip bonusReelSpinningClip;
@@ -285,9 +286,12 @@ public sealed class AudioController : MonoBehaviour
         PlaySfx(featureSource, queenClip);
     }
 
-    internal void PlayMagicalReelLine()
+    internal float PlayMagicalReelLine()
     {
         PlaySfx(featureSource, magicalReelLineClip);
+        return magicalReelLineClip != null
+            ? Mathf.Max(0f, magicalReelLineClip.length)
+            : 0f;
     }
 
     internal void PlayTotalWin()
@@ -295,9 +299,9 @@ public sealed class AudioController : MonoBehaviour
         PlaySfx(featureSource, totalWinClip);
     }
 
-    internal void PlayRichesWheel()
+    internal void PlayScatterWheel()
     {
-        PlaySfx(featureSource, richesWheelClip);
+        PlaySfx(featureSource, scatterWheelClip);
     }
 
     internal void PlayUltraWheelBonus()
@@ -558,8 +562,6 @@ public sealed class AudioController : MonoBehaviour
         changed |= AssignClipIfEmpty(
             ref magicalReelLineClip,
             "magical reel line.mp3");
-        changed |= AssignClipIfEmpty(ref totalWinClip, "312 total win.mp3");
-        changed |= AssignClipIfEmpty(ref richesWheelClip, "riches wheel.mp3");
         changed |= AssignClipIfEmpty(
             ref ultraWheelBonusClip,
             "ultra wheel bonus.mp3");

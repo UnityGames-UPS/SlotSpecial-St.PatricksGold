@@ -67,7 +67,9 @@ public class SlotView : MonoBehaviour
     [SerializeField] private Image fourthColumnAnticipationImage;
     [Tooltip("Assign the Anticipations 5th Image.")]
     [SerializeField] private Image fifthColumnAnticipationImage;
-    [Tooltip("How long an anticipated reel keeps spinning before it begins to stop.")]
+    [Tooltip(
+        "Fallback anticipation duration when the Magical Reel Line clip is " +
+        "not assigned. Normally the clip's actual duration is used.")]
     [SerializeField, Min(0f)] private float anticipationDuration = 1.5f;
     [Tooltip("Visible spin-speed multiplier applied only to the reel currently in anticipation.")]
     [SerializeField, Min(1f)] private float anticipationReelSpeedMultiplier = 1.5f;
@@ -101,7 +103,8 @@ public class SlotView : MonoBehaviour
         wildMultiplierTransformStates =
             new Dictionary<Image, WildMultiplierTransformState>();
 
-    internal event System.Action<int, double> WinLineAmountPresentationChanged;
+    internal event System.Action<int, double, bool>
+        WinLineAmountPresentationChanged;
 
     private sealed class WinningLinePresentation
     {
@@ -620,10 +623,16 @@ public class SlotView : MonoBehaviour
                 }
 
                 SetReelAnticipation(col, true);
-                float holdDuration = Mathf.Max(0f, anticipationDuration);
+                float anticipationClipDuration =
+                    AudioController.Instance != null
+                        ? AudioController.Instance.PlayMagicalReelLine()
+                        : 0f;
+                float holdDuration = anticipationClipDuration > 0f
+                    ? anticipationClipDuration
+                    : Mathf.Max(0f, anticipationDuration);
                 if (holdDuration > 0f)
                 {
-                    yield return new WaitForSeconds(holdDuration);
+                    yield return new WaitForSecondsRealtime(holdDuration);
                 }
                 SetReelAnticipation(col, false);
             }
@@ -725,12 +734,15 @@ public class SlotView : MonoBehaviour
             );
         }
 
+        // The reel has reached its landing/impact position. Play the hit now,
+        // before the short bounce-back, so the sound matches the visual stop.
+        AudioController.Instance?.PlayReelStopHit();
+
         Sequence stopPop = CreateStopPop(columnIndex, isQuickStop);
         spinTweens[columnIndex] = stopPop;
         yield return stopPop.WaitForCompletion();
 
         ApplyStoppedReelLayout(columnIndex);
-        AudioController.Instance?.PlayReelStopHit();
         if (targetSymbols.Contains(StPatricksGoldSymbolIds.GreenHat))
         {
             AudioController.Instance?.PlayHatAppearInReel();
@@ -1130,7 +1142,10 @@ public class SlotView : MonoBehaviour
 
     #region Win Line Animation
 
-    internal void ShowWinLineAnimation(List<WinLine> winLines, System.Action onComplete)
+    internal void ShowWinLineAnimation(
+        List<WinLine> winLines,
+        double totalWinAmount,
+        System.Action onComplete)
     {
 
         if (winLines == null || winLines.Count == 0)
@@ -1140,7 +1155,8 @@ public class SlotView : MonoBehaviour
         }
 
         StopWinAnimations();
-        winAnimationCoroutine = StartCoroutine(PlayWinningSymbols(winLines, onComplete));
+        winAnimationCoroutine = StartCoroutine(
+            PlayWinningSymbols(winLines, totalWinAmount, onComplete));
     }
 
     internal bool ShowPrioritySymbolAnimation(
@@ -1236,7 +1252,10 @@ public class SlotView : MonoBehaviour
         onComplete?.Invoke();
     }
 
-    private IEnumerator PlayWinningSymbols(List<WinLine> winLines, System.Action onComplete)
+    private IEnumerator PlayWinningSymbols(
+        List<WinLine> winLines,
+        double totalWinAmount,
+        System.Action onComplete)
     {
         bool isAuto = (gameManager != null && gameManager.isAutoPlaying);
         float cycleDuration = symbolAnimationManager != null
@@ -1292,10 +1311,10 @@ public class SlotView : MonoBehaviour
             yield break;
         }
 
-        // The separate TotalWin text remains visible for the complete-result
-        // celebration. Per-row amounts begin with the individual lines below.
-        WinLineAmountPresentationChanged?.Invoke(-1, 0);
-        AudioController.Instance?.PlayMagicalReelLine();
+        // Show the complete normal-spin win in the center while every winning
+        // symbol is celebrated. Feature-only Scatter and Ultra results never
+        // enter this payline presentation path.
+        WinLineAmountPresentationChanged?.Invoke(1, totalWinAmount, true);
         if (hasQueenWin)
         {
             AudioController.Instance?.PlayQueen();
@@ -1319,7 +1338,8 @@ public class SlotView : MonoBehaviour
                 WinningLinePresentation line = individualWinningLines[lineIndex];
                 WinLineAmountPresentationChanged?.Invoke(
                     line.DisplayRow,
-                    line.WinAmount);
+                    line.WinAmount,
+                    false);
                 ShowWildMultiplierIcons(line, wildLoopDuration);
                 ApplyNonWinningSymbolTint(line.Positions);
                 AnimateWinPositions(
@@ -1344,7 +1364,8 @@ public class SlotView : MonoBehaviour
                 WinningLinePresentation line = individualWinningLines[lineIndex];
                 WinLineAmountPresentationChanged?.Invoke(
                     line.DisplayRow,
-                    line.WinAmount);
+                    line.WinAmount,
+                    false);
                 ShowWildMultiplierIcons(line, wildLoopDuration);
                 ApplyNonWinningSymbolTint(line.Positions);
                 AnimateWinPositions(
@@ -1638,7 +1659,7 @@ public class SlotView : MonoBehaviour
             winAnimationCoroutine = null;
         }
 
-        WinLineAmountPresentationChanged?.Invoke(-1, 0);
+        WinLineAmountPresentationChanged?.Invoke(-1, 0, false);
 
         // Restore all symbol images after win animations
         for (int col = 0; col < reelImagesList.Count; col++)

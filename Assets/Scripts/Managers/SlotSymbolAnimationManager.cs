@@ -48,6 +48,11 @@ public class SlotSymbolAnimationManager : MonoBehaviour
     [SerializeField, Range(0.01f, 1f)]
     private float scatterWheelBackgroundFxSpeedMultiplier = 0.4f;
     [Tooltip(
+        "Time used to fade out the Scatter Background FX after its " +
+        "single forward pass finishes.")]
+    [SerializeField, Min(0.01f)]
+    private float scatterWheelBackgroundFxFadeDuration = 0.2f;
+    [Tooltip(
         "Scale used when CanRotate, WheelRim, and Leaf first appear after " +
         "the Main Scatter Wheel sequence.")]
     [SerializeField, Range(0.01f, 2f)]
@@ -1802,21 +1807,46 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             yield break;
         }
 
-        activeAnimation.PlaybackRoutine = null;
-        if (hasBackgroundFx)
+        if (!hasBackgroundFx)
         {
-            // Keep the completed Background FX visible on its final frame.
-            // The next Spin resets this active Scatter presentation, so a
-            // later Scatter trigger starts again from frame zero.
-            RestorePrimaryAnimationLayer(activeAnimation);
-            HoldSecondaryAnimationLastFrame(activeAnimation);
-        }
-        else
-        {
+            activeAnimation.PlaybackRoutine = null;
             activeAnimations.Remove(overlayImage);
             RestoreAnimationLayers(activeAnimation);
+            onBackgroundFxComplete?.Invoke();
+            yield break;
         }
 
+        Image backgroundFxImage = activeAnimation.SecondaryOverlayImage;
+        float startingAlpha = backgroundFxImage.color.a;
+        float fadeDuration = Mathf.Max(
+            0.01f,
+            scatterWheelBackgroundFxFadeDuration);
+        float fadeElapsed = 0f;
+        while (fadeElapsed < fadeDuration)
+        {
+            if (!IsCurrentAnimation(activeAnimation))
+            {
+                yield break;
+            }
+
+            fadeElapsed += GetDeltaTime();
+            SetAlpha(
+                backgroundFxImage,
+                Mathf.Lerp(
+                    startingAlpha,
+                    0f,
+                    Mathf.Clamp01(fadeElapsed / fadeDuration)));
+            yield return null;
+        }
+
+        if (!IsCurrentAnimation(activeAnimation))
+        {
+            yield break;
+        }
+
+        activeAnimation.PlaybackRoutine = null;
+        activeAnimations.Remove(overlayImage);
+        RestoreAnimationLayers(activeAnimation);
         onBackgroundFxComplete?.Invoke();
     }
 
@@ -1871,31 +1901,6 @@ public class SlotSymbolAnimationManager : MonoBehaviour
 
         SetAlpha(activeAnimation.BaseImage, 1f);
         SetAlpha(activeAnimation.OverlayImage, 0f);
-    }
-
-    private static void HoldSecondaryAnimationLastFrame(
-        ActiveSymbolAnimation activeAnimation)
-    {
-        Image secondaryImage =
-            activeAnimation?.SecondaryOverlayImage;
-        Sprite[] secondaryFrames =
-            activeAnimation?.SecondaryFrames;
-        if (secondaryImage == null ||
-            secondaryFrames == null ||
-            secondaryFrames.Length == 0)
-        {
-            return;
-        }
-
-        Sprite lastFrame =
-            secondaryFrames[secondaryFrames.Length - 1];
-        if (lastFrame != null)
-        {
-            secondaryImage.sprite = lastFrame;
-        }
-
-        secondaryImage.gameObject.SetActive(true);
-        SetAlpha(secondaryImage, 1f);
     }
 
     private static void RestoreAnimationLayers(

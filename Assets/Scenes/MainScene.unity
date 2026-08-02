@@ -4892,7 +4892,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f521a04de7f494272a617b2719edd271, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SocketIOManager
-  testToken: 7f6a2b6539fd43618bf5b5de8266ef7d
+  testToken: 411d29d7c48a467992aa94c1e1b1fc93
   gameManager: {fileID: 1660987171}
   JSManager: {fileID: 2001094553}
   RaycastBlocker: {fileID: 0}
@@ -43450,8 +43450,8 @@ MonoBehaviour:
   hatAppearInReelClip: {fileID: 8300000, guid: 311592e06eecfa5479ae23211163e78f, type: 3}
   queenClip: {fileID: 8300000, guid: 74c528efebd0bd349bf46986f5c36ede, type: 3}
   magicalReelLineClip: {fileID: 8300000, guid: 528bb847a730f4b478da8913498be61a, type: 3}
-  totalWinClip: {fileID: 8300000, guid: d341b978aebc1d04ca21f2404eaeb47d, type: 3}
-  richesWheelClip: {fileID: 8300000, guid: 0b136eec509eae64ebca871449143d65, type: 3}
+  totalWinClip: {fileID: 0}
+  scatterWheelClip: {fileID: 0}
   ultraWheelBonusClip: {fileID: 8300000, guid: acb1f546d05537348932a2a10cf7cfd6, type: 3}
   ultraWheelAllThreeClip: {fileID: 8300000, guid: 8718dc3532aa90648bf1b955a43af0ee, type: 3}
   bonusReelSpinningClip: {fileID: 8300000, guid: a8336d121c1002245a5ad491dab83ab4, type: 3}
@@ -53961,7 +53961,7 @@ MonoBehaviour:
   panelShownOnRightSprite: {fileID: 21300000, guid: 71bdb2f971c704841a6741dbff0a0022, type: 3}
   panelShownOnLeftSprite: {fileID: 21300000, guid: e191f22d41ec76142b799c70f119300f, type: 3}
   payoutLabelColor: {r: 1, g: 0.78, b: 0, a: 1}
-  payoutValueColumnPercent: 68
+  payoutMultiplierXSizePercent: 70
   payoutLineSpacing: 10
   descriptionLineSpacing: 0
   descriptionMinimumFontSize: 10
@@ -54997,6 +54997,7 @@ MonoBehaviour:
   - {fileID: 21300000, guid: 7c9e0b735557cfc43bb9caca50217fa1, type: 3}
   scatterWheelIntroDuration: 1.6
   scatterWheelBackgroundFxSpeedMultiplier: 0.5
+  scatterWheelBackgroundFxFadeDuration: 0.2
   scatterWheelHandoffStartScale: 1
   scatterWheelHandoffEndScale: 1.1
   scatterWheelHandoffScaleDuration: 1
@@ -55367,6 +55368,8 @@ MonoBehaviour:
     middleTextParent: {fileID: 2147000043}
     bottomSymbol: {fileID: 2147000024}
     bottomTextParent: {fileID: 2147000044}
+  outputTextBlinkMinimumAlpha: 0.15
+  outputTextBlinkHalfCycleDuration: 0.35
 --- !u!114 &1802777709 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 2946554428058004728, guid: 4ad9dac221bd9864f84f1f23f40a6f5a, type: 3}
