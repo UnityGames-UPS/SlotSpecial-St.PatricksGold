@@ -886,6 +886,7 @@ public class UIManager : MonoBehaviour
         RefreshGameTexts();
         RefreshBetControls();
         RefreshAutoPlayControls();
+        RefreshUtilityButtonInteractability();
     }
 
     private void OnDisable()
@@ -1109,9 +1110,7 @@ public class UIManager : MonoBehaviour
         }
 
         audioController?.PlayUiButton();
-
-        // The GameManager rejects repeated stop requests. Keep the visible
-        // button visually enabled so unavailable clicks simply do nothing.
+        RefreshSpinControls();
     }
 
     private void OnUltraStartButtonClicked()
@@ -1174,14 +1173,7 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        if (gameManager.CanIncreaseBet())
-        {
-            audioController?.PlayBetButton();
-        }
-        else
-        {
-            audioController?.PlayMaxBet();
-        }
+        PlaySelectedBetSound();
     }
 
     private void OnDecreaseBetButtonClicked()
@@ -1189,6 +1181,17 @@ public class UIManager : MonoBehaviour
         if (gameManager == null || !gameManager.DecreaseBet())
         {
             RefreshBetControls();
+            return;
+        }
+
+        PlaySelectedBetSound();
+    }
+
+    private void PlaySelectedBetSound()
+    {
+        if (gameManager != null && gameManager.IsCurrentBetMaximum())
+        {
+            audioController?.PlayMaxBet();
             return;
         }
 
@@ -1713,6 +1716,7 @@ public class UIManager : MonoBehaviour
         animationState.RectTransform.localScale =
             animationState.RestingScale;
         animationState.Panel.SetActive(true);
+        audioController?.PlayBonusGoingDown();
 
         float duration =
             Mathf.Max(
@@ -1981,7 +1985,8 @@ public class UIManager : MonoBehaviour
         SetHamburgerToggleButtonState(
             openButton,
             closeButton,
-            true);
+            true,
+            false);
 
         Tween fadeTween = canvasGroup
             .DOFade(
@@ -1995,6 +2000,11 @@ public class UIManager : MonoBehaviour
         fadeTween.OnComplete(() =>
         {
             canvasGroup.alpha = 1f;
+            SetHamburgerToggleButtonState(
+                openButton,
+                closeButton,
+                true,
+                true);
             SetHamburgerMenuTween(usePortrait, null);
         });
     }
@@ -2019,16 +2029,19 @@ public class UIManager : MonoBehaviour
             SetHamburgerToggleButtonState(
                 openButton,
                 closeButton,
+                false,
                 false);
             return;
         }
 
         KillHamburgerMenuTween(usePortrait);
-        // Keep the buttons in their normal visual state while the menu fades.
-        // Setting interactable to false makes their disabled sprites flash
-        // before the panel disappears. Raycasts are still blocked immediately.
-        canvasGroup.interactable = true;
+        canvasGroup.interactable = false;
         canvasGroup.blocksRaycasts = false;
+        SetHamburgerToggleButtonState(
+            openButton,
+            closeButton,
+            true,
+            false);
 
         Tween fadeTween = canvasGroup
             .DOFade(
@@ -2046,7 +2059,8 @@ public class UIManager : MonoBehaviour
             SetHamburgerToggleButtonState(
                 openButton,
                 closeButton,
-                false);
+                false,
+                true);
             SetHamburgerMenuTween(usePortrait, null);
         });
     }
@@ -2085,24 +2099,26 @@ public class UIManager : MonoBehaviour
         SetHamburgerToggleButtonState(
             openButton,
             closeButton,
-            isOpen);
+            isOpen,
+            panel != null && canvasGroup != null);
     }
 
     private static void SetHamburgerToggleButtonState(
         Button openButton,
         Button closeButton,
-        bool isOpen)
+        bool isOpen,
+        bool canToggle)
     {
         if (openButton != null)
         {
             openButton.gameObject.SetActive(!isOpen);
-            openButton.interactable = true;
+            openButton.interactable = canToggle;
         }
 
         if (closeButton != null)
         {
             closeButton.gameObject.SetActive(isOpen);
-            closeButton.interactable = true;
+            closeButton.interactable = canToggle;
         }
     }
 
@@ -2392,19 +2408,19 @@ public class UIManager : MonoBehaviour
         SetActionButtonState(
             expandButton,
             !isExpanded,
-            true);
+            jsFunctCalls != null);
         SetActionButtonState(
             shrinkButton,
             isExpanded,
-            true);
+            jsFunctCalls != null);
         SetActionButtonState(
             portraitExpandButton,
             !isExpanded,
-            true);
+            jsFunctCalls != null);
         SetActionButtonState(
             portraitShrinkButton,
             isExpanded,
-            true);
+            jsFunctCalls != null);
     }
 
     private void RefreshSpinControls()
@@ -2441,46 +2457,46 @@ public class UIManager : MonoBehaviour
             !showUltraStart &&
             !showUltraTake;
 
-        if (spinButton != null)
-        {
-            spinButton.gameObject.SetActive(showSpinButton);
-            // Keep the visible control in its normal visual state. The click
-            // handler asks GameManager whether the action is currently valid.
-            spinButton.interactable = true;
-        }
+        bool canSpin =
+            showSpinButton &&
+            gameManager != null &&
+            gameManager.CanRequestSpin();
+        bool canStop =
+            showStopButton &&
+            gameManager != null &&
+            gameManager.CanRequestStop();
+        bool canUseUltraStart =
+            showUltraStart &&
+            gameManager != null &&
+            gameManager.CanUseUltraStartButton();
+        bool canTakeUltraWin =
+            showUltraTake &&
+            gameManager != null &&
+            gameManager.CanTakeUltraWin();
 
-        if (stopButton != null)
-        {
-            stopButton.gameObject.SetActive(showStopButton);
-            stopButton.interactable = true;
-        }
-
-        if (autoPlayStopButton != null)
-        {
-            autoPlayStopButton.gameObject.SetActive(showAutoPlayStop);
-            autoPlayStopButton.interactable = showAutoPlayStop;
-        }
-
-        if (ultraStartButton != null)
-        {
-            ultraStartButton.gameObject.SetActive(showUltraStart);
-            ultraStartButton.interactable = true;
-        }
-
-        if (ultraTakeButton != null)
-        {
-            ultraTakeButton.gameObject.SetActive(showUltraTake);
-            ultraTakeButton.interactable = true;
-        }
+        SetActionButtonState(spinButton, showSpinButton, canSpin);
+        SetActionButtonState(stopButton, showStopButton, canStop);
+        SetActionButtonState(
+            autoPlayStopButton,
+            showAutoPlayStop,
+            showAutoPlayStop);
+        SetActionButtonState(
+            ultraStartButton,
+            showUltraStart,
+            canUseUltraStart);
+        SetActionButtonState(
+            ultraTakeButton,
+            showUltraTake,
+            canTakeUltraWin);
 
         SetActionButtonState(
             portraitSpinButton,
             showSpinButton,
-            true);
+            canSpin);
         SetActionButtonState(
             portraitStopButton,
             showStopButton,
-            true);
+            canStop);
         SetActionButtonState(
             portraitAutoPlayStopButton,
             showAutoPlayStop,
@@ -2488,11 +2504,11 @@ public class UIManager : MonoBehaviour
         SetActionButtonState(
             portraitUltraStartButton,
             showUltraStart,
-            true);
+            canUseUltraStart);
         SetActionButtonState(
             portraitUltraTakeButton,
             showUltraTake,
-            true);
+            canTakeUltraWin);
     }
 
     private static void SetActionButtonState(
@@ -2569,7 +2585,7 @@ public class UIManager : MonoBehaviour
         {
             if (hasWin)
             {
-                winAmountText.text = winAmount.ToString("0.00");
+                winAmountText.text = ServerAmountFormatter.Format(winAmount);
             }
 
             winAmountText.gameObject.SetActive(hasWin);
@@ -2577,12 +2593,14 @@ public class UIManager : MonoBehaviour
 
         if (balanceAmountText != null)
         {
-            balanceAmountText.text = $"BALANCE:  {gameManager.GetDisplayedBalance():0.00}";
+            balanceAmountText.text =
+                $"BALANCE:  {ServerAmountFormatter.Format(gameManager.GetDisplayedBalance())}";
         }
 
         if (betAmountText != null)
         {
-            betAmountText.text = gameManager.GetDisplayedTotalBetAmount().ToString("0.00");
+            betAmountText.text = ServerAmountFormatter.Format(
+                gameManager.GetDisplayedTotalBetAmount());
         }
 
         if (portraitWinLinesCountText != null)
@@ -2608,7 +2626,7 @@ public class UIManager : MonoBehaviour
             if (hasWin)
             {
                 portraitWinAmountText.text =
-                    winAmount.ToString("0.00");
+                    ServerAmountFormatter.Format(winAmount);
             }
 
             portraitWinAmountText.gameObject.SetActive(hasWin);
@@ -2617,14 +2635,14 @@ public class UIManager : MonoBehaviour
         if (portraitBalanceAmountText != null)
         {
             portraitBalanceAmountText.text =
-                $"BALANCE:  {gameManager.GetDisplayedBalance():0.00}";
+                $"BALANCE:  {ServerAmountFormatter.Format(gameManager.GetDisplayedBalance())}";
         }
 
         if (portraitBetAmountText != null)
         {
             portraitBetAmountText.text =
-                gameManager.GetDisplayedTotalBetAmount()
-                    .ToString("0.00");
+                ServerAmountFormatter.Format(
+                    gameManager.GetDisplayedTotalBetAmount());
         }
 
     }
@@ -2657,7 +2675,11 @@ public class UIManager : MonoBehaviour
         }
 
         double displayedAmount = countUpAmount ? 0d : winAmount;
-        rowText.text = displayedAmount.ToString("0.00");
+        int winAmountDecimalPlaces =
+            ServerAmountFormatter.GetDecimalPlaces(winAmount);
+        rowText.text = ServerAmountFormatter.Format(
+            displayedAmount,
+            winAmountDecimalPlaces);
         rowText.fontSize = 0f;
         rowText.gameObject.SetActive(true);
 
@@ -2685,7 +2707,9 @@ public class UIManager : MonoBehaviour
                     value =>
                     {
                         displayedAmount = value;
-                        rowText.text = value.ToString("0.00");
+                        rowText.text = ServerAmountFormatter.Format(
+                            value,
+                            winAmountDecimalPlaces);
                     },
                     winAmount,
                     growDuration)
@@ -2703,7 +2727,7 @@ public class UIManager : MonoBehaviour
             .OnComplete(() =>
             {
                 winLineAmountFontSizeSequence = null;
-                rowText.text = winAmount.ToString("0.00");
+                rowText.text = ServerAmountFormatter.Format(winAmount);
                 rowText.fontSize = finalFontSize;
             });
     }
@@ -2898,6 +2922,32 @@ public class UIManager : MonoBehaviour
                 gameManager.autoPlayRemainingRounds - 1);
             countText.text = spinsRemainingAfterCurrent.ToString();
         }
+    }
+
+    private void RefreshUtilityButtonInteractability()
+    {
+        bool canUseInfoPage = infoPagePanel != null;
+        SetButtonInteractable(infoPageButton, canUseInfoPage);
+        SetButtonInteractable(portraitInfoPageButton, canUseInfoPage);
+        SetButtonInteractable(infoPageBackButton, canUseInfoPage);
+
+        bool canUseGuidePage = guidePagePanel != null;
+        SetButtonInteractable(guidePageButton, canUseGuidePage);
+        SetButtonInteractable(portraitGuidePageButton, canUseGuidePage);
+        SetButtonInteractable(guidePageBackButton, canUseGuidePage);
+
+        bool canUseSoundPanel = soundPanel != null;
+        SetButtonInteractable(soundPanelButton, canUseSoundPanel);
+        SetButtonInteractable(portraitSoundPanelButton, canUseSoundPanel);
+        SetButtonInteractable(soundPanelCloseButton, canUseSoundPanel);
+
+        bool canOpenExitPopup = popupManager != null;
+        SetButtonInteractable(homeButton, canOpenExitPopup);
+        SetButtonInteractable(portraitHomeButton, canOpenExitPopup);
+
+        SetButtonInteractable(moreGamesButton, false);
+        SetButtonInteractable(portraitMoreGamesButton, false);
+        SetExpandShrinkButtons(isExpanded);
     }
 
     private void SetButtonInteractable(Button button, bool interactable)

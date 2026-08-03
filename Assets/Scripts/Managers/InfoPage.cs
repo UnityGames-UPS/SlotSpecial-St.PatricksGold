@@ -411,7 +411,7 @@ public sealed class InfoPage : MonoBehaviour
 
     private static string FormatPayout(double payout)
     {
-        return payout.ToString("0.##", CultureInfo.InvariantCulture);
+        return ServerAmountFormatter.Format(payout);
     }
 
     private static string FormatWholeNumber(int value)

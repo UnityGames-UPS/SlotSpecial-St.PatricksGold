@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Globalization;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -11,6 +10,15 @@ using UnityEngine.UI;
 [RequireComponent(typeof(UIManager))]
 public sealed class SlotSymbolInfoController : MonoBehaviour
 {
+    private const string ScatterWheelDescription =
+        "3 or more, in any position, trigger the scatter wheel feature";
+    private const string UltraWheelDescription =
+        "3 in any position on reels 2,3 and 4 trigger the ultra wheel bonus";
+    private const string TempleRichesDescription =
+        "Multiplies wins by 5x when included, substitutes for all symbols except";
+    private const string WildDescription =
+        "Substitutes for all Symbols except Scatter";
+
     [Header("Sources")]
     [Tooltip("The normal five-reel SlotView. Found automatically when left empty.")]
     [SerializeField] private SlotView slotView;
@@ -37,9 +45,6 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
     [Tooltip("Gold used only for the X5, X4, and X3 payout labels.")]
     [SerializeField] private Color payoutLabelColor =
         new Color(1f, 0.78f, 0f, 1f);
-    [Tooltip("Font size of the lowercase x in x5, x4, and x3.")]
-    [SerializeField, Range(25f, 100f)]
-    private float payoutMultiplierXSizePercent = 70f;
     [SerializeField] private float payoutLineSpacing = 10f;
     [SerializeField] private float descriptionLineSpacing;
     [SerializeField, Min(1f)] private float descriptionMinimumFontSize = 10f;
@@ -383,7 +388,7 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
             infoText.horizontalAlignment =
                 HorizontalAlignmentOptions.Flush;
             // Give each payout line one real word gap and make TMP put all
-            // Flush expansion into that gap, never between x and its count.
+            // Flush expansion into that gap, never between X and its count.
             infoText.wordWrappingRatios = 0f;
             infoText.enableAutoSizing = false;
             infoText.textWrappingMode = TextWrappingModes.NoWrap;
@@ -420,6 +425,11 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
     {
         text = null;
         isStandardPaySymbol = false;
+        if (TryGetSpecialSymbolDescription(symbolId, out text))
+        {
+            return true;
+        }
+
         IReadOnlyList<StPatricksGoldSymbolInfo> symbols =
             gameManager?.stPatricksGoldConfig?.symbols;
         if (symbols == null)
@@ -482,17 +492,35 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
         return true;
     }
 
+    private static bool TryGetSpecialSymbolDescription(
+        int symbolId,
+        out string description)
+    {
+        switch (symbolId)
+        {
+            case StPatricksGoldSymbolIds.ScatterWheel:
+                description = ScatterWheelDescription;
+                return true;
+            case StPatricksGoldSymbolIds.UltraWheel:
+                description = UltraWheelDescription;
+                return true;
+            case StPatricksGoldSymbolIds.TempleRiches:
+                description = TempleRichesDescription;
+                return true;
+            case StPatricksGoldSymbolIds.Wild:
+                description = WildDescription;
+                return true;
+            default:
+                description = null;
+                return false;
+        }
+    }
+
     private string BuildPayoutLine(int matchCount, double value)
     {
         string goldHex = ColorUtility.ToHtmlStringRGB(payoutLabelColor);
-        string multiplierXSize = Mathf.Clamp(
-                payoutMultiplierXSizePercent,
-                25f,
-                100f)
-            .ToString("0.##", CultureInfo.InvariantCulture);
         return
-            $"<color=#{goldHex}><size={multiplierXSize}%>x</size>" +
-            $"{matchCount}</color>" +
+            $"<color=#{goldHex}>X{matchCount}</color>" +
             $" {FormatValue(value)}";
     }
 
@@ -530,7 +558,7 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
 
     private static string FormatValue(double value)
     {
-        return value.ToString("0.##", CultureInfo.InvariantCulture);
+        return ServerAmountFormatter.Format(value);
     }
 
     private IEnumerator HideAfterDelay()
@@ -587,10 +615,6 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
     private void OnValidate()
     {
         horizontalGap = Mathf.Max(0f, horizontalGap);
-        payoutMultiplierXSizePercent = Mathf.Clamp(
-            payoutMultiplierXSizePercent,
-            25f,
-            100f);
         descriptionMinimumFontSize = Mathf.Max(
             1f,
             descriptionMinimumFontSize);

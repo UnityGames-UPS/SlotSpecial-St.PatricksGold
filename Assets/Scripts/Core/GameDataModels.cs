@@ -15,6 +15,80 @@ public static class StPatricksGoldDefinition
     public const int UltraWheelValueCount = 21;
 }
 
+public static class ServerAmountFormatter
+{
+    private const int MaximumDecimalPlaces = 3;
+    private const double FloatingPointTolerance = 0.0000001d;
+    private const string DisplayFormat = "0.###";
+
+    private static readonly string[] DecimalFormats =
+    {
+        "0",
+        "0.0",
+        "0.00",
+        "0.000"
+    };
+
+    public static string Format(double amount)
+    {
+        decimal truncatedAmount = TruncateToDecimalPlaces(
+            amount,
+            MaximumDecimalPlaces);
+        return truncatedAmount.ToString(
+            DisplayFormat,
+            CultureInfo.InvariantCulture);
+    }
+
+    public static string Format(double amount, int decimalPlaces)
+    {
+        int clampedDecimalPlaces = Math.Max(
+            0,
+            Math.Min(MaximumDecimalPlaces, decimalPlaces));
+        decimal truncatedAmount = TruncateToDecimalPlaces(
+            amount,
+            clampedDecimalPlaces);
+        return truncatedAmount.ToString(
+            DecimalFormats[clampedDecimalPlaces],
+            CultureInfo.InvariantCulture);
+    }
+
+    public static int GetDecimalPlaces(double amount)
+    {
+        if (double.IsNaN(amount) || double.IsInfinity(amount))
+        {
+            return 0;
+        }
+
+        for (int decimalPlaces = 0;
+             decimalPlaces < MaximumDecimalPlaces;
+             decimalPlaces++)
+        {
+            double roundedAmount = Math.Round(amount, decimalPlaces);
+            if (Math.Abs(amount - roundedAmount) <= FloatingPointTolerance)
+            {
+                return decimalPlaces;
+            }
+        }
+
+        return MaximumDecimalPlaces;
+    }
+
+    private static decimal TruncateToDecimalPlaces(
+        double amount,
+        int decimalPlaces)
+    {
+        decimal decimalAmount = (decimal)amount;
+        decimal scale = decimalPlaces == 1
+            ? 10m
+            : decimalPlaces == 2
+                ? 100m
+                : decimalPlaces >= 3
+                    ? 1000m
+                    : 1m;
+        return decimal.Truncate(decimalAmount * scale) / scale;
+    }
+}
+
 public static class StPatricksGoldSymbolIds
 {
     public const int Ace = 0;

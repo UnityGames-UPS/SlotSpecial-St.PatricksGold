@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Globalization;
 using DG.Tweening;
 using TMPro;
 using UnityEngine;
@@ -355,6 +354,11 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
 
             List<string> serverValues =
                 GetValidatedServerValues(wheelSpin);
+            if (serverValues.Count != SegmentCount)
+            {
+                continue;
+            }
+
             var presentation = new ActiveScatterWheel
             {
                 SymbolImage = symbolImage,
@@ -375,10 +379,9 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
                     : Color.white,
                 TextParent = textParent,
                 ServerValues = serverValues,
-                WinningAwardText =
-                    wheelSpin.awardValue.ToString(
-                        "0.##",
-                        CultureInfo.InvariantCulture),
+                // Show the base award selected on the wheel. awardValue is
+                // the calculated result and is reserved for the total win.
+                WinningAwardText = serverValues[wheelSpin.stopIndex],
                 StopIndex = wheelSpin.stopIndex,
                 RestingEulerAngles = canRotate.localEulerAngles,
                 RestingWheelScale = canRotate.localScale,

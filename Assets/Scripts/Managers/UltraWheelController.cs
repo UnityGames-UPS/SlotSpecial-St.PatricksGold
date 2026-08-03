@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using DG.Tweening;
 using TMPro;
 using UnityEngine;
@@ -313,7 +312,7 @@ public class UltraWheelController : MonoBehaviour
     private string FormatServerValue(double serverValue)
     {
         return valuePrefix +
-               serverValue.ToString("0.##", CultureInfo.InvariantCulture) +
+               ServerAmountFormatter.Format(serverValue) +
                valueSuffix;
     }
 

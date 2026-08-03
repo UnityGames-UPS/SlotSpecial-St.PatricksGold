@@ -447,6 +447,14 @@ public class GameManager : MonoBehaviour
         return CanChangeBet();
     }
 
+    internal bool IsCurrentBetMaximum()
+    {
+        return stPatricksGoldConfig?.availableBets != null &&
+               stPatricksGoldConfig.availableBets.Count > 0 &&
+               currentBetIndex ==
+                   stPatricksGoldConfig.availableBets.Count - 1;
+    }
+
     private bool CanChangeBet()
     {
         return isInitialized &&
@@ -1470,9 +1478,9 @@ public class GameManager : MonoBehaviour
         bool popupStarted =
             popupManager != null &&
             popupManager.ShowUltraWin(
-                GetUltraWheelFinalAward(latestUltraBonus, 1),
-                GetUltraWheelFinalAward(latestUltraBonus, 2),
-                GetUltraWheelFinalAward(latestUltraBonus, 3),
+                GetUltraWheelBaseAward(latestUltraBonus, 1),
+                GetUltraWheelBaseAward(latestUltraBonus, 2),
+                GetUltraWheelBaseAward(latestUltraBonus, 3),
                 latestUltraBonus.totalAward,
                 () => totalWinCountCompleted = true);
 
@@ -1500,7 +1508,7 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    private static double? GetUltraWheelFinalAward(
+    private static double? GetUltraWheelBaseAward(
         ServerUltraBonus ultraBonus,
         int wheelNumber)
     {
@@ -1515,7 +1523,7 @@ public class GameManager : MonoBehaviour
             if (activeWheel != null &&
                 activeWheel.wheelIndex == wheelNumber)
             {
-                wheelAward = activeWheel.finalAward;
+                wheelAward = activeWheel.baseAward;
                 break;
             }
         }
@@ -1644,6 +1652,7 @@ public class GameManager : MonoBehaviour
     private void ResetUltraSlotState()
     {
         KillUltraSlotTransition();
+        AudioController.Instance?.StopUltraWheelSlotBackgroundMusic();
         popupManager?.HideUltraStartImmediate();
         popupManager?.HideUltraWinImmediate();
         slotView?.CancelWinAnimation();
@@ -1717,7 +1726,6 @@ public class GameManager : MonoBehaviour
     {
         KillUltraSlotTransition();
         isUltraSlotTransitioning = true;
-        AudioController.Instance?.PlayUltraWheelBonus();
 
         List<int> ultraWheelPositions = GetUltraWheelTriggerPositions(ultraBonus);
         bool startedAnimation =
@@ -1774,6 +1782,10 @@ public class GameManager : MonoBehaviour
             OnUltraEntryTransitionMidpoint();
             OnUltraEntryTransitionComplete();
         }
+        else
+        {
+            AudioController.Instance?.PlayLeavesFalling();
+        }
 
         GamePresentationChanged?.Invoke();
     }
@@ -1794,6 +1806,8 @@ public class GameManager : MonoBehaviour
         {
             return;
         }
+
+        AudioController.Instance?.PlayUltraWheelSlotBackgroundMusic();
 
         bool popupStarted =
             popupManager != null &&
@@ -1930,6 +1944,8 @@ public class GameManager : MonoBehaviour
             GamePresentationChanged?.Invoke();
             return;
         }
+
+        AudioController.Instance?.StopUltraWheelSlotBackgroundMusic();
 
         areUltraWheelsReady = false;
 
@@ -3414,9 +3430,7 @@ public class GameManager : MonoBehaviour
             foreach (double initValue in initValues)
             {
                 wheelSpin.values.Add(
-                    initValue.ToString(
-                        "0.##",
-                        System.Globalization.CultureInfo.InvariantCulture));
+                    ServerAmountFormatter.Format(initValue));
             }
             wheelSpin.awards = null;
 
@@ -3817,7 +3831,8 @@ public class GameManager : MonoBehaviour
                socketManager != null &&
                socketManager.isConnected &&
                slotView != null &&
-               !slotView.IsSpinning();
+               !slotView.IsSpinning() &&
+               CanAffordBet();
     }
 
     private void QueueNextAutoPlaySpin()

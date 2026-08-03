@@ -34,6 +34,10 @@ public sealed class AudioController : MonoBehaviour
 
     [Header("Background")]
     [SerializeField] private AudioClip backgroundMusicClip;
+    [Tooltip(
+        "Looping music used while the three-reel Ultra Wheel slot is active. " +
+        "Assign this clip from the Inspector.")]
+    [SerializeField] private AudioClip ultraWheelSlotBackgroundMusicClip;
 
     [Header("UI and Bet")]
     [SerializeField] private AudioClip uiButtonClip;
@@ -54,7 +58,9 @@ public sealed class AudioController : MonoBehaviour
     [Header("Scatter and Ultra Features")]
     [UnityEngine.Serialization.FormerlySerializedAs("richesWheelClip")]
     [SerializeField] private AudioClip scatterWheelClip;
-    [SerializeField] private AudioClip ultraWheelBonusClip;
+    [UnityEngine.Serialization.FormerlySerializedAs("ultraWheelBonusClip")]
+    [Tooltip("Played only while the Ultra entry leaves transition is running.")]
+    [SerializeField] private AudioClip leavesFallingClip;
     [SerializeField] private AudioClip ultraWheelAllThreeClip;
     [SerializeField] private AudioClip bonusReelSpinningClip;
     [SerializeField] private AudioClip bonusReelThreeNumberIconClip;
@@ -236,6 +242,40 @@ public sealed class AudioController : MonoBehaviour
         StopSource(backgroundMusicSource);
     }
 
+    internal void PlayUltraWheelSlotBackgroundMusic()
+    {
+        if (backgroundMusicSource == null ||
+            ultraWheelSlotBackgroundMusicClip == null)
+        {
+            return;
+        }
+
+        if (backgroundMusicSource.isPlaying &&
+            backgroundMusicSource.clip ==
+                ultraWheelSlotBackgroundMusicClip)
+        {
+            return;
+        }
+
+        backgroundMusicSource.clip =
+            ultraWheelSlotBackgroundMusicClip;
+        backgroundMusicSource.loop = true;
+        backgroundMusicSource.Play();
+    }
+
+    internal void StopUltraWheelSlotBackgroundMusic()
+    {
+        if (backgroundMusicSource == null ||
+            backgroundMusicSource.clip !=
+                ultraWheelSlotBackgroundMusicClip)
+        {
+            return;
+        }
+
+        StopSource(backgroundMusicSource);
+        PlayBackgroundMusic();
+    }
+
     internal void PlayUiButton()
     {
         PlaySfx(uiSource, uiButtonClip);
@@ -253,6 +293,9 @@ public sealed class AudioController : MonoBehaviour
 
     internal void PlayMaxBet()
     {
+        // Max Bet replaces any still-playing normal bet click so the two
+        // sounds can never overlap.
+        uiSource?.Stop();
         PlaySfx(uiSource, maxBetClip);
     }
 
@@ -304,9 +347,9 @@ public sealed class AudioController : MonoBehaviour
         PlaySfx(featureSource, scatterWheelClip);
     }
 
-    internal void PlayUltraWheelBonus()
+    internal void PlayLeavesFalling()
     {
-        PlaySfx(featureSource, ultraWheelBonusClip);
+        PlaySfx(featureSource, leavesFallingClip);
     }
 
     internal void PlayUltraWheelAllThree()
@@ -563,8 +606,11 @@ public sealed class AudioController : MonoBehaviour
             ref magicalReelLineClip,
             "magical reel line.mp3");
         changed |= AssignClipIfEmpty(
-            ref ultraWheelBonusClip,
-            "ultra wheel bonus.mp3");
+            ref leavesFallingClip,
+            "Leaves fallling.mp3");
+        changed |= AssignClipIfEmpty(
+            ref leavesFallingClip,
+            "Leaves falling.mp3");
         changed |= AssignClipIfEmpty(
             ref ultraWheelAllThreeClip,
             "ultra wheel all 3.mp3");

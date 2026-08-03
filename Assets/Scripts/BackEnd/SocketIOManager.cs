@@ -125,7 +125,7 @@ public class SocketIOManager : MonoBehaviour
 
     void ReceiveAuthToken(string jsonData)
     {
-        Debug.Log($"[SocketIO] Auth received");
+        Debug.Log($"[SocketIO] Auth received " + jsonData);
 
         try
         {
@@ -1525,9 +1525,9 @@ public class SocketIOManager : MonoBehaviour
 
 
 [Serializable]
-internal class AuthTokenData
+public class AuthTokenData
 {
-    internal string cookie;
-    internal string socketURL;
-    internal string nameSpace;
+    public string cookie;
+    public string socketURL;
+    public string nameSpace;
 }

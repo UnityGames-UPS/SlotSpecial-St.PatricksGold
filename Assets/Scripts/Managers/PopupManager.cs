@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using DG.Tweening;
 using TMPro;
 using UnityEngine;
@@ -449,12 +448,15 @@ public sealed class PopupManager : MonoBehaviour
         AudioController.Instance?.PlayTotalWin();
 
         double sanitizedTotalWin = Math.Max(0d, totalWin);
+        int totalWinDecimalPlaces =
+            ServerAmountFormatter.GetDecimalPlaces(sanitizedTotalWin);
         double displayedTotalWin = 0d;
 
         scatterWinPanel.gameObject.SetActive(true);
         scatterWinPanel.localScale = Vector3.zero;
         scatterTotalWinText.gameObject.SetActive(true);
-        scatterTotalWinText.text = FormatWinAmount(0d);
+        scatterTotalWinText.text =
+            ServerAmountFormatter.Format(0d, totalWinDecimalPlaces);
 
         scatterWinSequence = DOTween.Sequence()
             .SetUpdate(true)
@@ -471,7 +473,9 @@ public sealed class PopupManager : MonoBehaviour
                         {
                             displayedTotalWin = value;
                             scatterTotalWinText.text =
-                                FormatWinAmount(value);
+                                ServerAmountFormatter.Format(
+                                    value,
+                                    totalWinDecimalPlaces);
                         },
                         sanitizedTotalWin,
                         Mathf.Max(0.01f, totalWinCountDuration))
@@ -479,7 +483,9 @@ public sealed class PopupManager : MonoBehaviour
             .AppendCallback(
                 () =>
                     scatterTotalWinText.text =
-                        FormatWinAmount(sanitizedTotalWin))
+                        ServerAmountFormatter.Format(
+                            sanitizedTotalWin,
+                            totalWinDecimalPlaces))
             .AppendInterval(Mathf.Max(0f, completedWinHoldDuration))
             .Append(
                 scatterWinPanel
@@ -565,6 +571,8 @@ public sealed class PopupManager : MonoBehaviour
             ? Math.Max(0d, redWheelWin.Value)
             : null;
         double sanitizedTotalWin = Math.Max(0d, totalWin);
+        int totalWinDecimalPlaces =
+            ServerAmountFormatter.GetDecimalPlaces(sanitizedTotalWin);
         double displayedTotalWin = 0d;
 
         ultraWheelRewardPanel.gameObject.SetActive(true);
@@ -576,10 +584,11 @@ public sealed class PopupManager : MonoBehaviour
         ultraTotalWinText.gameObject.SetActive(true);
 
         // Individual wheel results must load immediately. Only Total Win counts up.
-        greenWheelWinText.text = FormatOptionalWinAmount(sanitizedGreenWin);
-        blueWheelWinText.text = FormatOptionalWinAmount(sanitizedBlueWin);
-        redWheelWinText.text = FormatOptionalWinAmount(sanitizedRedWin);
-        ultraTotalWinText.text = FormatWinAmount(0d);
+        greenWheelWinText.text = FormatOptionalServerAmount(sanitizedGreenWin);
+        blueWheelWinText.text = FormatOptionalServerAmount(sanitizedBlueWin);
+        redWheelWinText.text = FormatOptionalServerAmount(sanitizedRedWin);
+        ultraTotalWinText.text =
+            ServerAmountFormatter.Format(0d, totalWinDecimalPlaces);
 
         ultraWinSequence = DOTween.Sequence()
             .SetUpdate(true)
@@ -596,7 +605,9 @@ public sealed class PopupManager : MonoBehaviour
                         {
                             displayedTotalWin = value;
                             ultraTotalWinText.text =
-                                FormatWinAmount(value);
+                                ServerAmountFormatter.Format(
+                                    value,
+                                    totalWinDecimalPlaces);
                         },
                         sanitizedTotalWin,
                         Mathf.Max(0.01f, totalWinCountDuration))
@@ -604,7 +615,9 @@ public sealed class PopupManager : MonoBehaviour
             .AppendCallback(
                 () =>
                     ultraTotalWinText.text =
-                        FormatWinAmount(sanitizedTotalWin))
+                        ServerAmountFormatter.Format(
+                            sanitizedTotalWin,
+                            totalWinDecimalPlaces))
             .OnComplete(() =>
             {
                 ultraWinSequence = null;
@@ -689,7 +702,7 @@ public sealed class PopupManager : MonoBehaviour
 
         if (scatterTotalWinText != null)
         {
-            scatterTotalWinText.text = FormatWinAmount(0d);
+            scatterTotalWinText.text = ServerAmountFormatter.Format(0d);
         }
 
         if (scatterWinPanel != null)
@@ -717,7 +730,7 @@ public sealed class PopupManager : MonoBehaviour
         }
         if (ultraTotalWinText != null)
         {
-            ultraTotalWinText.text = FormatWinAmount(0d);
+            ultraTotalWinText.text = ServerAmountFormatter.Format(0d);
         }
 
         if (ultraWheelRewardPanel != null)
@@ -916,15 +929,10 @@ public sealed class PopupManager : MonoBehaviour
         currentPopupTween = null;
     }
 
-    private static string FormatWinAmount(double amount)
-    {
-        return amount.ToString("0.00", CultureInfo.InvariantCulture);
-    }
-
-    private static string FormatOptionalWinAmount(double? amount)
+    private static string FormatOptionalServerAmount(double? amount)
     {
         return amount.HasValue
-            ? FormatWinAmount(amount.Value)
+            ? ServerAmountFormatter.Format(amount.Value)
             : string.Empty;
     }
 }
