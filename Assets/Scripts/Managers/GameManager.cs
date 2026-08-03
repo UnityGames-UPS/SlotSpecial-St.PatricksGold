@@ -1364,10 +1364,6 @@ public class GameManager : MonoBehaviour
         yield return null;
 
         HashSet<int> activeWheelNumbers = GetActiveUltraWheelNumbersFromResult();
-        if (activeWheelNumbers.Count == 3)
-        {
-            AudioController.Instance?.PlayUltraWheelAllThree();
-        }
         var serverResultsByWheel = new Dictionary<int, ServerUltraActiveWheel>();
         if (latestUltraBonus?.activeWheels != null)
         {
@@ -1454,6 +1450,11 @@ public class GameManager : MonoBehaviour
         int wheelNumber,
         Action onComplete)
     {
+        if (!IsAnyUltraPrizeWheelSpinning())
+        {
+            AudioController.Instance?.StopBonusReelSpinning();
+        }
+
         bool usesStopResultAnimation =
             wheelNumber == UltraSlotView.BlueWheelSymbolId ||
             wheelNumber == UltraSlotView.RedWheelSymbolId;
@@ -1618,6 +1619,7 @@ public class GameManager : MonoBehaviour
             StopAutoPlay();
         }
 
+        AudioController.Instance?.PlayUltraWheelAllThree();
         popupManager?.HideUltraStartImmediate();
         popupManager?.HideUltraWinImmediate();
         latestUltraBonus = ultraBonus;
@@ -1720,6 +1722,14 @@ public class GameManager : MonoBehaviour
         }
 
         areUltraWheelsSpinning = false;
+        AudioController.Instance?.StopBonusReelSpinning();
+    }
+
+    private bool IsAnyUltraPrizeWheelSpinning()
+    {
+        return (greenUltraWheel != null && greenUltraWheel.IsSpinning) ||
+               (blueUltraWheel != null && blueUltraWheel.IsSpinning) ||
+               (redUltraWheel != null && redUltraWheel.IsSpinning);
     }
 
     private void PlayUltraTriggerAnimationThenEnter(ServerUltraBonus ultraBonus)

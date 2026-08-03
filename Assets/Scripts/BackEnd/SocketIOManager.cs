@@ -17,6 +17,7 @@ public class SocketIOManager : MonoBehaviour
 
     [Header("References")]
     [SerializeField] private GameManager gameManager;
+    [SerializeField] private UIManager uiManager;
 
     [SerializeField] internal JSFunctCalls JSManager;
     [SerializeField] private GameObject RaycastBlocker;
@@ -37,6 +38,7 @@ public class SocketIOManager : MonoBehaviour
 
     private Coroutine pingCoroutine;
     private float lastPongTime;
+    private float pingSendTime;
     private bool waitingForPong;
     private int missedPongs;
     private const int MAX_MISSED_PONGS = 5;
@@ -207,6 +209,7 @@ public class SocketIOManager : MonoBehaviour
         isConnected = false;
         StopFocusTimeoutRoutine();
         StopPingRoutine();
+        uiManager?.UpdatePingDisplay("-- ms");
 
         if (isExiting)
         {
@@ -1395,6 +1398,7 @@ public class SocketIOManager : MonoBehaviour
     {
         if (gameSocket != null && isConnected)
         {
+            pingSendTime = Time.realtimeSinceStartup;
             gameSocket.Emit("ping");
         }
     }
@@ -1404,6 +1408,10 @@ public class SocketIOManager : MonoBehaviour
     {
         waitingForPong = false;
         lastPongTime = Time.time;
+
+        int pingMs = Mathf.RoundToInt(
+            (Time.realtimeSinceStartup - pingSendTime) * 1000f);
+        uiManager?.UpdatePingDisplay(pingMs);
 
         if (missedPongs > 0)
         {

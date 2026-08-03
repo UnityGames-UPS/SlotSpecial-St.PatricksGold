@@ -10,6 +10,8 @@ public sealed class AudioController : MonoBehaviour
     private const string MusicVolumeKey = "audio_music_volume";
     private const string SfxVolumeKey = "audio_sfx_volume";
     private const float MutedThreshold = 0.0001f;
+    private const float DefaultMusicVolume = 0.5f;
+    private const float DefaultSfxVolume = 1f;
 
     internal static AudioController Instance { get; private set; }
 
@@ -22,6 +24,8 @@ public sealed class AudioController : MonoBehaviour
     [SerializeField] private AudioSource uiSource;
     [SerializeField] private AudioSource reelSource;
     [SerializeField] private AudioSource featureSource;
+    [Tooltip("Dedicated source so the Ultra prize-wheel spinning clip can be stopped without cutting off other feature sounds.")]
+    [SerializeField] private AudioSource bonusReelSpinningSource;
     [SerializeField] private AudioSource reserveSource;
 
     [Header("Additional Audio Sources")]
@@ -79,8 +83,8 @@ public sealed class AudioController : MonoBehaviour
     private bool applicationPaused;
     private bool musicEnabled = true;
     private bool sfxEnabled = true;
-    private float musicVolume = 0.5f;
-    private float sfxVolume = 1f;
+    private float musicVolume = DefaultMusicVolume;
+    private float sfxVolume = DefaultSfxVolume;
 
     internal bool MusicEnabled => musicEnabled;
     internal bool SfxEnabled => sfxEnabled;
@@ -359,7 +363,12 @@ public sealed class AudioController : MonoBehaviour
 
     internal void PlayBonusReelSpinning()
     {
-        PlaySfx(featureSource, bonusReelSpinningClip);
+        PlaySfx(bonusReelSpinningSource, bonusReelSpinningClip);
+    }
+
+    internal void StopBonusReelSpinning()
+    {
+        bonusReelSpinningSource?.Stop();
     }
 
     internal void PlayBonusReelThreeNumberIcon()
@@ -407,21 +416,14 @@ public sealed class AudioController : MonoBehaviour
 
     private void LoadSavedSettings()
     {
-        float defaultMusicVolume = musicSlider != null
-            ? musicSlider.value
-            : 0.5f;
-        float defaultSfxVolume = soundSlider != null
-            ? soundSlider.value
-            : 1f;
-
         musicEnabled = PlayerPrefs.GetInt(MusicEnabledKey, 1) == 1;
         sfxEnabled = PlayerPrefs.GetInt(SfxEnabledKey, 1) == 1;
         musicVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(
             MusicVolumeKey,
-            defaultMusicVolume));
+            DefaultMusicVolume));
         sfxVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(
             SfxVolumeKey,
-            defaultSfxVolume));
+            DefaultSfxVolume));
 
         if (musicSlider != null)
         {
@@ -444,6 +446,9 @@ public sealed class AudioController : MonoBehaviour
         uiSource = EnsureSource(uiSource, false);
         reelSource = EnsureSource(reelSource, false);
         featureSource = EnsureSource(featureSource, false);
+        bonusReelSpinningSource = EnsureSource(
+            bonusReelSpinningSource,
+            false);
         reserveSource = EnsureSource(reserveSource, false);
     }
 
@@ -473,6 +478,7 @@ public sealed class AudioController : MonoBehaviour
         ApplySourceVolume(uiSource, value);
         ApplySourceVolume(reelSource, value);
         ApplySourceVolume(featureSource, value);
+        ApplySourceVolume(bonusReelSpinningSource, value);
         ApplySourceVolume(reserveSource, value);
         ApplyCategoryVolume(soundSources, value);
     }

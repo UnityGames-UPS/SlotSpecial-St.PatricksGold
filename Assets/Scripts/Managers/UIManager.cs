@@ -142,6 +142,10 @@ public class UIManager : MonoBehaviour
     [SerializeField] private TMP_Text portraitBalanceAmountText;
     [SerializeField] private TMP_Text portraitBetAmountText;
 
+    [Header("Ping Display")]
+    [SerializeField] private TMP_Text pingText;
+    [SerializeField] private TMP_Text pingTextPortrait;
+
     [Header("Portrait Bet Controls")]
     [SerializeField] private Button portraitIncreaseBetButton;
     [SerializeField] private Button portraitDecreaseBetButton;
@@ -519,6 +523,7 @@ public class UIManager : MonoBehaviour
         }
 
         SetExpandShrinkButtons(false);
+        UpdatePingDisplay("-- ms");
 
         if (gameManager == null)
         {
@@ -1073,6 +1078,12 @@ public class UIManager : MonoBehaviour
 
     private void OnSpinButtonClicked()
     {
+        if (IsSoundPanelOpen())
+        {
+            RefreshSpinControls();
+            return;
+        }
+
         if (suppressNextSpinClick)
         {
             suppressNextSpinClick = false;
@@ -1163,6 +1174,7 @@ public class UIManager : MonoBehaviour
         RefreshSpinModeButtons();
         RefreshBetControls();
         RefreshAutoPlayControls();
+        RefreshUtilityButtonInteractability();
     }
 
     private void OnIncreaseBetButtonClicked()
@@ -1205,6 +1217,24 @@ public class UIManager : MonoBehaviour
         RefreshSpinControls();
         RefreshSpinModeButtons();
         RefreshAutoPlayControls();
+    }
+
+    internal void UpdatePingDisplay(int pingMs)
+    {
+        UpdatePingDisplay($"{pingMs} ms");
+    }
+
+    internal void UpdatePingDisplay(string content)
+    {
+        if (pingText != null)
+        {
+            pingText.text = content;
+        }
+
+        if (pingTextPortrait != null)
+        {
+            pingTextPortrait.text = content;
+        }
     }
 
     private void OnOrientationChanged(
@@ -2334,11 +2364,18 @@ public class UIManager : MonoBehaviour
             return;
         }
 
+        if (gameManager != null && gameManager.IsSpinRoundActive())
+        {
+            return;
+        }
+
         CloseAutoPlayPanel();
+        gameManager?.StopAutoPlay();
         ResetHamburgerMenu();
         CloseInfoPage();
         CloseGuidePage();
         soundPanel.SetActive(true);
+        RefreshSpinControls();
     }
 
     private void CloseSoundPanel()
@@ -2346,7 +2383,13 @@ public class UIManager : MonoBehaviour
         if (soundPanel != null)
         {
             soundPanel.SetActive(false);
+            RefreshSpinControls();
         }
+    }
+
+    private bool IsSoundPanelOpen()
+    {
+        return soundPanel != null && soundPanel.activeSelf;
     }
 
     private void OnHomeButtonClicked()
@@ -2459,6 +2502,7 @@ public class UIManager : MonoBehaviour
 
         bool canSpin =
             showSpinButton &&
+            !IsSoundPanelOpen() &&
             gameManager != null &&
             gameManager.CanRequestSpin();
         bool canStop =
@@ -2701,6 +2745,8 @@ public class UIManager : MonoBehaviour
 
         if (countUpAmount)
         {
+            audioController?.PlayTotalWin();
+
             winLineAmountFontSizeSequence.Join(
                 DOTween.To(
                     () => displayedAmount,
@@ -2936,7 +2982,9 @@ public class UIManager : MonoBehaviour
         SetButtonInteractable(portraitGuidePageButton, canUseGuidePage);
         SetButtonInteractable(guidePageBackButton, canUseGuidePage);
 
-        bool canUseSoundPanel = soundPanel != null;
+        bool canUseSoundPanel =
+            soundPanel != null &&
+            (gameManager == null || !gameManager.IsSpinRoundActive());
         SetButtonInteractable(soundPanelButton, canUseSoundPanel);
         SetButtonInteractable(portraitSoundPanelButton, canUseSoundPanel);
         SetButtonInteractable(soundPanelCloseButton, canUseSoundPanel);

@@ -86,6 +86,11 @@ public sealed class OrientationChange : MonoBehaviour
         ApplyDimensions(Screen.width, Screen.height);
     }
 
+    public void DeviceCheck(string device)
+    {
+        DiviceCheck(device);
+    }
+
     public void DiviceCheck(string device)
     {
         currentDevice = device ?? string.Empty;
@@ -99,12 +104,22 @@ public sealed class OrientationChange : MonoBehaviour
     {
         if (!string.IsNullOrEmpty(currentDevice))
         {
-            string dev = currentDevice.ToLower();
-            return (!string.IsNullOrEmpty(androidKeyword) && dev.Contains(androidKeyword.ToLower())) || 
-                   (!string.IsNullOrEmpty(iphoneKeyword) && dev.Contains(iphoneKeyword.ToLower())) ||
-                   (!string.IsNullOrEmpty(mobileKeyword) && dev.Contains(mobileKeyword.ToLower()));
+            string dev = currentDevice.ToLowerInvariant();
+            if (dev.Contains("desktop"))
+            {
+                return false;
+            }
+
+            return (!string.IsNullOrEmpty(androidKeyword) &&
+                    dev.Contains(androidKeyword.ToLowerInvariant())) ||
+                   (!string.IsNullOrEmpty(iphoneKeyword) &&
+                    dev.Contains(iphoneKeyword.ToLowerInvariant())) ||
+                   (!string.IsNullOrEmpty(mobileKeyword) &&
+                    dev.Contains(mobileKeyword.ToLowerInvariant()));
         }
-        return SystemInfo.deviceType == DeviceType.Handheld;
+
+        return Application.isMobilePlatform ||
+               SystemInfo.deviceType == DeviceType.Handheld;
     }
 
     public void SwitchDisplay(string dimensions)
@@ -390,6 +405,19 @@ public sealed class OrientationChange : MonoBehaviour
     {
         ShutdownHostBridge();
     }
+
+#if !UNITY_WEBGL && !UNITY_EDITOR
+    private void Update()
+    {
+        if (!hasStarted ||
+            (Screen.width == lastWidth && Screen.height == lastHeight))
+        {
+            return;
+        }
+
+        ApplyDimensions(Screen.width, Screen.height);
+    }
+#endif
 
 #if UNITY_EDITOR
     private void Update()

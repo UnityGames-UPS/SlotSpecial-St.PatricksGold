@@ -49,6 +49,11 @@ public sealed class OCController : MonoBehaviour
     [SerializeField] private Vector2 portraitGameNameLogoOffset =
         new Vector2(0f, 70f);
 
+    [Header("Shared Sound Panel")]
+    [SerializeField] private RectTransform soundPanel;
+    [SerializeField] private float portraitSoundPanelRightOffset = 40f;
+    [SerializeField] private float portraitSoundPanelDownOffset = 200f;
+
     [Header("Shared Page Content")]
     [SerializeField] private RectTransform infoPageScrollObject;
     [SerializeField] private RectTransform guideScrollObject;
@@ -59,6 +64,7 @@ public sealed class OCController : MonoBehaviour
     private readonly List<Tween> activeTweens = new List<Tween>();
     private bool isSubscribed;
     private Vector3 landscapeGameNameLogoPosition;
+    private Vector2 landscapeSoundPanelAnchoredPosition;
 
     private void Awake()
     {
@@ -66,6 +72,12 @@ public sealed class OCController : MonoBehaviour
         {
             landscapeGameNameLogoPosition =
                 gameNameLogo.localPosition;
+        }
+
+        if (soundPanel != null)
+        {
+            landscapeSoundPanelAnchoredPosition =
+                soundPanel.anchoredPosition;
         }
 
         ValidateRequiredReferences(true);
@@ -182,6 +194,20 @@ public sealed class OCController : MonoBehaviour
             gameNameLogo,
             gameNameLogoPosition);
 
+        if (soundPanel != null)
+        {
+            Vector2 soundPanelPosition =
+                landscapeSoundPanelAnchoredPosition;
+            if (isMobilePortrait)
+            {
+                soundPanelPosition += new Vector2(
+                    portraitSoundPanelRightOffset,
+                    -portraitSoundPanelDownOffset);
+            }
+
+            TweenAnchoredPosition(soundPanel, soundPanelPosition);
+        }
+
         float sharedPageHeight = isMobilePortrait ? 1920f : 1080f;
         TweenHeight(infoPageScrollObject, sharedPageHeight);
         TweenHeight(guideScrollObject, sharedPageHeight);
@@ -237,6 +263,22 @@ public sealed class OCController : MonoBehaviour
 
         activeTweens.Add(
             target.DOLocalMove(position, transitionDuration)
+                .SetEase(Ease.OutCubic)
+                .SetUpdate(true));
+    }
+
+    private void TweenAnchoredPosition(
+        RectTransform target,
+        Vector2 position)
+    {
+        if (transitionDuration <= 0f)
+        {
+            target.anchoredPosition = position;
+            return;
+        }
+
+        activeTweens.Add(
+            target.DOAnchorPos(position, transitionDuration)
                 .SetEase(Ease.OutCubic)
                 .SetUpdate(true));
     }
