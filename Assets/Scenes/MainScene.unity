@@ -43692,11 +43692,12 @@ MonoBehaviour:
   reserveSource: {fileID: 0}
   backgroundMusicClip: {fileID: 8300000, guid: 41196afbbf2875444b630aaf40c3f5e9, type: 3}
   ultraWheelSlotBackgroundMusicClip: {fileID: 8300000, guid: 956c0992ba7a7e74a8c18e94113dfbf4, type: 3}
-  uiButtonClip: {fileID: 8300000, guid: e83f25d8b3c2174408723dddb26b66bd, type: 3}
+  uiButtonClip: {fileID: 8300000, guid: 63560ad8be4e16141be48173d0dc95c3, type: 3}
+  popupClip: {fileID: 8300000, guid: e83f25d8b3c2174408723dddb26b66bd, type: 3}
   infoPanelArrowButtonClip: {fileID: 8300000, guid: 63560ad8be4e16141be48173d0dc95c3, type: 3}
   betButtonClip: {fileID: 8300000, guid: 6f8b7417451725c42b374a54a3dc81fe, type: 3}
   maxBetClip: {fileID: 8300000, guid: cccd104da3d61814bbb46cc3d6d6f067, type: 3}
-  spinButtonClip: {fileID: 8300000, guid: 7ad3844fc037e574f83d305d787935d1, type: 3}
+  spinButtonClip: {fileID: 8300000, guid: 7d35409cb01e6be409068ad70e84f741, type: 3}
   turboRocketClip: {fileID: 8300000, guid: 85228e224071e0946bf718f8af5b7a34, type: 3}
   reelStopHitClip: {fileID: 8300000, guid: c29430b33362ef8418fddb5587eb702a, type: 3}
   allReelsStoppedClip: {fileID: 8300000, guid: 79e15e58bfb6c244198a488edff585e8, type: 3}

@@ -202,6 +202,7 @@ public sealed class PopupManager : MonoBehaviour
         isErrorCritical = isCritical;
         currentActivePopup = errorPopup;
         errorPopup.SetActive(true);
+        AudioController.Instance?.PlayPopup();
         AnimatePopupOpen(errorPopupRect);
     }
 
@@ -223,6 +224,7 @@ public sealed class PopupManager : MonoBehaviour
         SetExitGameButtonsInteractable(true);
         currentActivePopup = exitGamePopup;
         exitGamePopup.SetActive(true);
+        AudioController.Instance?.PlayPopup();
         AnimatePopupOpen(exitGamePopupRect, 0.3f);
     }
 
@@ -445,7 +447,7 @@ public sealed class PopupManager : MonoBehaviour
 
         CacheScatterWinPanelScale();
         KillScatterWinSequence();
-        AudioController.Instance?.PlayTotalWin();
+        AudioController.Instance?.PlayPopup();
 
         double sanitizedTotalWin = Math.Max(0d, totalWin);
         int totalWinDecimalPlaces =
@@ -515,6 +517,7 @@ public sealed class PopupManager : MonoBehaviour
 
         CacheUltraWheelStartPanelScale();
         KillUltraStartSequence();
+        AudioController.Instance?.PlayPopup();
 
         ultraWheelStartPanel.gameObject.SetActive(true);
         ultraWheelStartPanel.localScale = Vector3.zero;
@@ -559,7 +562,7 @@ public sealed class PopupManager : MonoBehaviour
 
         CacheUltraWheelRewardPanelScale();
         KillUltraWinSequence();
-        AudioController.Instance?.PlayTotalWin();
+        AudioController.Instance?.PlayPopup();
 
         double? sanitizedGreenWin = greenWheelWin.HasValue
             ? Math.Max(0d, greenWheelWin.Value)

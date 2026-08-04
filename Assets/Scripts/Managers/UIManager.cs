@@ -644,15 +644,10 @@ public class UIManager : MonoBehaviour
         yield return autoPlay500Button;
         yield return autoPlayInfiniteButton;
         yield return autoPlayStopButton;
-        yield return hamburgerMenuButton;
         yield return hamburgerMenuDownButton;
-        yield return infoPageButton;
         yield return infoPageBackButton;
-        yield return guidePageButton;
         yield return guidePageBackButton;
-        yield return soundPanelButton;
         yield return soundPanelCloseButton;
-        yield return homeButton;
         yield return moreGamesButton;
         yield return expandButton;
         yield return shrinkButton;
@@ -663,12 +658,7 @@ public class UIManager : MonoBehaviour
         yield return portraitAutoPlay500Button;
         yield return portraitAutoPlayInfiniteButton;
         yield return portraitAutoPlayStopButton;
-        yield return portraitHamburgerMenuButton;
         yield return portraitHamburgerMenuDownButton;
-        yield return portraitInfoPageButton;
-        yield return portraitGuidePageButton;
-        yield return portraitSoundPanelButton;
-        yield return portraitHomeButton;
         yield return portraitMoreGamesButton;
         yield return portraitExpandButton;
         yield return portraitShrinkButton;
@@ -1873,7 +1863,13 @@ public class UIManager : MonoBehaviour
 
     private void OpenHamburgerMenu()
     {
+        if (isHamburgerMenuOpen)
+        {
+            return;
+        }
+
         isHamburgerMenuOpen = true;
+        audioController?.PlayPopup();
         SetHamburgerMenuImmediate(
             !isPortraitPresentationActive,
             false);
@@ -2312,6 +2308,7 @@ public class UIManager : MonoBehaviour
         ResetHamburgerMenu();
         CloseGuidePage();
         infoPagePanel.SetActive(true);
+        audioController?.PlayPopup();
     }
 
     private void CloseInfoPage()
@@ -2340,6 +2337,7 @@ public class UIManager : MonoBehaviour
         ResetHamburgerMenu();
         CloseInfoPage();
         guidePagePanel.SetActive(true);
+        audioController?.PlayPopup();
     }
 
     private void CloseGuidePage()
@@ -2375,6 +2373,7 @@ public class UIManager : MonoBehaviour
         CloseInfoPage();
         CloseGuidePage();
         soundPanel.SetActive(true);
+        audioController?.PlayPopup();
         RefreshSpinControls();
     }
 

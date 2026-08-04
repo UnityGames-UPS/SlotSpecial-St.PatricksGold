@@ -37,6 +37,9 @@ public sealed class AudioController : MonoBehaviour
 
     [Header("UI and Bet")]
     [SerializeField] private AudioClip uiButtonClip;
+    [Tooltip(
+        "Shared sound played whenever a popup opens. The autoplay panel is excluded.")]
+    [SerializeField] private AudioClip popupClip;
     [SerializeField] private AudioClip infoPanelArrowButtonClip;
     [SerializeField] private AudioClip betButtonClip;
     [SerializeField] private AudioClip maxBetClip;
@@ -275,6 +278,14 @@ public sealed class AudioController : MonoBehaviour
     internal void PlayUiButton()
     {
         PlaySfx(uiSource, uiButtonClip);
+    }
+
+    internal void PlayPopup()
+    {
+        // A popup has one opening cue, so replace any UI sound that is still
+        // playing instead of layering another one-shot over it.
+        uiSource?.Stop();
+        PlaySfx(uiSource, popupClip);
     }
 
     internal void PlayInfoPanelArrowButton()
@@ -566,6 +577,7 @@ public sealed class AudioController : MonoBehaviour
             ref backgroundMusicClip,
             "bg music.mp3");
         changed |= AssignClipIfEmpty(ref uiButtonClip, "ui button.mp3");
+        changed |= AssignClipIfEmpty(ref popupClip, "Popup.mp3");
         changed |= AssignClipIfEmpty(
             ref infoPanelArrowButtonClip,
             "info panel arrow button.mp3");
