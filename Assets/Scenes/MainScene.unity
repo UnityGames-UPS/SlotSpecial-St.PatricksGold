@@ -13683,7 +13683,6 @@ MonoBehaviour:
   m_Cameras: []
   m_RendererIndex: -1
   m_VolumeLayerMask:
-    serializedVersion: 2
     m_Bits: 1
   m_VolumeTrigger: {fileID: 0}
   m_VolumeFrameworkUpdateModeOption: 2
@@ -43725,12 +43724,12 @@ MonoBehaviour:
   reserveSource: {fileID: 0}
   backgroundMusicClip: {fileID: 8300000, guid: 41196afbbf2875444b630aaf40c3f5e9, type: 3}
   ultraWheelSlotBackgroundMusicClip: {fileID: 8300000, guid: 956c0992ba7a7e74a8c18e94113dfbf4, type: 3}
-  uiButtonClip: {fileID: 8300000, guid: 63560ad8be4e16141be48173d0dc95c3, type: 3}
+  uiButtonClip: {fileID: 8300000, guid: e83f25d8b3c2174408723dddb26b66bd, type: 3}
   infoPanelArrowButtonClip: {fileID: 8300000, guid: 63560ad8be4e16141be48173d0dc95c3, type: 3}
   betButtonClip: {fileID: 8300000, guid: 6f8b7417451725c42b374a54a3dc81fe, type: 3}
   maxBetClip: {fileID: 8300000, guid: cccd104da3d61814bbb46cc3d6d6f067, type: 3}
-  spinButtonClip: {fileID: 8300000, guid: 7d35409cb01e6be409068ad70e84f741, type: 3}
-  turboRocketClip: {fileID: 8300000, guid: 63560ad8be4e16141be48173d0dc95c3, type: 3}
+  spinButtonClip: {fileID: 8300000, guid: 7ad3844fc037e574f83d305d787935d1, type: 3}
+  turboRocketClip: {fileID: 8300000, guid: 85228e224071e0946bf718f8af5b7a34, type: 3}
   reelStopHitClip: {fileID: 8300000, guid: c29430b33362ef8418fddb5587eb702a, type: 3}
   allReelsStoppedClip: {fileID: 8300000, guid: 79e15e58bfb6c244198a488edff585e8, type: 3}
   hatAppearInReelClip: {fileID: 8300000, guid: 311592e06eecfa5479ae23211163e78f, type: 3}
@@ -43740,7 +43739,7 @@ MonoBehaviour:
   scatterWheelClip: {fileID: 8300000, guid: 1c7ae96c993124b41825d1534c272059, type: 3}
   leavesFallingClip: {fileID: 8300000, guid: acb1f546d05537348932a2a10cf7cfd6, type: 3}
   ultraWheelAllThreeClip: {fileID: 8300000, guid: 8718dc3532aa90648bf1b955a43af0ee, type: 3}
-  bonusReelSpinningClip: {fileID: 8300000, guid: 0b136eec509eae64ebca871449143d65, type: 3}
+  bonusReelSpinningClip: {fileID: 8300000, guid: a8336d121c1002245a5ad491dab83ab4, type: 3}
   bonusReelThreeNumberIconClip: {fileID: 8300000, guid: 872c6cb1b8fe604489ce00bf00efe525, type: 3}
   bonusGoingDownClip: {fileID: 8300000, guid: 4a89caeacbf91e442b2750872622fa8e, type: 3}
   extraSoundClip: {fileID: 8300000, guid: 4cf91fbbb29020c4ea6d214aac3fb90e, type: 3}
