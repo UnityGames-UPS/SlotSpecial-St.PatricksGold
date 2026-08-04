@@ -136,48 +136,39 @@ public class OrientationChange : MonoBehaviour
             currentMode = OrientationMode.DesktopPortrait;
         }
 
-        Quaternion targetRotation = isLandscape
-            ? Quaternion.identity
-            : Quaternion.Euler(0, 0, -90);
+        // Apply Rotation: DesktopPortrait gets -90 degrees rotation, MobilePortrait & Landscape get 0 degrees.
+        Quaternion targetRotation = (currentMode == OrientationMode.DesktopPortrait) ? Quaternion.Euler(0, 0, -90) : Quaternion.identity;
         if (UIWrapper != null)
         {
             if (rotationTween != null && rotationTween.IsActive()) rotationTween.Kill();
             rotationTween = UIWrapper.DOLocalRotateQuaternion(targetRotation, transitionDuration).SetEase(Ease.OutCubic);
         }
 
+        // Calculate CanvasScaler Match Width/Height
         if (CanvasScaler != null)
         {
-            float refW = ReferenceAspect.x;
-            float refH = ReferenceAspect.y;
-            float widthScale = (float)width / refW;
-            float heightScale = (float)height / refH;
+            Vector2 refRes = (currentMode == OrientationMode.MobilePortrait) ? new Vector2(1080f, 1920f) : new Vector2(1920f, 1080f);
+            CanvasScaler.referenceResolution = refRes;
 
-            float targetScale;
-            if (isLandscape)
+            float refW = refRes.x;
+            float refH = refRes.y;
+
+            float scaleW, scaleH;
+            if (currentMode == OrientationMode.DesktopPortrait)
             {
-                targetScale = Mathf.Min(widthScale, heightScale);
+                // In DesktopPortrait, UIWrapper is rotated -90 degrees.
+                // Canvas width (1920) corresponds to screen height.
+                // Canvas height (1080) corresponds to screen width.
+                scaleW = (float)height / refW;
+                scaleH = (float)width / refH;
             }
             else
             {
-                float portraitWidthScale = (float)height / refW;
-                float portraitHeightScale = (float)width / refH;
-                targetScale = Mathf.Min(
-                    portraitWidthScale,
-                    portraitHeightScale);
+                scaleW = (float)width / refW;
+                scaleH = (float)height / refH;
             }
 
-            float targetMatch;
-            if (Mathf.Abs(heightScale - widthScale) < 0.0001f)
-            {
-                targetMatch = 0.5f;
-            }
-            else
-            {
-                float logRatio = Mathf.Log(heightScale / widthScale);
-                targetMatch =
-                    Mathf.Log(targetScale / widthScale) / logRatio;
-                targetMatch = Mathf.Clamp01(targetMatch);
-            }
+            float targetMatch = (scaleW <= scaleH) ? 0f : 1f;
 
             if (matchTween != null && matchTween.IsActive()) matchTween.Kill();
             matchTween = DOTween.To(() => CanvasScaler.matchWidthOrHeight, x => CanvasScaler.matchWidthOrHeight = x, targetMatch, transitionDuration).SetEase(Ease.InOutQuad);
