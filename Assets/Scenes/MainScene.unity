@@ -4892,7 +4892,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f521a04de7f494272a617b2719edd271, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SocketIOManager
-  testToken: 72285a5df8014f9182c980a44a326f51
+  testToken: fb89051912f94f069c7b9dc713f47450
   gameManager: {fileID: 1660987171}
   uiManager: {fileID: 1784191470}
   JSManager: {fileID: 2001094553}
@@ -13676,37 +13676,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_RenderShadows: 1
-  m_RequiresDepthTextureOption: 2
-  m_RequiresOpaqueTextureOption: 2
-  m_CameraType: 0
-  m_Cameras: []
-  m_RendererIndex: -1
-  m_VolumeLayerMask:
-    m_Bits: 1
-  m_VolumeTrigger: {fileID: 0}
-  m_VolumeFrameworkUpdateModeOption: 2
-  m_RenderPostProcessing: 0
-  m_Antialiasing: 0
-  m_AntialiasingQuality: 2
-  m_StopNaN: 0
-  m_Dithering: 0
-  m_ClearDepth: 1
-  m_AllowXRRendering: 1
-  m_AllowHDROutput: 1
-  m_UseScreenCoordOverride: 0
-  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
-  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
-  m_RequiresDepthTexture: 0
-  m_RequiresColorTexture: 0
-  m_TaaSettings:
-    m_Quality: 3
-    m_FrameInfluence: 0.1
-    m_JitterScale: 1
-    m_MipBias: 0
-    m_VarianceClampScale: 0.9
-    m_ContrastAdaptiveSharpening: 0
-  m_Version: 2
 --- !u!20 &519420031
 Camera:
   m_ObjectHideFlags: 0
@@ -26187,12 +26156,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OrientationChange
   UIWrapper: {fileID: 1194767521}
   CanvasScaler: {fileID: 1624190500}
-  presentationApplier: {fileID: 884547511}
   transitionDuration: 0.2
   waitForRotation: 0.2
-  mobileKeyword: mobile
   androidKeyword: MB
   iphoneKeyword: IP
+  mobileKeyword: mobile
   currentDevice: 
 --- !u!114 &884547511
 MonoBehaviour:
@@ -32442,7 +32410,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Procedural::UnityEngine.UI.ProceduralImage.ProceduralImage
   m_Material: {fileID: 0}
-  m_Color: {r: 0, g: 0, b: 0, a: 1}
+  m_Color: {r: 0.25882354, g: 0.25882354, b: 0.25882354, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -33288,7 +33256,7 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 778714350}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMin: {x: 0, y: 0.00000006222102}
   m_AnchorMax: {x: 1, y: 0.13762294}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 20, y: 20}
@@ -34665,7 +34633,7 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 1091866905}
   m_HandleRect: {fileID: 1091866904}
   m_Direction: 2
-  m_Value: 0
+  m_Value: 0.0000000721506
   m_Size: 0.13762294
   m_NumberOfSteps: 0
   m_OnValueChanged:
@@ -35842,7 +35810,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Procedural::UnityEngine.UI.ProceduralImage.ProceduralImage
   m_Material: {fileID: 0}
-  m_Color: {r: 0, g: 0, b: 0, a: 1}
+  m_Color: {r: 0.2603773, g: 0.2603773, b: 0.2603773, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -54162,7 +54130,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIManager
   gameManager: {fileID: 1660987171}
-  popupManager: {fileID: 0}
+  popupManager: {fileID: 1266566511}
   orientationChange: {fileID: 884547510}
   spinButton: {fileID: 1902571912}
   stopButton: {fileID: 464282337}
