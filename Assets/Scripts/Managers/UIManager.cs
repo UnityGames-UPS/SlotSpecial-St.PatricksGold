@@ -200,6 +200,7 @@ public class UIManager : MonoBehaviour
     private Coroutine hamburgerMenuShowCoroutine;
     private Coroutine portraitHamburgerMenuShowCoroutine;
     private bool isHamburgerMenuOpen;
+    private bool waitForHamburgerDismissPointerRelease;
     private bool isPortraitPresentationActive;
     private Sequence winLineAmountFontSizeSequence;
 
@@ -1540,6 +1541,31 @@ public class UIManager : MonoBehaviour
         CloseAutoPlayPanel();
     }
 
+    private void LateUpdate()
+    {
+        if (!isHamburgerMenuOpen)
+        {
+            return;
+        }
+
+        // Ignore the release that opened the menu. Later pointer releases are
+        // handled after the EventSystem so menu-button clicks can complete.
+        if (waitForHamburgerDismissPointerRelease)
+        {
+            if (!IsPrimaryPointerPressed())
+            {
+                waitForHamburgerDismissPointerRelease = false;
+            }
+
+            return;
+        }
+
+        if (WasPrimaryPointerReleasedThisFrame())
+        {
+            CloseHamburgerMenu();
+        }
+    }
+
     private static bool IsPrimaryPointerPressed()
     {
         Touchscreen touchscreen = Touchscreen.current;
@@ -1570,6 +1596,19 @@ public class UIManager : MonoBehaviour
 
         pointerPosition = default;
         return false;
+    }
+
+    private static bool WasPrimaryPointerReleasedThisFrame()
+    {
+        Touchscreen touchscreen = Touchscreen.current;
+        if (touchscreen != null &&
+            touchscreen.primaryTouch.press.wasReleasedThisFrame)
+        {
+            return true;
+        }
+
+        Mouse mouse = Mouse.current;
+        return mouse != null && mouse.leftButton.wasReleasedThisFrame;
     }
 
     private bool IsAutoPlayDismissException(Vector2 pointerPosition)
@@ -1869,6 +1908,7 @@ public class UIManager : MonoBehaviour
         }
 
         isHamburgerMenuOpen = true;
+        waitForHamburgerDismissPointerRelease = true;
         audioController?.PlayPopup();
         SetHamburgerMenuImmediate(
             !isPortraitPresentationActive,
@@ -1885,6 +1925,7 @@ public class UIManager : MonoBehaviour
         }
 
         isHamburgerMenuOpen = false;
+        waitForHamburgerDismissPointerRelease = false;
         CancelHamburgerMenuOpenCoroutines();
         SetHamburgerMenuImmediate(
             !isPortraitPresentationActive,
@@ -1896,6 +1937,7 @@ public class UIManager : MonoBehaviour
     private void ResetHamburgerMenu()
     {
         isHamburgerMenuOpen = false;
+        waitForHamburgerDismissPointerRelease = false;
         CancelHamburgerMenuOpenCoroutines();
         SetHamburgerMenuImmediate(false, false);
         SetHamburgerMenuImmediate(true, false);

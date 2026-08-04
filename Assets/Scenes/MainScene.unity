@@ -4892,7 +4892,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f521a04de7f494272a617b2719edd271, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SocketIOManager
-  testToken: 77bbb97431d9417b9455cc176fcb2cb0
+  testToken: 0526ba5fec8e4e9a9440e173eb67c559
   gameManager: {fileID: 1660987171}
   uiManager: {fileID: 1784191470}
   JSManager: {fileID: 2001094553}
@@ -33256,8 +33256,8 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 778714350}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0.00000006222102}
-  m_AnchorMax: {x: 1, y: 0.13762294}
+  m_AnchorMin: {x: 0, y: 0.86237705}
+  m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 20, y: 20}
   m_Pivot: {x: 0.5, y: 0.5}
@@ -34633,7 +34633,7 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 1091866905}
   m_HandleRect: {fileID: 1091866904}
   m_Direction: 2
-  m_Value: 0.0000000721506
+  m_Value: 1.0000001
   m_Size: 0.13762294
   m_NumberOfSteps: 0
   m_OnValueChanged:
@@ -44726,7 +44726,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: 6767.529}
+  m_AnchoredPosition: {x: 0, y: -0.00024414062}
   m_SizeDelta: {x: 0, y: 7847.529}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &1469621097
