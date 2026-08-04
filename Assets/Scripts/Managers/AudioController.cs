@@ -28,14 +28,6 @@ public sealed class AudioController : MonoBehaviour
     [SerializeField] private AudioSource bonusReelSpinningSource;
     [SerializeField] private AudioSource reserveSource;
 
-    [Header("Additional Audio Sources")]
-    [Tooltip("Optional extra sources controlled by the Music slider.")]
-    [SerializeField] private List<AudioSource> musicSources =
-        new List<AudioSource>();
-    [Tooltip("Optional extra sources controlled by the Sound slider.")]
-    [SerializeField] private List<AudioSource> soundSources =
-        new List<AudioSource>();
-
     [Header("Background")]
     [SerializeField] private AudioClip backgroundMusicClip;
     [Tooltip(
@@ -469,7 +461,6 @@ public sealed class AudioController : MonoBehaviour
     {
         float value = musicEnabled ? musicVolume : 0f;
         ApplySourceVolume(backgroundMusicSource, value);
-        ApplyCategoryVolume(musicSources, value);
     }
 
     private void ApplySfxVolume()
@@ -480,7 +471,6 @@ public sealed class AudioController : MonoBehaviour
         ApplySourceVolume(featureSource, value);
         ApplySourceVolume(bonusReelSpinningSource, value);
         ApplySourceVolume(reserveSource, value);
-        ApplyCategoryVolume(soundSources, value);
     }
 
     private void PlaySfx(AudioSource source, AudioClip clip)
@@ -535,21 +525,6 @@ public sealed class AudioController : MonoBehaviour
         }
 
         preFocusMuteState.Clear();
-    }
-
-    private static void ApplyCategoryVolume(
-        List<AudioSource> sources,
-        float value)
-    {
-        if (sources == null)
-        {
-            return;
-        }
-
-        foreach (AudioSource source in sources)
-        {
-            ApplySourceVolume(source, value);
-        }
     }
 
     private static void ApplySourceVolume(AudioSource source, float value)
