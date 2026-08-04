@@ -73,9 +73,6 @@ public sealed class AudioController : MonoBehaviour
         new Dictionary<AudioSource, bool>();
 
     private bool isForceMuted;
-    private bool externalMuteRequested;
-    private bool applicationHasFocus = true;
-    private bool applicationPaused;
     private bool musicEnabled = true;
     private bool sfxEnabled = true;
     private float musicVolume = DefaultMusicVolume;
@@ -136,10 +133,7 @@ public sealed class AudioController : MonoBehaviour
                 OnSoundVolumeChanged);
         }
 
-        externalMuteRequested = false;
-        applicationHasFocus = true;
-        applicationPaused = false;
-        ApplyForcedMute(false);
+        SetMuteAll(false);
     }
 
     private void OnDestroy()
@@ -184,8 +178,7 @@ public sealed class AudioController : MonoBehaviour
 
     internal void SetMuteAll(bool forceMute)
     {
-        externalMuteRequested = forceMute;
-        RefreshForcedMute();
+        ApplyForcedMute(forceMute);
     }
 
     private void ApplyForcedMute(bool forceMute)
@@ -391,14 +384,7 @@ public sealed class AudioController : MonoBehaviour
 
     private void OnApplicationFocus(bool focus)
     {
-        applicationHasFocus = focus;
-        RefreshForcedMute();
-    }
-
-    private void OnApplicationPause(bool paused)
-    {
-        applicationPaused = paused;
-        RefreshForcedMute();
+        SetMuteAll(!focus);
     }
 
     private void OnMusicVolumeChanged(float value)
@@ -512,16 +498,7 @@ public sealed class AudioController : MonoBehaviour
             return;
         }
 
-        externalMuteRequested = false;
-        RefreshForcedMute();
-    }
-
-    private void RefreshForcedMute()
-    {
-        ApplyForcedMute(
-            externalMuteRequested ||
-            !applicationHasFocus ||
-            applicationPaused);
+        SetMuteAll(false);
     }
 
     private void RestorePreFocusMuteState()

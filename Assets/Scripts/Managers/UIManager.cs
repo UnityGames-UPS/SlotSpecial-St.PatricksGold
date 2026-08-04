@@ -2433,7 +2433,7 @@ public class UIManager : MonoBehaviour
         SetExpandShrinkButtons(browserIsExpanded);
     }
 
-    internal void OnFocusChanged(string value)
+    public void OnFocusChanged(string value)
     {
         bool focused = value == "1";
         Debug.Log(
