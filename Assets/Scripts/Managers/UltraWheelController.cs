@@ -10,7 +10,7 @@ using UnityEngine;
 /// </summary>
 public class UltraWheelController : MonoBehaviour
 {
-    public const int ServerValueCount =
+    internal const int ServerValueCount =
         StPatricksGoldDefinition.UltraWheelValueCount;
 
     [Header("References")]
@@ -55,13 +55,13 @@ public class UltraWheelController : MonoBehaviour
     [Header("Editor Test")]
     [SerializeField, Min(0)] private int testWinningIndex;
 
-    public event Action<int> SpinCompleted;
+    internal event Action<int> SpinCompleted;
 
-    public bool IsSpinning { get; private set; }
-    public int SelectedIndex { get; private set; } = -1;
-    public int SelectedServerStopIndex { get; private set; } = -1;
-    public int WheelNumber => wheelNumber;
-    public float SegmentAngle => 360f / Mathf.Max(1, segmentCount);
+    internal bool IsSpinning { get; private set; }
+    internal int SelectedIndex { get; private set; } = -1;
+    internal int SelectedServerStopIndex { get; private set; } = -1;
+    internal int WheelNumber => wheelNumber;
+    internal float SegmentAngle => 360f / Mathf.Max(1, segmentCount);
 
     private Tween spinTween;
     private void Awake()
@@ -81,7 +81,7 @@ public class UltraWheelController : MonoBehaviour
     /// Spins to the supplied result index. This method never selects or
     /// randomizes a winner; winningIndex completely determines the destination.
     /// </summary>
-    public bool SpinToIndex(int winningIndex, Action onComplete = null)
+    internal bool SpinToIndex(int winningIndex, Action onComplete = null)
     {
         if (wheelTransform == null)
         {
@@ -141,7 +141,7 @@ public class UltraWheelController : MonoBehaviour
     /// <summary>
     /// Spins directly to the server's physical 0-20 stop index.
     /// </summary>
-    public bool SpinToServerStopIndex(int serverStopIndex, Action onComplete = null)
+    internal bool SpinToServerStopIndex(int serverStopIndex, Action onComplete = null)
     {
         if (!TryResolvePhysicalSegment(serverStopIndex, out int physicalSegmentIndex))
         {
@@ -160,7 +160,7 @@ public class UltraWheelController : MonoBehaviour
     /// <summary>
     /// Writes the server's 21 physical wheel values onto the corresponding labels.
     /// </summary>
-    public bool SetServerValues(IReadOnlyList<int> serverValues)
+    internal bool SetServerValues(IReadOnlyList<int> serverValues)
     {
         if (serverValues == null ||
             serverValues.Count != ServerValueCount ||
@@ -204,7 +204,7 @@ public class UltraWheelController : MonoBehaviour
         return allTextsAssigned;
     }
 
-    public void ClearServerValues()
+    internal void ClearServerValues()
     {
         if (segmentValueTexts == null)
         {
@@ -222,7 +222,7 @@ public class UltraWheelController : MonoBehaviour
         }
     }
 
-    public bool TryResolvePhysicalSegment(
+    internal bool TryResolvePhysicalSegment(
         int serverStopIndex,
         out int physicalSegmentIndex)
     {
@@ -244,7 +244,7 @@ public class UltraWheelController : MonoBehaviour
     /// Returns the normalized Z rotation that places the selected segment's
     /// center under the fixed pointer.
     /// </summary>
-    public float CalculateTargetAngle(int segmentIndex)
+    internal float CalculateTargetAngle(int segmentIndex)
     {
         if (segmentIndex < 0 || segmentIndex >= segmentCount)
         {
@@ -264,13 +264,13 @@ public class UltraWheelController : MonoBehaviour
         return NormalizeAngle(-segmentCenterLocalAngle + alignmentOffset);
     }
 
-    public void SetOffsets(float startOffset, float fineAlignmentOffset)
+    internal void SetOffsets(float startOffset, float fineAlignmentOffset)
     {
         startingAngleOffset = startOffset;
         alignmentOffset = fineAlignmentOffset;
     }
 
-    public void KillSpin()
+    internal void KillSpin()
     {
         if (spinTween != null)
         {

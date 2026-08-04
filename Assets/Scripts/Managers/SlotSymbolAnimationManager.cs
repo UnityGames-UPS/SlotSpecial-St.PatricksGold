@@ -185,15 +185,15 @@ public class SlotSymbolAnimationManager : MonoBehaviour
 
     private sealed class ActiveSymbolAnimation
     {
-        public Image BaseImage;
-        public Image OverlayImage;
-        public Image SecondaryOverlayImage;
-        public Sprite[] SecondaryFrames;
-        public int SecondaryOriginalSiblingIndex = -1;
-        public Coroutine PlaybackRoutine;
-        public float MinimumVisualExtent;
-        public float MaximumVisualExtent;
-        public float CurrentVisualSize01;
+        internal Image BaseImage;
+        internal Image OverlayImage;
+        internal Image SecondaryOverlayImage;
+        internal Sprite[] SecondaryFrames;
+        internal int SecondaryOriginalSiblingIndex = -1;
+        internal Coroutine PlaybackRoutine;
+        internal float MinimumVisualExtent;
+        internal float MaximumVisualExtent;
+        internal float CurrentVisualSize01;
     }
 
     private void Awake()
@@ -264,7 +264,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return Mathf.Max(1, wildWinLoopsBeforeNextStage);
     }
 
-    public bool PlayAnimation(
+    internal bool PlayAnimation(
         int symbolId,
         Image baseImage,
         Image overlayImage,
@@ -317,7 +317,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return true;
     }
 
-    public bool PlayAnimationOnce(
+    internal bool PlayAnimationOnce(
         int symbolId,
         Image baseImage,
         Image overlayImage,
@@ -378,7 +378,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return true;
     }
 
-    public bool PlayScatterWheelIntro(
+    internal bool PlayScatterWheelIntro(
         Image baseImage,
         Image mainAnimationImage,
         Image backgroundFxImage,
@@ -477,7 +477,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return true;
     }
 
-    public void StopScatterWheelIntro(
+    internal void StopScatterWheelIntro(
         Image baseImage,
         Image mainAnimationImage,
         Image backgroundFxImage)
@@ -490,7 +490,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         }
     }
 
-    public void PlayScatterWheelHandoff(
+    internal void PlayScatterWheelHandoff(
         RectTransform rotatingWheel,
         Vector3 rotatingWheelTargetScale,
         RectTransform wheelRim,
@@ -535,7 +535,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             handoffRoutine;
     }
 
-    public void StopScatterWheelHandoff(
+    internal void StopScatterWheelHandoff(
         RectTransform rotatingWheel)
     {
         if (rotatingWheel == null ||
@@ -576,7 +576,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         }
     }
 
-    public bool PlayScatterWheelResultTextMove(
+    internal bool PlayScatterWheelResultTextMove(
         RectTransform resultText,
         float targetAnchoredY,
         Action onComplete)
@@ -597,7 +597,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return true;
     }
 
-    public void StopScatterWheelResultTextMove(
+    internal void StopScatterWheelResultTextMove(
         RectTransform resultText)
     {
         if (resultText == null ||
@@ -638,7 +638,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         }
     }
 
-    public bool TryGetAnimationVisualSize(
+    internal bool TryGetAnimationVisualSize(
         Image overlayImage,
         out float normalizedVisualSize)
     {
@@ -656,7 +656,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return false;
     }
 
-    public void StopAnimation(Image baseImage, Image overlayImage)
+    internal void StopAnimation(Image baseImage, Image overlayImage)
     {
         ActiveSymbolAnimation stoppedAnimation = null;
         if (overlayImage != null &&
@@ -682,7 +682,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         }
     }
 
-    public void StopAllAnimations()
+    internal void StopAllAnimations()
     {
         if (activeAnimations.Count == 0)
         {
@@ -705,7 +705,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         }
     }
 
-    public bool PlayAnticipation(Image targetImage)
+    internal bool PlayAnticipation(Image targetImage)
     {
         if (targetImage == null)
         {
@@ -736,7 +736,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return true;
     }
 
-    public void StopAnticipation(Image targetImage)
+    internal void StopAnticipation(Image targetImage)
     {
         if (targetImage == null)
         {
@@ -756,7 +756,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         targetImage.gameObject.SetActive(false);
     }
 
-    public void StopAllAnticipations()
+    internal void StopAllAnticipations()
     {
         if (activeAnticipations.Count == 0)
         {
@@ -786,7 +786,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         }
     }
 
-    public bool PlayUltraEntryTransition(
+    internal bool PlayUltraEntryTransition(
         Action onMidpoint,
         Action onComplete)
     {
@@ -810,7 +810,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return true;
     }
 
-    public void StopUltraEntryTransition()
+    internal void StopUltraEntryTransition()
     {
         if (ultraEntryTransitionCoroutine != null)
         {
@@ -822,7 +822,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         HideUltraEntryTransitionImage();
     }
 
-    public bool PlayUltraWinningSymbolAnimations(
+    internal bool PlayUltraWinningSymbolAnimations(
         UltraSlotView ultraSlotView,
         Action onComplete = null)
     {
@@ -887,7 +887,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return true;
     }
 
-    public void StopUltraWinningSymbolAnimations()
+    internal void StopUltraWinningSymbolAnimations()
     {
         if (ultraWinningSymbolCoroutine != null)
         {
@@ -898,7 +898,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         RestoreUltraWinningSymbolTargets();
     }
 
-    public bool PlayUltraWheelStopResultAnimation(
+    internal bool PlayUltraWheelStopResultAnimation(
         int wheelNumber,
         Action onComplete = null)
     {
@@ -951,7 +951,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return true;
     }
 
-    public void StopUltraWheelStopResultAnimations()
+    internal void StopUltraWheelStopResultAnimations()
     {
         StopUltraWheelStopResultAnimation(
             UltraSlotView.BlueWheelSymbolId);
@@ -2057,9 +2057,9 @@ public class SlotSymbolAnimationManager : MonoBehaviour
 
 internal sealed class UltraWinningSymbolAnimationTarget
 {
-    public int SymbolId;
-    public Image BaseImage;
-    public Image AnimationImage;
-    public Image WinIndicatorImage;
-    public Sprite[] Frames;
+    internal int SymbolId;
+    internal Image BaseImage;
+    internal Image AnimationImage;
+    internal Image WinIndicatorImage;
+    internal Sprite[] Frames;
 }

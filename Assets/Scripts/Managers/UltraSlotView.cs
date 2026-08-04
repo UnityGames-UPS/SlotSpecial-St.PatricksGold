@@ -12,14 +12,14 @@ using UnityEngine.UI;
 /// </summary>
 public class UltraSlotView : MonoBehaviour
 {
-    public const int ReelCount = 3;
-    public const int RowCount = 3;
-    public const int ResultCellCount = ReelCount * RowCount;
-    public const int CenterRowIndex = 1;
-    public const int EmptySymbolId = 0;
-    public const int GreenWheelSymbolId = 1;
-    public const int BlueWheelSymbolId = 2;
-    public const int RedWheelSymbolId = 3;
+    internal const int ReelCount = 3;
+    internal const int RowCount = 3;
+    internal const int ResultCellCount = ReelCount * RowCount;
+    internal const int CenterRowIndex = 1;
+    internal const int EmptySymbolId = 0;
+    internal const int GreenWheelSymbolId = 1;
+    internal const int BlueWheelSymbolId = 2;
+    internal const int RedWheelSymbolId = 3;
 
     private const int ImagesPerReel = 5;
     private const int FirstVisibleImageIndex = 1;
@@ -84,10 +84,10 @@ public class UltraSlotView : MonoBehaviour
     [SerializeField, Min(0f)] private float quickStopStagger = 0.05f;
     [SerializeField, Min(0.01f)] private float quickStopDuration = 0.18f;
 
-    public event Action<IReadOnlyList<int>> SpinCompleted;
+    internal event Action<IReadOnlyList<int>> SpinCompleted;
 
-    public bool IsSpinning => isSpinning;
-    public IReadOnlyList<int> CurrentResult => currentResult;
+    internal bool IsSpinning => isSpinning;
+    internal IReadOnlyList<int> CurrentResult => currentResult;
 
     private readonly List<int> currentResult = new List<int>(ResultCellCount);
     private readonly List<List<int>> reelBufferSymbols = new List<List<int>>(ReelCount);
@@ -116,7 +116,7 @@ public class UltraSlotView : MonoBehaviour
     /// These symbols are visual setup only; the stopped result is supplied
     /// separately by the server.
     /// </summary>
-    public bool ShowConfiguredInitialResult()
+    internal bool ShowConfiguredInitialResult()
     {
         var startResult = new List<int>(ResultCellCount);
         for (int cell = 0; cell < ResultCellCount; cell++)
@@ -133,7 +133,7 @@ public class UltraSlotView : MonoBehaviour
     /// <summary>
     /// Sets the stopped 3x3 result without playing a spin.
     /// </summary>
-    public bool SetInitialResult(IList<int> result)
+    internal bool SetInitialResult(IList<int> result)
     {
         if (!TryValidateResult(result, out string error))
         {
@@ -161,7 +161,7 @@ public class UltraSlotView : MonoBehaviour
     /// Starts all three reels. Call StopSpin, QuickStop, or ShowResultImmediately
     /// once the nine-cell result is available.
     /// </summary>
-    public bool StartSpin(SpinSpeed speed = SpinSpeed.Normal)
+    internal bool StartSpin(SpinSpeed speed = SpinSpeed.Normal)
     {
         if (isSpinning)
         {
@@ -190,17 +190,17 @@ public class UltraSlotView : MonoBehaviour
         return true;
     }
 
-    public void StopSpin(IList<int> result, Action onComplete = null)
+    internal void StopSpin(IList<int> result, Action onComplete = null)
     {
         BeginStop(result, false, onComplete);
     }
 
-    public void QuickStop(IList<int> result, Action onComplete = null)
+    internal void QuickStop(IList<int> result, Action onComplete = null)
     {
         BeginStop(result, true, onComplete);
     }
 
-    public void ShowResultImmediately(IList<int> result, Action onComplete = null)
+    internal void ShowResultImmediately(IList<int> result, Action onComplete = null)
     {
         if (!TryValidateResult(result, out string error))
         {
@@ -351,7 +351,7 @@ public class UltraSlotView : MonoBehaviour
     /// Converts a row-major 3x3 server result into nine symbol IDs.
     /// Empty, blank, null, 0, and -1 values are all treated as empty positions.
     /// </summary>
-    public bool TryParseServerResult(
+    internal bool TryParseServerResult(
         IList<string> serverResult,
         out List<int> parsedResult,
         out string error)
@@ -398,7 +398,7 @@ public class UltraSlotView : MonoBehaviour
         return true;
     }
 
-    public bool TryValidateResult(IList<int> result, out string error)
+    internal bool TryValidateResult(IList<int> result, out string error)
     {
         if (!TryValidateSetup(out error))
         {
@@ -431,7 +431,7 @@ public class UltraSlotView : MonoBehaviour
         return true;
     }
 
-    public void CancelSpin()
+    internal void CancelSpin()
     {
         if (stopCoroutine != null)
         {
@@ -1049,7 +1049,7 @@ public class UltraSlotView : MonoBehaviour
         }
     }
 
-    public static List<int> CreateEmptyResult()
+    internal static List<int> CreateEmptyResult()
     {
         var result = new List<int>(ResultCellCount);
         for (int cell = 0; cell < ResultCellCount; cell++)
@@ -1060,7 +1060,7 @@ public class UltraSlotView : MonoBehaviour
         return result;
     }
 
-    public static int GetResultIndex(int row, int reel)
+    internal static int GetResultIndex(int row, int reel)
     {
         return row * ReelCount + reel;
     }
@@ -1118,11 +1118,11 @@ public class UltraSlotView : MonoBehaviour
 [Serializable]
 public class UltraReelImages
 {
-    public List<Image> images = new List<Image>(5);
+    [SerializeField] internal List<Image> images = new List<Image>(5);
     [Tooltip(
         "For the live centered server result, assign one center animation " +
         "Image. You can alternatively assign three Images in Top, Middle, " +
         "Bottom order.")]
-    public List<Image> winAnimationImages =
+    [SerializeField] internal List<Image> winAnimationImages =
         new List<Image>(3);
 }

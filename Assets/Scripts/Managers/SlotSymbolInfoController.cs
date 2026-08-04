@@ -62,10 +62,10 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
 
     private sealed class ClickRegistration
     {
-        public Image Image;
-        public bool PreviousRaycastTarget;
-        public EventTrigger Trigger;
-        public EventTrigger.Entry Entry;
+        internal Image Image;
+        internal bool PreviousRaycastTarget;
+        internal EventTrigger Trigger;
+        internal EventTrigger.Entry Entry;
     }
 
     private void Awake()

@@ -108,18 +108,18 @@ public class SlotView : MonoBehaviour
 
     private sealed class WinningLinePresentation
     {
-        public HashSet<int> Positions;
-        public int DisplayRow;
-        public double WinAmount;
-        public int WildMultiplier;
-        public List<WildDetail> WildDetails;
+        internal HashSet<int> Positions;
+        internal int DisplayRow;
+        internal double WinAmount;
+        internal int WildMultiplier;
+        internal List<WildDetail> WildDetails;
     }
 
     private sealed class WildMultiplierTransformState
     {
-        public Vector2 AnchoredPosition;
-        public Quaternion LocalRotation;
-        public Vector3 LocalScale;
+        internal Vector2 AnchoredPosition;
+        internal Quaternion LocalRotation;
+        internal Vector3 LocalScale;
     }
 
     internal List<List<int>> currentDisplayMatrix;
@@ -2496,7 +2496,7 @@ public class SlotView : MonoBehaviour
 [System.Serializable]
 public class ReelImages
 {
-    public List<Image> images = new List<Image>(7);
+    [SerializeField] internal List<Image> images = new List<Image>(7);
     [Tooltip("Assign the animation child Images for Image (2), Image (3), and Image (4), in that order.")]
-    public List<Image> winAnimationImages = new List<Image>(3);
+    [SerializeField] internal List<Image> winAnimationImages = new List<Image>(3);
 }

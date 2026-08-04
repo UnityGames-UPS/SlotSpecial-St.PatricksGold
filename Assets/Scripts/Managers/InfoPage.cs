@@ -86,7 +86,7 @@ public sealed class InfoPage : MonoBehaviour
     /// <summary>
     /// Re-applies the current game:init values to all assigned paytable texts.
     /// </summary>
-    public void RefreshFromInitData()
+    internal void RefreshFromInitData()
     {
         StPatricksGoldGameConfig config = gameManager != null
             ? gameManager.stPatricksGoldConfig

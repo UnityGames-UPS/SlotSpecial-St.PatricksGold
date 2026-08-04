@@ -205,21 +205,21 @@ public class UIManager : MonoBehaviour
 
     private sealed class SpinHoldEventRegistration
     {
-        public EventTrigger Trigger;
-        public EventTrigger.Entry PointerDown;
-        public EventTrigger.Entry PointerUp;
-        public EventTrigger.Entry PointerExit;
+        internal EventTrigger Trigger;
+        internal EventTrigger.Entry PointerDown;
+        internal EventTrigger.Entry PointerUp;
+        internal EventTrigger.Entry PointerExit;
     }
 
     private sealed class AutoPlayPanelAnimationState
     {
-        public GameObject Panel;
-        public RectTransform RectTransform;
-        public CanvasGroup CanvasGroup;
-        public Vector3 RestingLocalPosition;
-        public Vector3 RestingScale;
-        public Tween Tween;
-        public bool IsClosing;
+        internal GameObject Panel;
+        internal RectTransform RectTransform;
+        internal CanvasGroup CanvasGroup;
+        internal Vector3 RestingLocalPosition;
+        internal Vector3 RestingScale;
+        internal Tween Tween;
+        internal bool IsClosing;
     }
 
     private void Awake()
@@ -2424,7 +2424,7 @@ public class UIManager : MonoBehaviour
         SetExpandShrinkButtons(isExpanded);
     }
 
-    public void OnFullscreenChanged(string isFullscreen)
+    internal void OnFullscreenChanged(string isFullscreen)
     {
         bool browserIsExpanded =
             string.Equals(
@@ -2434,7 +2434,7 @@ public class UIManager : MonoBehaviour
         SetExpandShrinkButtons(browserIsExpanded);
     }
 
-    public void OnFocusChanged(string value)
+    internal void OnFocusChanged(string value)
     {
         bool focused = value == "1";
         Debug.Log(

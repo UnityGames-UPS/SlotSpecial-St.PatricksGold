@@ -23,21 +23,21 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
     private sealed class ScatterWheelColumnReferences
     {
         [Tooltip("CanRotate belonging to the top visible symbol.")]
-        public RectTransform topSymbol = null;
+        [SerializeField] internal RectTransform topSymbol = null;
         [Tooltip("Text parent containing the top wheel's eight TMP labels.")]
-        public RectTransform topTextParent = null;
+        [SerializeField] internal RectTransform topTextParent = null;
 
         [Tooltip("CanRotate belonging to the middle visible symbol.")]
-        public RectTransform middleSymbol = null;
+        [SerializeField] internal RectTransform middleSymbol = null;
         [Tooltip("Text parent containing the middle wheel's eight TMP labels.")]
-        public RectTransform middleTextParent = null;
+        [SerializeField] internal RectTransform middleTextParent = null;
 
         [Tooltip("CanRotate belonging to the bottom visible symbol.")]
-        public RectTransform bottomSymbol = null;
+        [SerializeField] internal RectTransform bottomSymbol = null;
         [Tooltip("Text parent containing the bottom wheel's eight TMP labels.")]
-        public RectTransform bottomTextParent = null;
+        [SerializeField] internal RectTransform bottomTextParent = null;
 
-        public RectTransform GetRow(int row)
+        internal RectTransform GetRow(int row)
         {
             switch (row)
             {
@@ -52,7 +52,7 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
             }
         }
 
-        public RectTransform GetTextParent(int row)
+        internal RectTransform GetTextParent(int row)
         {
             switch (row)
             {
@@ -104,29 +104,29 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
 
     private sealed class ActiveScatterWheel
     {
-        public Image SymbolImage;
-        public Image AnimationImage;
-        public Image BackgroundFxImage;
-        public RectTransform WheelTransform;
-        public RectTransform WheelRimTransform;
-        public RectTransform LeafTransform;
-        public RectTransform WinIndicatorTransform;
-        public RectTransform OutputTextTransform;
-        public TMP_Text OutputTmpText;
-        public Text OutputLegacyText;
-        public RectTransform TextParent;
-        public List<string> ServerValues;
-        public string WinningAwardText;
-        public int StopIndex;
-        public Vector3 RestingEulerAngles;
-        public Vector3 RestingWheelScale;
-        public Vector3 RestingWheelRimScale;
-        public Vector3 RestingLeafScale;
-        public Vector2 RestingOutputTextPosition;
-        public Tween SpinTween;
-        public Tween OutputTextBlinkTween;
-        public Color OutputTmpOriginalColor = Color.white;
-        public Color OutputLegacyOriginalColor = Color.white;
+        internal Image SymbolImage;
+        internal Image AnimationImage;
+        internal Image BackgroundFxImage;
+        internal RectTransform WheelTransform;
+        internal RectTransform WheelRimTransform;
+        internal RectTransform LeafTransform;
+        internal RectTransform WinIndicatorTransform;
+        internal RectTransform OutputTextTransform;
+        internal TMP_Text OutputTmpText;
+        internal Text OutputLegacyText;
+        internal RectTransform TextParent;
+        internal List<string> ServerValues;
+        internal string WinningAwardText;
+        internal int StopIndex;
+        internal Vector3 RestingEulerAngles;
+        internal Vector3 RestingWheelScale;
+        internal Vector3 RestingWheelRimScale;
+        internal Vector3 RestingLeafScale;
+        internal Vector2 RestingOutputTextPosition;
+        internal Tween SpinTween;
+        internal Tween OutputTextBlinkTween;
+        internal Color OutputTmpOriginalColor = Color.white;
+        internal Color OutputLegacyOriginalColor = Color.white;
     }
 
     private void Awake()

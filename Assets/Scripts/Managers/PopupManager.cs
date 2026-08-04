@@ -155,7 +155,7 @@ public sealed class PopupManager : MonoBehaviour
         }
     }
 
-    public void HideAllPopups()
+    internal void HideAllPopups()
     {
         HideScatterWinImmediate();
         HideUltraStartImmediate();
@@ -164,7 +164,7 @@ public sealed class PopupManager : MonoBehaviour
         HideExitGamePopupImmediate();
     }
 
-    public void ShowErrorPopup(
+    internal void ShowErrorPopup(
         string message,
         bool isCritical)
     {
@@ -205,7 +205,7 @@ public sealed class PopupManager : MonoBehaviour
         AnimatePopupOpen(errorPopupRect);
     }
 
-    public void ShowExitGamePopup()
+    internal void ShowExitGamePopup()
     {
         if (exitGamePopup == null)
         {
@@ -226,7 +226,7 @@ public sealed class PopupManager : MonoBehaviour
         AnimatePopupOpen(exitGamePopupRect, 0.3f);
     }
 
-    public void CloseCurrentPopup()
+    internal void CloseCurrentPopup()
     {
         KillCurrentPopupTween();
 
