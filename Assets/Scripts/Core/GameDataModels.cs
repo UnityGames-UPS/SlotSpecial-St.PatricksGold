@@ -375,14 +375,12 @@ public class ServerUltraActiveWheel
     public int wheelIndex;
     public int stopIndex;
     public double baseAward;
-    public int multiplier;
     public double finalAward;
     public List<int> awards;
 
     [NonSerialized] public bool hasWheelIndex;
     [NonSerialized] public bool hasStopIndex;
     [NonSerialized] public bool hasBaseAward;
-    [NonSerialized] public bool hasMultiplier;
     [NonSerialized] public bool hasFinalAward;
 }
 

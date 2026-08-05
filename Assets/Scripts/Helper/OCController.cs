@@ -48,6 +48,10 @@ public sealed class OCController : MonoBehaviour
         "Additional local-position offset applied only in Mobile Portrait.")]
     [SerializeField] private Vector2 portraitGameNameLogoOffset =
         new Vector2(0f, 70f);
+    [Tooltip(
+        "Scale multiplier applied to the game name logo in Mobile Portrait.")]
+    [SerializeField, Min(0f)]
+    private float portraitGameNameLogoScaleMultiplier = 3f;
 
     [Header("Shared Sound Panel")]
     [SerializeField] private RectTransform soundPanel;
@@ -64,6 +68,7 @@ public sealed class OCController : MonoBehaviour
     private readonly List<Tween> activeTweens = new List<Tween>();
     private bool isSubscribed;
     private Vector3 landscapeGameNameLogoPosition;
+    private Vector3 landscapeGameNameLogoScale;
     private Vector2 landscapeSoundPanelAnchoredPosition;
 
     private void Awake()
@@ -72,6 +77,8 @@ public sealed class OCController : MonoBehaviour
         {
             landscapeGameNameLogoPosition =
                 gameNameLogo.localPosition;
+            landscapeGameNameLogoScale =
+                gameNameLogo.localScale;
         }
 
         if (soundPanel != null)
@@ -193,6 +200,12 @@ public sealed class OCController : MonoBehaviour
         TweenPosition(
             gameNameLogo,
             gameNameLogoPosition);
+
+        Vector3 gameNameLogoScale = isMobilePortrait
+            ? landscapeGameNameLogoScale *
+                portraitGameNameLogoScaleMultiplier
+            : landscapeGameNameLogoScale;
+        TweenScale(gameNameLogo, gameNameLogoScale);
 
         if (soundPanel != null)
         {
@@ -425,6 +438,8 @@ public sealed class OCController : MonoBehaviour
     private void OnValidate()
     {
         transitionDuration = Mathf.Max(0f, transitionDuration);
+        portraitGameNameLogoScaleMultiplier =
+            Mathf.Max(0f, portraitGameNameLogoScaleMultiplier);
 
         if (gameObject.scene.IsValid())
         {

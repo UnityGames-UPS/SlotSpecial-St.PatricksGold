@@ -298,7 +298,6 @@ public class GameManager : MonoBehaviour
                 $"Wheel: {serverWheel.wheelIndex} | " +
                 $"Stop Index: {serverWheel.stopIndex} | " +
                 $"Base Award: {serverWheel.baseAward:0.##} | " +
-                $"Multiplier: {serverWheel.multiplier}x | " +
                 $"Final Award: {serverWheel.finalAward:0.##}");
 
             UltraWheelController wheelController =
@@ -2538,11 +2537,6 @@ public class GameManager : MonoBehaviour
                     rawActiveWheel,
                     "stopIndex",
                     out activeWheel.stopIndex);
-            activeWheel.hasMultiplier =
-                TryReadRawInt(
-                    rawActiveWheel,
-                    "multiplier",
-                    out activeWheel.multiplier);
             activeWheel.hasBaseAward =
                 TryReadRawDouble(
                     rawActiveWheel,
@@ -3150,13 +3144,11 @@ public class GameManager : MonoBehaviour
                 !activeWheel.hasWheelIndex ||
                 !activeWheel.hasStopIndex ||
                 !activeWheel.hasBaseAward ||
-                !activeWheel.hasMultiplier ||
                 !activeWheel.hasFinalAward)
             {
                 error =
                     "Every server Ultra activeWheel must explicitly contain " +
-                    "wheelIndex, stopIndex, baseAward, multiplier, and " +
-                    "finalAward.";
+                    "wheelIndex, stopIndex, baseAward, and finalAward.";
                 return false;
             }
 
@@ -3180,12 +3172,11 @@ public class GameManager : MonoBehaviour
             }
 
             if (!IsFiniteNonNegative(activeWheel.baseAward) ||
-                activeWheel.multiplier < 1 ||
                 !IsFiniteNonNegative(activeWheel.finalAward))
             {
                 error =
                     $"Server Ultra wheel {activeWheel.wheelIndex} contains " +
-                    "an invalid award or multiplier.";
+                    "an invalid award.";
                 return false;
             }
 

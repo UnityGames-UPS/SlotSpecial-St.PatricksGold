@@ -1089,8 +1089,7 @@ public class SocketIOManager : MonoBehaviour
                     var activeWheel = new ServerUltraActiveWheel
                     {
                         wheelIndex = ReadJsonInt(rawActiveWheel, "wheelIndex"),
-                        stopIndex = ReadJsonInt(rawActiveWheel, "stopIndex"),
-                        multiplier = ReadJsonInt(rawActiveWheel, "multiplier")
+                        stopIndex = ReadJsonInt(rawActiveWheel, "stopIndex")
                     };
 
                     if (TryReadJsonDouble(rawActiveWheel, "baseAward", out double baseAward))
