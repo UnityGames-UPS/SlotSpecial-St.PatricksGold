@@ -2171,22 +2171,23 @@ public class UIManager : MonoBehaviour
             panel != null && canvasGroup != null);
     }
 
-    private static void SetHamburgerToggleButtonState(
+    private void SetHamburgerToggleButtonState(
         Button openButton,
         Button closeButton,
         bool isOpen,
         bool canToggle)
     {
+        bool isInteractable = canToggle && !IsSoundPanelOpen();
         if (openButton != null)
         {
             openButton.gameObject.SetActive(!isOpen);
-            openButton.interactable = canToggle;
+            openButton.interactable = isInteractable;
         }
 
         if (closeButton != null)
         {
             closeButton.gameObject.SetActive(isOpen);
-            closeButton.interactable = canToggle;
+            closeButton.interactable = isInteractable;
         }
     }
 
@@ -2411,12 +2412,11 @@ public class UIManager : MonoBehaviour
 
         CloseAutoPlayPanel();
         gameManager?.StopAutoPlay();
-        ResetHamburgerMenu();
         CloseInfoPage();
         CloseGuidePage();
         soundPanel.SetActive(true);
         audioController?.PlayPopup();
-        RefreshSpinControls();
+        RefreshControlsForSoundPanelState();
     }
 
     private void CloseSoundPanel()
@@ -2424,8 +2424,18 @@ public class UIManager : MonoBehaviour
         if (soundPanel != null)
         {
             soundPanel.SetActive(false);
-            RefreshSpinControls();
+            RefreshControlsForSoundPanelState();
         }
+    }
+
+    private void RefreshControlsForSoundPanelState()
+    {
+        ResetHamburgerMenu();
+        RefreshSpinControls();
+        RefreshSpinModeButtons();
+        RefreshBetControls();
+        RefreshAutoPlayControls();
+        RefreshUtilityButtonInteractability();
     }
 
     private bool IsSoundPanelOpen()
@@ -2488,23 +2498,25 @@ public class UIManager : MonoBehaviour
     private void SetExpandShrinkButtons(bool expanded)
     {
         isExpanded = expanded;
+        bool canUsePlatformControls =
+            jsFunctCalls != null && !IsSoundPanelOpen();
 
         SetActionButtonState(
             expandButton,
             !isExpanded,
-            jsFunctCalls != null);
+            canUsePlatformControls);
         SetActionButtonState(
             shrinkButton,
             isExpanded,
-            jsFunctCalls != null);
+            canUsePlatformControls);
         SetActionButtonState(
             portraitExpandButton,
             !isExpanded,
-            jsFunctCalls != null);
+            canUsePlatformControls);
         SetActionButtonState(
             portraitShrinkButton,
             isExpanded,
-            jsFunctCalls != null);
+            canUsePlatformControls);
     }
 
     private void RefreshSpinControls()
@@ -2515,6 +2527,7 @@ public class UIManager : MonoBehaviour
 
     private void ApplySpinControlState(bool isRoundActive)
     {
+        bool isSoundPanelOpen = IsSoundPanelOpen();
         bool isUltraUnlocked = gameManager != null && gameManager.IsUltraSlotUnlocked();
         bool showUltraTake =
             isUltraUnlocked &&
@@ -2543,19 +2556,22 @@ public class UIManager : MonoBehaviour
 
         bool canSpin =
             showSpinButton &&
-            !IsSoundPanelOpen() &&
+            !isSoundPanelOpen &&
             gameManager != null &&
             gameManager.CanRequestSpin();
         bool canStop =
             showStopButton &&
+            !isSoundPanelOpen &&
             gameManager != null &&
             gameManager.CanRequestStop();
         bool canUseUltraStart =
             showUltraStart &&
+            !isSoundPanelOpen &&
             gameManager != null &&
             gameManager.CanUseUltraStartButton();
         bool canTakeUltraWin =
             showUltraTake &&
+            !isSoundPanelOpen &&
             gameManager != null &&
             gameManager.CanTakeUltraWin();
 
@@ -2564,7 +2580,7 @@ public class UIManager : MonoBehaviour
         SetActionButtonState(
             autoPlayStopButton,
             showAutoPlayStop,
-            showAutoPlayStop);
+            showAutoPlayStop && !isSoundPanelOpen);
         SetActionButtonState(
             ultraStartButton,
             showUltraStart,
@@ -2585,7 +2601,7 @@ public class UIManager : MonoBehaviour
         SetActionButtonState(
             portraitAutoPlayStopButton,
             showAutoPlayStop,
-            showAutoPlayStop);
+            showAutoPlayStop && !isSoundPanelOpen);
         SetActionButtonState(
             portraitUltraStartButton,
             showUltraStart,
@@ -2612,7 +2628,8 @@ public class UIManager : MonoBehaviour
 
     private void RefreshSpinModeButtons()
     {
-        bool canChangeMode = gameManager != null;
+        bool canChangeMode =
+            gameManager != null && !IsSoundPanelOpen();
         SpinSpeed selectedMode = gameManager != null
             ? gameManager.GetSpinSpeed()
             : SpinSpeed.Normal;
@@ -2857,19 +2874,27 @@ public class UIManager : MonoBehaviour
 
     private void RefreshBetControls()
     {
+        bool canChangeBet = !IsSoundPanelOpen();
         if (increaseBetButton != null)
         {
-            increaseBetButton.interactable = gameManager != null && gameManager.CanIncreaseBet();
+            increaseBetButton.interactable =
+                canChangeBet &&
+                gameManager != null &&
+                gameManager.CanIncreaseBet();
         }
 
         if (decreaseBetButton != null)
         {
-            decreaseBetButton.interactable = gameManager != null && gameManager.CanDecreaseBet();
+            decreaseBetButton.interactable =
+                canChangeBet &&
+                gameManager != null &&
+                gameManager.CanDecreaseBet();
         }
 
         if (portraitIncreaseBetButton != null)
         {
             portraitIncreaseBetButton.interactable =
+                canChangeBet &&
                 gameManager != null &&
                 gameManager.CanIncreaseBet();
         }
@@ -2877,6 +2902,7 @@ public class UIManager : MonoBehaviour
         if (portraitDecreaseBetButton != null)
         {
             portraitDecreaseBetButton.interactable =
+                canChangeBet &&
                 gameManager != null &&
                 gameManager.CanDecreaseBet();
         }
@@ -2921,6 +2947,7 @@ public class UIManager : MonoBehaviour
         }
 
         bool canUseAutoPlayChoices = canStartAutoPlay &&
+                                     !IsSoundPanelOpen() &&
                                      shouldShowAutoPlayPanel &&
                                      (activeAnimation == null ||
                                       !activeAnimation.IsClosing);
@@ -2952,7 +2979,8 @@ public class UIManager : MonoBehaviour
         if (autoPlayStopButton != null)
         {
             autoPlayStopButton.gameObject.SetActive(showAutoPlayStop);
-            autoPlayStopButton.interactable = showAutoPlayStop;
+            autoPlayStopButton.interactable =
+                showAutoPlayStop && !IsSoundPanelOpen();
         }
 
         if (portraitAutoPlayStopButton != null)
@@ -2960,7 +2988,7 @@ public class UIManager : MonoBehaviour
             portraitAutoPlayStopButton.gameObject.SetActive(
                 showAutoPlayStop);
             portraitAutoPlayStopButton.interactable =
-                showAutoPlayStop;
+                showAutoPlayStop && !IsSoundPanelOpen();
         }
 
         RefreshAutoPlayCountText(
@@ -3013,12 +3041,15 @@ public class UIManager : MonoBehaviour
 
     private void RefreshUtilityButtonInteractability()
     {
-        bool canUseInfoPage = infoPagePanel != null;
+        bool isSoundPanelOpen = IsSoundPanelOpen();
+        bool canUseInfoPage =
+            infoPagePanel != null && !isSoundPanelOpen;
         SetButtonInteractable(infoPageButton, canUseInfoPage);
         SetButtonInteractable(portraitInfoPageButton, canUseInfoPage);
         SetButtonInteractable(infoPageBackButton, canUseInfoPage);
 
-        bool canUseGuidePage = guidePagePanel != null;
+        bool canUseGuidePage =
+            guidePagePanel != null && !isSoundPanelOpen;
         SetButtonInteractable(guidePageButton, canUseGuidePage);
         SetButtonInteractable(portraitGuidePageButton, canUseGuidePage);
         SetButtonInteractable(guidePageBackButton, canUseGuidePage);
@@ -3026,11 +3057,18 @@ public class UIManager : MonoBehaviour
         bool canUseSoundPanel =
             soundPanel != null &&
             (gameManager == null || !gameManager.IsSpinRoundActive());
-        SetButtonInteractable(soundPanelButton, canUseSoundPanel);
-        SetButtonInteractable(portraitSoundPanelButton, canUseSoundPanel);
-        SetButtonInteractable(soundPanelCloseButton, canUseSoundPanel);
+        SetButtonInteractable(
+            soundPanelButton,
+            canUseSoundPanel && !isSoundPanelOpen);
+        SetButtonInteractable(
+            portraitSoundPanelButton,
+            canUseSoundPanel && !isSoundPanelOpen);
+        SetButtonInteractable(
+            soundPanelCloseButton,
+            canUseSoundPanel && isSoundPanelOpen);
 
-        bool canOpenExitPopup = popupManager != null;
+        bool canOpenExitPopup =
+            popupManager != null && !isSoundPanelOpen;
         SetButtonInteractable(homeButton, canOpenExitPopup);
         SetButtonInteractable(portraitHomeButton, canOpenExitPopup);
 

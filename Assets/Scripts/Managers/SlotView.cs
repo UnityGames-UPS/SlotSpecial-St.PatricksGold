@@ -6,6 +6,9 @@ using DG.Tweening;
 
 public class SlotView : MonoBehaviour
 {
+    private const float TurboReelStartStagger = 0.03f;
+    private const float TurboFinalReelMotionDuration = 0.03f;
+
     [Header("References")]
     [SerializeField] private GameManager gameManager;
     [SerializeField] private SlotSymbolAnimationManager symbolAnimationManager;
@@ -126,6 +129,8 @@ public class SlotView : MonoBehaviour
 
     private bool isSpinning;
     private SpinSpeed activeSpinSpeed = SpinSpeed.Normal;
+    private bool activeSpinWasAutoPlay;
+    private float activeSpinStartTime;
     private bool[] anticipatingReels;
 
     #region Initialization
@@ -407,6 +412,8 @@ public class SlotView : MonoBehaviour
         if (isSpinning) return;
 
         activeSpinSpeed = spinSpeedMode;
+        activeSpinWasAutoPlay = gameManager != null && gameManager.isAutoPlaying;
+        activeSpinStartTime = Time.time;
         isSpinning = true;
         KillAllTweens();
         ResetAnticipations();
@@ -420,6 +427,9 @@ public class SlotView : MonoBehaviour
             ? currentDisplayMatrix.Count
             : StPatricksGoldDefinition.ReelCount;
 
+        float startStagger = activeSpinSpeed == SpinSpeed.SkipSpin
+            ? TurboReelStartStagger
+            : reelStartStagger;
         for (int col = 0; col < cols; col++)
         {
             // Buffer images (0, 1, 5, 6) already hold valid sprites from the end of the previous spin.
@@ -431,7 +441,7 @@ public class SlotView : MonoBehaviour
                 SetImageAlpha(col, i, 1f);
             }
 
-            StartReelCycleWithDelay(col, col * reelStartStagger);
+            StartReelCycleWithDelay(col, col * startStagger);
         }
     }
 
@@ -969,6 +979,69 @@ public class SlotView : MonoBehaviour
         stopSpinCoroutine = StartCoroutine(StopSpinSequence(resultMatrix, onComplete, true));
     }
 
+    internal void TurboStop(
+        List<List<int>> resultMatrix,
+        System.Action onComplete = null)
+    {
+        if (!TryValidateResultMatrix(resultMatrix, out string error))
+        {
+            Debug.LogError(
+                $"[SlotView] Cannot stop Turbo reels with an invalid " +
+                $"result matrix: {error}");
+            CancelSpin();
+            onComplete?.Invoke();
+            return;
+        }
+
+        if (!isSpinning)
+        {
+            currentDisplayMatrix = resultMatrix;
+            for (int column = 0; column < resultMatrix.Count; column++)
+            {
+                SetReelSymbols(column, resultMatrix[column]);
+                ApplyStoppedReelLayout(column);
+                RestoreReelPosition(column);
+            }
+
+            onComplete?.Invoke();
+            return;
+        }
+
+        stopSpinCoroutine = StartCoroutine(
+            TurboStopAfterFirstVisibleStep(resultMatrix, onComplete));
+    }
+
+    private IEnumerator TurboStopAfterFirstVisibleStep(
+        List<List<int>> resultMatrix,
+        System.Action onComplete)
+    {
+        currentDisplayMatrix = resultMatrix;
+
+        // Reveal shortly after the final staggered reel begins moving. Turbo
+        // only needs a brief suggestion of reel motion, not a full symbol step.
+        float resultRevealTime =
+            activeSpinStartTime +
+            (Mathf.Max(0, resultMatrix.Count - 1) * TurboReelStartStagger) +
+            TurboFinalReelMotionDuration;
+        while (Time.time < resultRevealTime)
+        {
+            yield return null;
+        }
+
+        isSpinning = false;
+        KillAllTweens();
+
+        for (int column = 0; column < resultMatrix.Count; column++)
+        {
+            SetReelSymbols(column, resultMatrix[column]);
+            ApplyStoppedReelLayout(column);
+            RestoreReelPosition(column);
+        }
+
+        stopSpinCoroutine = null;
+        onComplete?.Invoke();
+    }
+
     #endregion
 
 
@@ -1258,6 +1331,8 @@ public class SlotView : MonoBehaviour
         System.Action onComplete)
     {
         bool isAuto = (gameManager != null && gameManager.isAutoPlaying);
+        bool showTotalOnly =
+            activeSpinWasAutoPlay && activeSpinSpeed == SpinSpeed.SkipSpin;
         float cycleDuration = symbolAnimationManager != null
             ? symbolAnimationManager.GetWinSymbolLoopDuration()
             : 1.6f;
@@ -1329,6 +1404,13 @@ public class SlotView : MonoBehaviour
         AnimateWinPositions(allWinningPositions, cycleDuration);
         yield return new WaitForSecondsRealtime(stageDuration);
         StopWinAnimations(false);
+
+        if (showTotalOnly)
+        {
+            winAnimationCoroutine = null;
+            onComplete?.Invoke();
+            yield break;
+        }
 
         if (isAuto)
         {

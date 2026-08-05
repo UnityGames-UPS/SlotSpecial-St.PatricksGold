@@ -696,13 +696,13 @@ public class GameManager : MonoBehaviour
 
         currentState = GameState.Stopping;
         List<List<int>> resultMatrix = pendingResultMatrix;
-        bool showResultImmediately = activeSpinSpeed == SpinSpeed.SkipSpin;
+        bool useTurboStop = activeSpinSpeed == SpinSpeed.SkipSpin;
         bool useFastStop = manualStopRequested || activeSpinSpeed == SpinSpeed.FastSpin;
         spinCoroutine = null;
 
-        if (showResultImmediately)
+        if (useTurboStop)
         {
-            slotView.ShowServerResultImmediately(resultMatrix, OnReelsStoppedComplete);
+            slotView.TurboStop(resultMatrix, OnReelsStoppedComplete);
         }
         else if (useFastStop)
         {
