@@ -521,11 +521,6 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
             presentation.TextParent,
             presentation.ServerValues);
 
-        if (presentation.SymbolImage != null)
-        {
-            presentation.SymbolImage.enabled = false;
-        }
-
         symbolAnimationManager.PlayScatterWheelHandoff(
             wheelTransform,
             presentation.RestingWheelScale,

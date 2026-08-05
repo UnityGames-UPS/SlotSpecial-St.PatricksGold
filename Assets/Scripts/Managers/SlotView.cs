@@ -16,6 +16,8 @@ public class SlotView : MonoBehaviour
     private ScatterWheelPresentationManager scatterWheelPresentationManager;
     [Tooltip("Provides the configured 2x, 3x, 4x, and 5x Wild multiplier icons.")]
     [SerializeField] private UIManager uiManager;
+    [Tooltip("Parent object containing the external 5x3 winning-symbol animation panels.")]
+    [SerializeField] private GameObject animationsParentPanel;
 
     [Header("St. Patrick's Gold Symbol Sprites")]
     [SerializeField] private Sprite spriteAce;                // ID: 0
@@ -127,6 +129,11 @@ public class SlotView : MonoBehaviour
 
     #region Initialization
 
+    private void Awake()
+    {
+        HideExternalAnimationPanels();
+    }
+
     private void Start()
     {
         if (uiManager == null)
@@ -208,6 +215,7 @@ public class SlotView : MonoBehaviour
         HideWinAnimationImages();
         HideWinIndicators();
         HideWildMultiplierIndicators();
+        HideExternalAnimationPanels();
         CacheSymbolBaseColors();
         ResetAnticipations();
     }
@@ -250,15 +258,21 @@ public class SlotView : MonoBehaviour
 
         for (int column = 0; column < reelImagesList.Count; column++)
         {
-            List<Image> symbolImages = reelImagesList[column]?.images;
-            if (symbolImages == null)
+            List<Image> animationImages =
+                reelImagesList[column]?.winAnimationImages;
+            if (animationImages == null)
             {
                 continue;
             }
 
-            for (int imageIndex = 0; imageIndex < symbolImages.Count; imageIndex++)
+            for (int animationIndex = 0;
+                 animationIndex < animationImages.Count;
+                 animationIndex++)
             {
-                SetWinIndicatorActive(symbolImages[imageIndex], false);
+                SetWinIndicatorActive(
+                    column,
+                    2 + animationIndex,
+                    false);
             }
         }
     }
@@ -272,17 +286,53 @@ public class SlotView : MonoBehaviour
 
         for (int column = 0; column < reelImagesList.Count; column++)
         {
-            List<Image> symbolImages = reelImagesList[column]?.images;
-            if (symbolImages == null)
+            List<Image> animationImages =
+                reelImagesList[column]?.winAnimationImages;
+            if (animationImages == null)
             {
                 continue;
             }
 
-            for (int imageIndex = 0; imageIndex < symbolImages.Count; imageIndex++)
+            for (int animationIndex = 0;
+                 animationIndex < animationImages.Count;
+                 animationIndex++)
             {
-                HideWildMultiplierIndicator(symbolImages[imageIndex]);
+                HideWildMultiplierIndicator(
+                    column,
+                    2 + animationIndex);
             }
         }
+    }
+
+    private void HideExternalAnimationPanels()
+    {
+        if (reelImagesList == null)
+        {
+            SetAnimationsParentPanelActive(false);
+            return;
+        }
+
+        for (int column = 0; column < reelImagesList.Count; column++)
+        {
+            List<Image> animationImages =
+                reelImagesList[column]?.winAnimationImages;
+            if (animationImages == null)
+            {
+                continue;
+            }
+
+            for (int animationIndex = 0;
+                 animationIndex < animationImages.Count;
+                 animationIndex++)
+            {
+                SetExternalAnimationPanelActive(
+                    column,
+                    2 + animationIndex,
+                    false);
+            }
+        }
+
+        SetAnimationsParentPanelActive(false);
     }
 
     internal void SetInitialMatrix(List<List<int>> matrix)
@@ -347,7 +397,7 @@ public class SlotView : MonoBehaviour
         scatterWheelPresentationManager?.HideColumn(columnIndex);
         for (int imageIndex = 0; imageIndex < reel.images.Count; imageIndex++)
         {
-            HideWildMultiplierIndicator(reel.images[imageIndex]);
+            HideWildMultiplierIndicator(columnIndex, imageIndex);
         }
 
         int visibleRows = visibleSymbolIds.Count;
@@ -1072,6 +1122,7 @@ public class SlotView : MonoBehaviour
     {
         scatterWheelPresentationManager?.CancelPresentation();
         RestoreVisibleSymbolColors();
+        HideExternalAnimationPanels();
     }
 
     internal bool IsScatterWheelAt(int column, int row)
@@ -1101,15 +1152,22 @@ public class SlotView : MonoBehaviour
         symbolImage = GetSymbolImage(column, imageIndex);
         animationImage =
             GetSymbolWinAnimationImage(column, imageIndex);
+        if (symbolImage == null || animationImage == null)
+        {
+            return false;
+        }
+
         backgroundFxImage =
-            GetScatterWheelBackgroundFxImage(symbolImage);
-        return symbolImage != null && animationImage != null;
+            GetScatterWheelBackgroundFxImage(
+                GetAnimationContentRoot(column, imageIndex));
+        SetExternalAnimationPanelActive(column, imageIndex, true);
+        return true;
     }
 
     private static Image GetScatterWheelBackgroundFxImage(
-        Image symbolImage)
+        Transform animationContentRoot)
     {
-        if (symbolImage == null)
+        if (animationContentRoot == null)
         {
             return null;
         }
@@ -1123,13 +1181,12 @@ public class SlotView : MonoBehaviour
             "Background"
         };
 
-        Transform symbolTransform = symbolImage.transform;
         for (int childIndex = 0;
-             childIndex < symbolTransform.childCount;
+             childIndex < animationContentRoot.childCount;
              childIndex++)
         {
             Transform backgroundTransform =
-                symbolTransform.GetChild(childIndex);
+                animationContentRoot.GetChild(childIndex);
             if (backgroundTransform == null)
             {
                 continue;
@@ -1680,6 +1737,123 @@ public class SlotView : MonoBehaviour
         return reel.winAnimationImages[imageIndex];
     }
 
+    private Transform GetAnimationContentRoot(int column, int imageIndex)
+    {
+        Image symbolImage = GetSymbolImage(column, imageIndex);
+        Image animationImage =
+            GetSymbolWinAnimationImage(column, imageIndex);
+        if (animationImage == null)
+        {
+            return symbolImage != null ? symbolImage.transform : null;
+        }
+
+        Transform animationTransform = animationImage.transform;
+        if (symbolImage != null &&
+            animationTransform.IsChildOf(symbolImage.transform))
+        {
+            return symbolImage.transform;
+        }
+
+        return animationTransform.parent != null
+            ? animationTransform.parent
+            : animationTransform;
+    }
+
+    private GameObject GetExternalAnimationPanel(
+        int column,
+        int imageIndex)
+    {
+        Image animationImage =
+            GetSymbolWinAnimationImage(column, imageIndex);
+        if (animationImage == null)
+        {
+            return null;
+        }
+
+        Image symbolImage = GetSymbolImage(column, imageIndex);
+        Transform animationTransform = animationImage.transform;
+        if (symbolImage != null &&
+            animationTransform.IsChildOf(symbolImage.transform))
+        {
+            return null;
+        }
+
+        return animationTransform.parent != null
+            ? animationTransform.parent.gameObject
+            : animationTransform.gameObject;
+    }
+
+    private void SetExternalAnimationPanelActive(
+        int column,
+        int imageIndex,
+        bool isActive)
+    {
+        GameObject animationPanel =
+            GetExternalAnimationPanel(column, imageIndex);
+        if (animationPanel == null)
+        {
+            return;
+        }
+
+        if (isActive)
+        {
+            SetAnimationsParentPanelActive(true);
+        }
+
+        if (animationPanel.activeSelf != isActive)
+        {
+            animationPanel.SetActive(isActive);
+        }
+
+        if (!isActive && !HasActiveExternalAnimationPanel())
+        {
+            SetAnimationsParentPanelActive(false);
+        }
+    }
+
+    private bool HasActiveExternalAnimationPanel()
+    {
+        if (reelImagesList == null)
+        {
+            return false;
+        }
+
+        for (int column = 0; column < reelImagesList.Count; column++)
+        {
+            List<Image> animationImages =
+                reelImagesList[column]?.winAnimationImages;
+            if (animationImages == null)
+            {
+                continue;
+            }
+
+            for (int animationIndex = 0;
+                 animationIndex < animationImages.Count;
+                 animationIndex++)
+            {
+                GameObject animationPanel =
+                    GetExternalAnimationPanel(
+                        column,
+                        2 + animationIndex);
+                if (animationPanel != null && animationPanel.activeSelf)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private void SetAnimationsParentPanelActive(bool isActive)
+    {
+        if (animationsParentPanel != null &&
+            animationsParentPanel.activeSelf != isActive)
+        {
+            animationsParentPanel.SetActive(isActive);
+        }
+    }
+
     private Image GetSymbolImage(int column, int imageIndex)
     {
         if (column < 0 || column >= reelImagesList.Count)
@@ -1726,8 +1900,6 @@ public class SlotView : MonoBehaviour
             return;
         }
 
-        SetWinIndicatorActive(symbolImage, true);
-
         if (symbolAnimationManager == null)
         {
             Debug.LogWarning("[AnimateWinSymbol] SlotSymbolAnimationManager is not assigned to SlotView");
@@ -1740,6 +1912,9 @@ public class SlotView : MonoBehaviour
             Debug.LogWarning($"[AnimateWinSymbol] Missing child animation Image for col {column}, imageIndex {imageIndex}");
             return;
         }
+
+        SetExternalAnimationPanelActive(column, imageIndex, true);
+        SetWinIndicatorActive(column, imageIndex, true);
 
         int symbolId = GetSymbolId(symbolImage.sprite);
         float speedMultiplier =
@@ -1759,11 +1934,12 @@ public class SlotView : MonoBehaviour
         Image symbolImage = GetSymbolImage(column, imageIndex);
         if (symbolImage == null)
         {
+            SetExternalAnimationPanelActive(column, imageIndex, false);
             return;
         }
 
-        SetWinIndicatorActive(symbolImage, false);
-        HideWildMultiplierIndicator(symbolImage);
+        SetWinIndicatorActive(column, imageIndex, false);
+        HideWildMultiplierIndicator(column, imageIndex);
         scatterWheelPresentationManager?.HideWheel(
             column,
             imageIndex - 2);
@@ -1790,44 +1966,52 @@ public class SlotView : MonoBehaviour
             baseColor.b,
             1f);
         symbolImage.enabled = true;
+        SetExternalAnimationPanelActive(column, imageIndex, false);
     }
 
-    private void SetWinIndicatorActive(Image symbolImage, bool isActive)
+    private void SetWinIndicatorActive(
+        int column,
+        int imageIndex,
+        bool isActive)
     {
-        GameObject winIndicator = GetWinIndicator(symbolImage);
+        GameObject winIndicator = GetWinIndicator(column, imageIndex);
         if (winIndicator != null)
         {
             winIndicator.SetActive(isActive);
         }
     }
 
-    private GameObject GetWinIndicator(Image symbolImage)
+    private GameObject GetWinIndicator(int column, int imageIndex)
     {
-        if (symbolImage == null)
+        Image lookupImage =
+            GetSymbolWinAnimationImage(column, imageIndex) ??
+            GetSymbolImage(column, imageIndex);
+        Transform animationContentRoot =
+            GetAnimationContentRoot(column, imageIndex);
+        if (lookupImage == null || animationContentRoot == null)
         {
             return null;
         }
 
         if (winIndicators.TryGetValue(
-                symbolImage,
+                lookupImage,
                 out GameObject cachedIndicator) &&
             cachedIndicator != null)
         {
             return cachedIndicator;
         }
 
-        Transform symbolTransform = symbolImage.transform;
-        Transform winTransform = symbolTransform.Find("Win");
+        Transform winTransform = animationContentRoot.Find("Win");
 
         if (winTransform == null)
         {
             Transform[] descendants =
-                symbolTransform.GetComponentsInChildren<Transform>(true);
+                animationContentRoot.GetComponentsInChildren<Transform>(true);
             for (int index = 0; index < descendants.Length; index++)
             {
                 Transform descendant = descendants[index];
                 if (descendant != null &&
-                    descendant != symbolTransform &&
+                    descendant != animationContentRoot &&
                     string.Equals(
                         descendant.name,
                         "Win",
@@ -1843,7 +2027,7 @@ public class SlotView : MonoBehaviour
             winTransform != null ? winTransform.gameObject : null;
         if (winIndicator != null)
         {
-            winIndicators[symbolImage] = winIndicator;
+            winIndicators[lookupImage] = winIndicator;
         }
 
         return winIndicator;
@@ -1945,8 +2129,9 @@ public class SlotView : MonoBehaviour
         float symbolLoopDuration)
     {
         int imageIndex = 2 + GetVisualRow(column, row);
-        Image symbolImage = GetSymbolImage(column, imageIndex);
-        Image multiplierImage = GetWildMultiplierIndicator(symbolImage);
+        SetExternalAnimationPanelActive(column, imageIndex, true);
+        Image multiplierImage =
+            GetWildMultiplierIndicator(column, imageIndex);
         Sprite finalSprite = uiManager != null
             ? uiManager.GetWildMultiplierIcon(multiplier)
             : null;
@@ -1956,7 +2141,7 @@ public class SlotView : MonoBehaviour
             return;
         }
 
-        HideWildMultiplierIndicator(symbolImage);
+        HideWildMultiplierIndicator(column, imageIndex);
         multiplierImage.sprite = finalSprite;
         Color color = multiplierImage.color;
         multiplierImage.color = new Color(
@@ -2051,9 +2236,10 @@ public class SlotView : MonoBehaviour
         }
     }
 
-    private void HideWildMultiplierIndicator(Image symbolImage)
+    private void HideWildMultiplierIndicator(int column, int imageIndex)
     {
-        Image multiplierImage = GetWildMultiplierIndicator(symbolImage);
+        Image multiplierImage =
+            GetWildMultiplierIndicator(column, imageIndex);
         if (multiplierImage == null)
         {
             return;
@@ -2124,34 +2310,39 @@ public class SlotView : MonoBehaviour
         multiplierRect.localScale = state.LocalScale;
     }
 
-    private Image GetWildMultiplierIndicator(Image symbolImage)
+    private Image GetWildMultiplierIndicator(int column, int imageIndex)
     {
-        if (symbolImage == null)
+        Image lookupImage =
+            GetSymbolWinAnimationImage(column, imageIndex) ??
+            GetSymbolImage(column, imageIndex);
+        Transform animationContentRoot =
+            GetAnimationContentRoot(column, imageIndex);
+        if (lookupImage == null || animationContentRoot == null)
         {
             return null;
         }
 
         if (wildMultiplierIndicators.TryGetValue(
-                symbolImage,
+                lookupImage,
                 out Image cachedIndicator) &&
             cachedIndicator != null)
         {
             return cachedIndicator;
         }
 
-        Transform symbolTransform = symbolImage.transform;
         Transform multiplierTransform =
-            symbolTransform.Find("WildMultiplier") ??
-            symbolTransform.Find("WildMultiuplier");
+            animationContentRoot.Find("WildMultiplier") ??
+            animationContentRoot.Find("WildMultiuplier");
 
         if (multiplierTransform == null)
         {
             Transform[] descendants =
-                symbolTransform.GetComponentsInChildren<Transform>(true);
+                animationContentRoot.GetComponentsInChildren<Transform>(true);
             for (int index = 0; index < descendants.Length; index++)
             {
                 Transform descendant = descendants[index];
-                if (descendant == null || descendant == symbolTransform)
+                if (descendant == null ||
+                    descendant == animationContentRoot)
                 {
                     continue;
                 }
@@ -2176,7 +2367,7 @@ public class SlotView : MonoBehaviour
             : null;
         if (multiplierImage != null)
         {
-            wildMultiplierIndicators[symbolImage] = multiplierImage;
+            wildMultiplierIndicators[lookupImage] = multiplierImage;
         }
 
         return multiplierImage;
@@ -2459,6 +2650,6 @@ public class SlotView : MonoBehaviour
 public class ReelImages
 {
     [SerializeField] internal List<Image> images = new List<Image>(7);
-    [Tooltip("Assign the animation child Images for Image (2), Image (3), and Image (4), in that order.")]
+    [Tooltip("Assign the Animations Images from the external top, middle, and bottom symbol panels, in that order.")]
     [SerializeField] internal List<Image> winAnimationImages = new List<Image>(3);
 }
