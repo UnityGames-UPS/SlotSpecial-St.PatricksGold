@@ -49,9 +49,12 @@ public sealed class OCController : MonoBehaviour
     [SerializeField] private Vector2 portraitGameNameLogoOffset =
         new Vector2(0f, 70f);
     [Tooltip(
-        "Scale multiplier applied to the game name logo in Mobile Portrait.")]
-    [SerializeField, Min(0f)]
-    private float portraitGameNameLogoScaleMultiplier = 3f;
+        "Logo sprite used only in Mobile Portrait. Assign it in the Inspector.")]
+    [SerializeField] private Sprite portraitGameNameLogoSprite;
+    [Tooltip(
+        "Width and height used by the game name logo in Mobile Portrait.")]
+    [SerializeField] private Vector2 portraitGameNameLogoSize =
+        new Vector2(1011f, 179f);
 
     [Header("Shared Sound Panel")]
     [SerializeField] private RectTransform soundPanel;
@@ -69,6 +72,9 @@ public sealed class OCController : MonoBehaviour
     private bool isSubscribed;
     private Vector3 landscapeGameNameLogoPosition;
     private Vector3 landscapeGameNameLogoScale;
+    private Vector2 landscapeGameNameLogoSize;
+    private Image gameNameLogoImage;
+    private Sprite landscapeGameNameLogoSprite;
     private Vector2 landscapeSoundPanelAnchoredPosition;
 
     private void Awake()
@@ -79,6 +85,13 @@ public sealed class OCController : MonoBehaviour
                 gameNameLogo.localPosition;
             landscapeGameNameLogoScale =
                 gameNameLogo.localScale;
+            landscapeGameNameLogoSize =
+                gameNameLogo.sizeDelta;
+            gameNameLogoImage = gameNameLogo.GetComponent<Image>();
+            if (gameNameLogoImage != null)
+            {
+                landscapeGameNameLogoSprite = gameNameLogoImage.sprite;
+            }
         }
 
         if (soundPanel != null)
@@ -201,11 +214,19 @@ public sealed class OCController : MonoBehaviour
             gameNameLogo,
             gameNameLogoPosition);
 
-        Vector3 gameNameLogoScale = isMobilePortrait
-            ? landscapeGameNameLogoScale *
-                portraitGameNameLogoScaleMultiplier
-            : landscapeGameNameLogoScale;
-        TweenScale(gameNameLogo, gameNameLogoScale);
+        if (gameNameLogoImage != null)
+        {
+            gameNameLogoImage.sprite =
+                isMobilePortrait && portraitGameNameLogoSprite != null
+                    ? portraitGameNameLogoSprite
+                    : landscapeGameNameLogoSprite;
+        }
+
+        Vector2 gameNameLogoSize = isMobilePortrait
+            ? portraitGameNameLogoSize
+            : landscapeGameNameLogoSize;
+        TweenSize(gameNameLogo, gameNameLogoSize);
+        TweenScale(gameNameLogo, landscapeGameNameLogoScale);
 
         if (soundPanel != null)
         {
@@ -438,8 +459,9 @@ public sealed class OCController : MonoBehaviour
     private void OnValidate()
     {
         transitionDuration = Mathf.Max(0f, transitionDuration);
-        portraitGameNameLogoScaleMultiplier =
-            Mathf.Max(0f, portraitGameNameLogoScaleMultiplier);
+        portraitGameNameLogoSize = new Vector2(
+            Mathf.Max(0f, portraitGameNameLogoSize.x),
+            Mathf.Max(0f, portraitGameNameLogoSize.y));
 
         if (gameObject.scene.IsValid())
         {
