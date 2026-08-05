@@ -75,6 +75,7 @@ public sealed class PopupManager : MonoBehaviour
     private Sequence ultraWinSequence;
     private GameObject currentActivePopup;
     private bool isErrorCritical;
+    private bool reportedErrorPopupVisible;
     private RectTransform errorPopupRect;
     private Vector3 errorPopupNormalScale = Vector3.one;
     private Tween currentPopupTween;
@@ -202,6 +203,7 @@ public sealed class PopupManager : MonoBehaviour
         isErrorCritical = isCritical;
         currentActivePopup = errorPopup;
         errorPopup.SetActive(true);
+        SetErrorPopupVisibilityState(true);
         AudioController.Instance?.PlayPopup();
         AnimatePopupOpen(errorPopupRect);
     }
@@ -231,6 +233,7 @@ public sealed class PopupManager : MonoBehaviour
     internal void CloseCurrentPopup()
     {
         KillCurrentPopupTween();
+        bool isClosingErrorPopup = currentActivePopup == errorPopup;
 
         if (currentActivePopup != null)
         {
@@ -252,6 +255,11 @@ public sealed class PopupManager : MonoBehaviour
 
         currentActivePopup = null;
         isErrorCritical = false;
+
+        if (isClosingErrorPopup)
+        {
+            SetErrorPopupVisibilityState(false);
+        }
 
         if (errorOkButton != null)
         {
@@ -299,6 +307,7 @@ public sealed class PopupManager : MonoBehaviour
                 }
 
                 isErrorCritical = false;
+                SetErrorPopupVisibilityState(false);
 
                 if (errorOkButton != null)
                 {
@@ -310,6 +319,26 @@ public sealed class PopupManager : MonoBehaviour
                     ExitGame();
                 }
             });
+    }
+
+    internal event Action<bool> ErrorPopupVisibilityChanged;
+
+    internal bool IsErrorPopupOpen()
+    {
+        return currentActivePopup == errorPopup &&
+               errorPopup != null &&
+               errorPopup.activeSelf;
+    }
+
+    private void SetErrorPopupVisibilityState(bool isVisible)
+    {
+        if (reportedErrorPopupVisible == isVisible)
+        {
+            return;
+        }
+
+        reportedErrorPopupVisible = isVisible;
+        ErrorPopupVisibilityChanged?.Invoke(isVisible);
     }
 
     private void OnExitGameYesClicked()
@@ -771,6 +800,7 @@ public sealed class PopupManager : MonoBehaviour
 
         currentActivePopup = null;
         isErrorCritical = false;
+        SetErrorPopupVisibilityState(false);
 
         if (errorOkButton != null)
         {
