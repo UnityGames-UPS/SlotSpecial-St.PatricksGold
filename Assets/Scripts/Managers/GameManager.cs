@@ -72,6 +72,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private float normalSpinDuration = 2.0f;
     [UnityEngine.Serialization.FormerlySerializedAs("quickSpinDuration")]
     [SerializeField] private float fastSpinDuration = 0.75f;
+    [SerializeField, Min(0f)] private float skipSpinDuration = 0.5f;
 
     [Header("Auto Play Settings")]
     [Tooltip("How long an autoplay result remains visible before the next spin starts.")]
@@ -912,7 +913,7 @@ public class GameManager : MonoBehaviour
             case SpinSpeed.FastSpin:
                 return Mathf.Max(0f, fastSpinDuration);
             case SpinSpeed.SkipSpin:
-                return 0f;
+                return Mathf.Max(0f, skipSpinDuration);
             default:
                 return Mathf.Max(0f, normalSpinDuration);
         }

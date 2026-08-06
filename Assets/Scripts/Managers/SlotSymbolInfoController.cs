@@ -50,7 +50,7 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
     [SerializeField, Min(1f)] private float descriptionMinimumFontSize = 10f;
 
     [Header("Timing And Position")]
-    [SerializeField, Min(0f)] private float horizontalGap = 8f;
+    [SerializeField, Min(-75f)] private float horizontalGap = -75f;
     [SerializeField, Min(0.01f)] private float visibleDuration = 1.5f;
     [SerializeField, Min(0f)] private float fadeOutDuration = 0.25f;
 
@@ -485,6 +485,13 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
             return false;
         }
 
+        // Init data supplies the symbol paytable as multipliers. Convert them
+        // to the monetary values for the base bet selected at click time.
+        double baseBet = Math.Max(0d, gameManager.GetDisplayedBetAmount());
+        payout3x *= baseBet;
+        payout4x *= baseBet;
+        payout5x *= baseBet;
+
         text =
             BuildPayoutLine(5, payout5x) + "\n" +
             BuildPayoutLine(4, payout4x) + "\n" +
@@ -614,7 +621,7 @@ public sealed class SlotSymbolInfoController : MonoBehaviour
 
     private void OnValidate()
     {
-        horizontalGap = Mathf.Max(0f, horizontalGap);
+        horizontalGap = Mathf.Max(-75f, horizontalGap);
         descriptionMinimumFontSize = Mathf.Max(
             1f,
             descriptionMinimumFontSize);

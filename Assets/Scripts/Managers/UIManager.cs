@@ -1358,6 +1358,7 @@ public class UIManager : MonoBehaviour
         RefreshSpinControls();
         RefreshSpinModeButtons();
         RefreshBetControls();
+        RefreshUtilityButtonInteractability();
     }
 
     private void OnNormalSpinButtonClicked()
@@ -2445,13 +2446,7 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        if (gameManager != null && gameManager.IsSpinRoundActive())
-        {
-            return;
-        }
-
         CloseAutoPlayPanel();
-        gameManager?.StopAutoPlay();
         CloseInfoPage();
         CloseGuidePage();
         CacheSoundPanelAnimationState();
@@ -2788,7 +2783,9 @@ public class UIManager : MonoBehaviour
     private void RefreshSpinModeButtons()
     {
         bool canChangeMode =
-            gameManager != null && !IsBottomPanelInteractionBlocked();
+            gameManager != null &&
+            !gameManager.isAutoPlaying &&
+            !IsBottomPanelInteractionBlocked();
         SpinSpeed selectedMode = gameManager != null
             ? gameManager.GetSpinSpeed()
             : SpinSpeed.Normal;
@@ -3202,23 +3199,24 @@ public class UIManager : MonoBehaviour
     {
         bool isSoundPanelOpen = IsSoundPanelOpen();
         bool isErrorPopupOpen = IsErrorPopupOpen();
+        bool isAutoPlaying = gameManager != null && gameManager.isAutoPlaying;
         bool areBottomPanelControlsBlocked =
             isSoundPanelOpen || isErrorPopupOpen;
         bool canUseInfoPage =
-            infoPagePanel != null && !areBottomPanelControlsBlocked;
+            infoPagePanel != null &&
+            !areBottomPanelControlsBlocked;
         SetButtonInteractable(infoPageButton, canUseInfoPage);
         SetButtonInteractable(portraitInfoPageButton, canUseInfoPage);
         SetButtonInteractable(infoPageBackButton, canUseInfoPage);
 
         bool canUseGuidePage =
-            guidePagePanel != null && !areBottomPanelControlsBlocked;
+            guidePagePanel != null &&
+            !areBottomPanelControlsBlocked;
         SetButtonInteractable(guidePageButton, canUseGuidePage);
         SetButtonInteractable(portraitGuidePageButton, canUseGuidePage);
         SetButtonInteractable(guidePageBackButton, canUseGuidePage);
 
-        bool canUseSoundPanel =
-            soundPanel != null &&
-            (gameManager == null || !gameManager.IsSpinRoundActive());
+        bool canUseSoundPanel = soundPanel != null;
         SetButtonInteractable(
             soundPanelButton,
             canUseSoundPanel && !areBottomPanelControlsBlocked);
@@ -3230,7 +3228,9 @@ public class UIManager : MonoBehaviour
             canUseSoundPanel && isSoundPanelOpen && !isErrorPopupOpen);
 
         bool canOpenExitPopup =
-            popupManager != null && !areBottomPanelControlsBlocked;
+            popupManager != null &&
+            !isAutoPlaying &&
+            !areBottomPanelControlsBlocked;
         SetButtonInteractable(homeButton, canOpenExitPopup);
         SetButtonInteractable(portraitHomeButton, canOpenExitPopup);
 

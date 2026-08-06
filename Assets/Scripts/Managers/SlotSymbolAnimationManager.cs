@@ -43,15 +43,9 @@ public class SlotSymbolAnimationManager : MonoBehaviour
     private float scatterWheelIntroDuration = 1.6f;
     [Tooltip(
         "Playback-speed multiplier for the Scatter Background FX. " +
-        "For example, 0.4 plays the FX at 40% speed so it remains visible " +
-        "longer than the Main Scatter Wheel sequence.")]
+        "For example, 0.4 plays each repeating FX loop at 40% speed.")]
     [SerializeField, Range(0.01f, 1f)]
     private float scatterWheelBackgroundFxSpeedMultiplier = 0.4f;
-    [Tooltip(
-        "Time used to fade out the Scatter Background FX after its " +
-        "single forward pass finishes.")]
-    [SerializeField, Min(0.01f)]
-    private float scatterWheelBackgroundFxFadeDuration = 0.2f;
     [Tooltip(
         "Scale used when CanRotate, WheelRim, and Leaf first appear after " +
         "the Main Scatter Wheel sequence.")]
@@ -151,7 +145,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
     [UnityEngine.Serialization.FormerlySerializedAs(
         "wildWinLoopsBeforeNextStage")]
     [SerializeField, HideInInspector, Min(1)]
-    private int winLoopsBeforeNextStage = 2;
+    private int winLoopsBeforeNextStage = 3;
 
     [SerializeField, HideInInspector, Min(0.001f)]
     private float frameDuration = 1f / 30f;
@@ -371,8 +365,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         Image baseImage,
         Image mainAnimationImage,
         Image backgroundFxImage,
-        Action onComplete,
-        Action onBackgroundFxComplete = null)
+        Action onComplete)
     {
         if (baseImage == null || mainAnimationImage == null)
         {
@@ -461,8 +454,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             StartCoroutine(
                 PlayScatterWheelIntroFrames(
                     activeAnimation,
-                    onComplete,
-                    onBackgroundFxComplete));
+                    onComplete));
         return true;
     }
 
@@ -1668,8 +1660,7 @@ public class SlotSymbolAnimationManager : MonoBehaviour
 
     private IEnumerator PlayScatterWheelIntroFrames(
         ActiveSymbolAnimation activeAnimation,
-        Action onMainSequenceComplete,
-        Action onBackgroundFxComplete)
+        Action onMainSequenceComplete)
     {
         if (startDelay > 0f)
         {
@@ -1696,21 +1687,19 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             activeAnimation.SecondaryFrames != null &&
             activeAnimation.SecondaryFrames.Length > 0;
         float mainDuration = GetScatterWheelIntroDuration();
-        float backgroundFxDuration =
+        float backgroundFxLoopDuration =
             hasBackgroundFx
                 ? mainDuration /
                   Mathf.Max(
                       0.01f,
                       scatterWheelBackgroundFxSpeedMultiplier)
                 : mainDuration;
-        float totalDuration =
-            Mathf.Max(mainDuration, backgroundFxDuration);
         float elapsed = 0f;
         int displayedMainFrameIndex = -1;
         int displayedBackgroundFrameIndex = -1;
         bool mainSequenceCompleted = false;
 
-        while (elapsed < totalDuration)
+        while (IsCurrentAnimation(activeAnimation))
         {
             if (!mainSequenceCompleted)
             {
@@ -1748,13 +1737,25 @@ public class SlotSymbolAnimationManager : MonoBehaviour
                     {
                         yield break;
                     }
+
+                    if (!hasBackgroundFx)
+                    {
+                        activeAnimation.PlaybackRoutine = null;
+                        activeAnimations.Remove(overlayImage);
+                        RestoreAnimationLayers(activeAnimation);
+                        yield break;
+                    }
                 }
             }
 
             if (hasBackgroundFx)
             {
-                float backgroundNormalizedTime =
-                    Mathf.Clamp01(elapsed / backgroundFxDuration);
+                // Keep the background alive behind the stopped Scatter wheel.
+                // StopScatterWheelIntro ends this loop when the next spin starts.
+                float backgroundNormalizedTime = Mathf.Repeat(
+                    elapsed,
+                    backgroundFxLoopDuration) /
+                    backgroundFxLoopDuration;
                 int backgroundFrameIndex = Mathf.Min(
                     Mathf.FloorToInt(
                         backgroundNormalizedTime *
@@ -1780,63 +1781,6 @@ public class SlotSymbolAnimationManager : MonoBehaviour
             elapsed += GetDeltaTime();
             yield return null;
         }
-
-        if (!mainSequenceCompleted)
-        {
-            RestorePrimaryAnimationLayer(activeAnimation);
-            onMainSequenceComplete?.Invoke();
-            if (!IsCurrentAnimation(activeAnimation))
-            {
-                yield break;
-            }
-        }
-
-        if (!IsCurrentAnimation(activeAnimation))
-        {
-            yield break;
-        }
-
-        if (!hasBackgroundFx)
-        {
-            activeAnimation.PlaybackRoutine = null;
-            activeAnimations.Remove(overlayImage);
-            RestoreAnimationLayers(activeAnimation);
-            onBackgroundFxComplete?.Invoke();
-            yield break;
-        }
-
-        Image backgroundFxImage = activeAnimation.SecondaryOverlayImage;
-        float startingAlpha = backgroundFxImage.color.a;
-        float fadeDuration = Mathf.Max(
-            0.01f,
-            scatterWheelBackgroundFxFadeDuration);
-        float fadeElapsed = 0f;
-        while (fadeElapsed < fadeDuration)
-        {
-            if (!IsCurrentAnimation(activeAnimation))
-            {
-                yield break;
-            }
-
-            fadeElapsed += GetDeltaTime();
-            SetAlpha(
-                backgroundFxImage,
-                Mathf.Lerp(
-                    startingAlpha,
-                    0f,
-                    Mathf.Clamp01(fadeElapsed / fadeDuration)));
-            yield return null;
-        }
-
-        if (!IsCurrentAnimation(activeAnimation))
-        {
-            yield break;
-        }
-
-        activeAnimation.PlaybackRoutine = null;
-        activeAnimations.Remove(overlayImage);
-        RestoreAnimationLayers(activeAnimation);
-        onBackgroundFxComplete?.Invoke();
     }
 
     private bool IsCurrentAnimation(

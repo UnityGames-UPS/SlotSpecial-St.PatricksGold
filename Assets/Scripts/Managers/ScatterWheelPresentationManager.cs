@@ -258,7 +258,6 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
             animationFrameCount;
         int completedIntroCount = 0;
         int completedSpinCount = 0;
-        int completedBackgroundFxCount = 0;
         int completedOutputTextCount = 0;
 
         for (int spinIndex = 0;
@@ -425,7 +424,7 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
                         }
 
                         // The Main Wheel overlay is now hidden. The Background
-                        // FX continues at its own slower playback speed while
+                        // FX keeps looping until the next spin starts while
                         // the authored wheel starts rotating.
                         completedIntroCount++;
                         StartContinuedWheelSpin(
@@ -441,8 +440,7 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
                                     () =>
                                         completedOutputTextCount++);
                             });
-                    },
-                    () => completedBackgroundFxCount++);
+                    });
 
             if (!animationStarted)
             {
@@ -476,14 +474,6 @@ public sealed class ScatterWheelPresentationManager : MonoBehaviour
         }
 
         while (completedOutputTextCount < activeWheels.Count)
-        {
-            yield return null;
-        }
-
-        // A slow Background FX pass may outlast the wheel rotation. Wait for
-        // every forward pass and its short fade-out to finish before
-        // completing the feature presentation.
-        while (completedBackgroundFxCount < activeWheels.Count)
         {
             yield return null;
         }

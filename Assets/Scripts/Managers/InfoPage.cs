@@ -170,6 +170,8 @@ public sealed class InfoPage : MonoBehaviour
             return 0;
         }
 
+        ApplyMultiplierTextAlignment(payoutText);
+
         StPatricksGoldSymbolInfo symbol = FindSymbol(symbols, symbolId);
         if (symbol == null)
         {
@@ -206,6 +208,7 @@ public sealed class InfoPage : MonoBehaviour
             return;
         }
 
+        ApplyMultiplierTextAlignment(lowSymbolAnyPayText);
         lowSymbolAnyPayText.text = FormatPayouts(
             lowSymbolAnyPay.payout3x,
             lowSymbolAnyPay.payout4x,
@@ -404,9 +407,24 @@ public sealed class InfoPage : MonoBehaviour
         double payout5x)
     {
         return
-            $"5 X {FormatPayout(payout5x)}\n" +
-            $"4 X {FormatPayout(payout4x)}\n" +
-            $"3 X {FormatPayout(payout3x)}";
+            $"5\u00A0X {FormatPayout(payout5x)}\n" +
+            $"4\u00A0X {FormatPayout(payout4x)}\n" +
+            $"3\u00A0X {FormatPayout(payout3x)}";
+    }
+
+    private static void ApplyMultiplierTextAlignment(TMP_Text multiplierText)
+    {
+        if (multiplierText == null)
+        {
+            return;
+        }
+
+        multiplierText.horizontalAlignment =
+            HorizontalAlignmentOptions.Flush;
+        multiplierText.verticalAlignment =
+            VerticalAlignmentOptions.Middle;
+        multiplierText.wordWrappingRatios = 0f;
+        multiplierText.textWrappingMode = TextWrappingModes.NoWrap;
     }
 
     private static string FormatPayout(double payout)
