@@ -6,8 +6,11 @@ using DG.Tweening;
 
 public class SlotView : MonoBehaviour
 {
-    private const float TurboReelStartStagger = 0.03f;
+    private const float TurboReelStartStagger = 0f;
     private const float TurboFinalReelMotionDuration = 0.03f;
+    private const float TurboResultOvershootDistance = 20f;
+    private const float TurboResultBounceDuration = 0.2f;
+    private const float TurboResultStopStagger = 0f;
 
     [Header("References")]
     [SerializeField] private GameManager gameManager;
@@ -1070,18 +1073,68 @@ public class SlotView : MonoBehaviour
             yield return null;
         }
 
-        isSpinning = false;
-        KillAllTweens();
-
+        int stoppedReels = 0;
         for (int column = 0; column < resultMatrix.Count; column++)
         {
-            SetReelSymbols(column, resultMatrix[column]);
-            ApplyStoppedReelLayout(column);
-            RestoreReelPosition(column);
+            StartCoroutine(TurboStopSingleReel(
+                column,
+                resultMatrix[column],
+                column * TurboResultStopStagger,
+                () => stoppedReels++));
         }
 
+        while (stoppedReels < resultMatrix.Count)
+        {
+            yield return null;
+        }
+
+        isSpinning = false;
         stopSpinCoroutine = null;
         onComplete?.Invoke();
+    }
+
+    private IEnumerator TurboStopSingleReel(
+        int columnIndex,
+        List<int> targetSymbols,
+        float delay,
+        System.Action onStopped)
+    {
+        if (delay > 0f)
+        {
+            yield return new WaitForSeconds(delay);
+        }
+
+        if (columnIndex < spinTweens.Count &&
+            spinTweens[columnIndex] != null)
+        {
+            spinTweens[columnIndex].Kill();
+        }
+
+        SetReelSymbols(columnIndex, targetSymbols);
+        ApplyStoppedReelLayout(columnIndex);
+
+        Transform reelTransform = reelTransforms[columnIndex];
+        Vector3 restingPosition = GetReelRestingPosition(columnIndex);
+        reelTransform.localPosition = restingPosition;
+
+        Sequence resultBounce = DOTween.Sequence();
+        resultBounce.Append(
+            reelTransform
+                .DOLocalMoveY(
+                    restingPosition.y - TurboResultOvershootDistance,
+                    TurboResultBounceDuration * 0.3f)
+                .SetEase(Ease.OutQuad));
+        resultBounce.Append(
+            reelTransform
+                .DOLocalMoveY(
+                    restingPosition.y,
+                    TurboResultBounceDuration * 0.7f)
+                .SetEase(Ease.InOutQuad));
+
+        spinTweens[columnIndex] = resultBounce;
+        yield return resultBounce.WaitForCompletion();
+
+        onStopped?.Invoke();
     }
 
     #endregion
