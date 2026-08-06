@@ -142,10 +142,10 @@ TextureImporter:
       name: 10_00006_0
       rect:
         serializedVersion: 2
-        x: 46
+        x: 45
         y: 51
-        width: 208
-        height: 195
+        width: 210
+        height: 196
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}

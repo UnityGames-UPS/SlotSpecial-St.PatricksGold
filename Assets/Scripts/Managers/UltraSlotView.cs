@@ -90,6 +90,7 @@ public class UltraSlotView : MonoBehaviour
     internal IReadOnlyList<int> CurrentResult => currentResult;
 
     private readonly List<int> currentResult = new List<int>(ResultCellCount);
+    private readonly List<int> visibleResult = new List<int>(ResultCellCount);
     private readonly List<List<int>> reelBufferSymbols = new List<List<int>>(ReelCount);
     private readonly List<int> reelCycleCounts = new List<int>(ReelCount);
     private readonly List<Tween> reelTweens = new List<Tween>(ReelCount);
@@ -146,6 +147,7 @@ public class UltraSlotView : MonoBehaviour
         isSpinning = false;
         isStopping = false;
         StoreCurrentResult(result);
+        StoreVisibleResult(result);
 
         for (int reel = 0; reel < ReelCount; reel++)
         {
@@ -221,6 +223,7 @@ public class UltraSlotView : MonoBehaviour
         isSpinning = false;
         isStopping = false;
         StoreCurrentResult(result);
+        StoreVisibleResult(CreateVisualResult(result));
 
         for (int reel = 0; reel < ReelCount; reel++)
         {
@@ -470,6 +473,7 @@ public class UltraSlotView : MonoBehaviour
     private void InitializeState()
     {
         currentResult.Clear();
+        visibleResult.Clear();
         reelBufferSymbols.Clear();
         reelCycleCounts.Clear();
         reelTweens.Clear();
@@ -477,6 +481,7 @@ public class UltraSlotView : MonoBehaviour
         for (int cell = 0; cell < ResultCellCount; cell++)
         {
             currentResult.Add(EmptySymbolId);
+            visibleResult.Add(EmptySymbolId);
         }
 
         for (int reel = 0; reel < ReelCount; reel++)
@@ -660,12 +665,22 @@ public class UltraSlotView : MonoBehaviour
         {
             safeResult.Add(NormalizeSymbolId(result[cell]));
         }
+        List<int> visualResult = CreateVisualResult(safeResult);
 
         isStopping = true;
-        stopCoroutine = StartCoroutine(StopSequence(safeResult, quickStop, onComplete));
+        stopCoroutine = StartCoroutine(
+            StopSequence(
+                safeResult,
+                visualResult,
+                quickStop,
+                onComplete));
     }
 
-    private IEnumerator StopSequence(List<int> result, bool quickStop, Action onComplete)
+    private IEnumerator StopSequence(
+        List<int> result,
+        List<int> visualResult,
+        bool quickStop,
+        Action onComplete)
     {
         while (true)
         {
@@ -692,7 +707,7 @@ public class UltraSlotView : MonoBehaviour
         {
             StartCoroutine(StopSingleReel(
                 reel,
-                GetResultColumn(result, reel),
+                GetResultColumn(visualResult, reel),
                 reel * stagger,
                 quickStop,
                 () => stoppedReels++));
@@ -704,6 +719,7 @@ public class UltraSlotView : MonoBehaviour
         }
 
         StoreCurrentResult(result);
+        StoreVisibleResult(visualResult);
         isSpinning = false;
         isStopping = false;
         stopCoroutine = null;
@@ -853,7 +869,7 @@ public class UltraSlotView : MonoBehaviour
         for (int row = 0; row < RowCount; row++)
         {
             buffer[FirstVisibleImageIndex + row] =
-                NormalizeSymbolId(currentResult[GetResultIndex(row, reel)]);
+                NormalizeSymbolId(visibleResult[GetResultIndex(row, reel)]);
         }
         RenderReel(reel, false);
     }
@@ -953,6 +969,7 @@ public class UltraSlotView : MonoBehaviour
     private void RestoreCurrentResultSprites()
     {
         if (currentResult.Count != ResultCellCount ||
+            visibleResult.Count != ResultCellCount ||
             reelImagesList == null ||
             reelImagesList.Count != ReelCount)
         {
@@ -973,7 +990,7 @@ public class UltraSlotView : MonoBehaviour
                 }
 
                 int symbolId =
-                    currentResult[GetResultIndex(row, reel)];
+                    visibleResult[GetResultIndex(row, reel)];
                 Image baseImage =
                     reelImages.images[imageIndex];
                 SetImageSymbol(
@@ -1047,6 +1064,95 @@ public class UltraSlotView : MonoBehaviour
         {
             currentResult.Add(NormalizeSymbolId(result[cell]));
         }
+    }
+
+    private void StoreVisibleResult(IList<int> result)
+    {
+        visibleResult.Clear();
+        for (int cell = 0; cell < ResultCellCount; cell++)
+        {
+            visibleResult.Add(NormalizeSymbolId(result[cell]));
+        }
+    }
+
+    private static List<int> CreateVisualResult(IList<int> serverResult)
+    {
+        var visualResult = new List<int>(ResultCellCount);
+        for (int cell = 0; cell < ResultCellCount; cell++)
+        {
+            visualResult.Add(NormalizeSymbolId(serverResult[cell]));
+        }
+
+        var fillerIndices = new List<int>((RowCount - 1) * ReelCount);
+        for (int row = 0; row < RowCount; row++)
+        {
+            if (row == CenterRowIndex)
+            {
+                continue;
+            }
+
+            for (int reel = 0; reel < ReelCount; reel++)
+            {
+                fillerIndices.Add(GetResultIndex(row, reel));
+            }
+        }
+
+        for (int index = fillerIndices.Count - 1; index > 0; index--)
+        {
+            int swapIndex = UnityEngine.Random.Range(0, index + 1);
+            int value = fillerIndices[index];
+            fillerIndices[index] = fillerIndices[swapIndex];
+            fillerIndices[swapIndex] = value;
+        }
+
+        int blankCount = UnityEngine.Random.Range(1, 3);
+        for (int fillerIndex = 0;
+             fillerIndex < fillerIndices.Count;
+             fillerIndex++)
+        {
+            visualResult[fillerIndices[fillerIndex]] =
+                fillerIndex < blankCount
+                    ? EmptySymbolId
+                    : GetRandomFillerSymbol();
+        }
+
+        AvoidMatchingFillerRow(visualResult, 0);
+        AvoidMatchingFillerRow(visualResult, RowCount - 1);
+        return visualResult;
+    }
+
+    private static int GetRandomFillerSymbol()
+    {
+        return UnityEngine.Random.Range(
+            GreenWheelSymbolId,
+            RedWheelSymbolId + 1);
+    }
+
+    private static void AvoidMatchingFillerRow(
+        IList<int> visualResult,
+        int row)
+    {
+        int firstIndex = GetResultIndex(row, 0);
+        int firstSymbol = visualResult[firstIndex];
+        if (firstSymbol == EmptySymbolId)
+        {
+            return;
+        }
+
+        for (int reel = 1; reel < ReelCount; reel++)
+        {
+            if (visualResult[GetResultIndex(row, reel)] != firstSymbol)
+            {
+                return;
+            }
+        }
+
+        int reelToChange = UnityEngine.Random.Range(0, ReelCount);
+        int resultIndex = GetResultIndex(row, reelToChange);
+        int differentSymbolOffset = UnityEngine.Random.Range(1, 3);
+        visualResult[resultIndex] =
+            ((firstSymbol - GreenWheelSymbolId + differentSymbolOffset) % 3) +
+            GreenWheelSymbolId;
     }
 
     internal static List<int> CreateEmptyResult()

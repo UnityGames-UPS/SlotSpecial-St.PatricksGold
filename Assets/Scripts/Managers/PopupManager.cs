@@ -49,6 +49,16 @@ public sealed class PopupManager : MonoBehaviour
     [Tooltip("Cancel button used to acknowledge the error.")]
     [SerializeField] private Button errorOkButton;
 
+    [Header("Error Popup Animation")]
+    [Tooltip("Time used to grow the error popup from zero to its overshoot size.")]
+    [SerializeField, Min(0.01f)] private float errorPopupGrowDuration = 0.28f;
+    [Tooltip("Scale reached before the error popup settles to its authored size.")]
+    [SerializeField, Range(1f, 1.3f)] private float errorPopupOvershootScale = 1.08f;
+    [Tooltip("Time used to settle the error popup from overshoot to its authored size.")]
+    [SerializeField, Min(0.01f)] private float errorPopupSettleDuration = 0.12f;
+    [Tooltip("Time used to shrink the error popup to zero before deactivation.")]
+    [SerializeField, Min(0.01f)] private float errorPopupCloseDuration = 0.25f;
+
     [Header("Exit Game Confirmation Popup")]
     [Tooltip("Complete exit confirmation popup GameObject.")]
     [SerializeField] private GameObject exitGamePopup;
@@ -205,7 +215,7 @@ public sealed class PopupManager : MonoBehaviour
         errorPopup.SetActive(true);
         SetErrorPopupVisibilityState(true);
         AudioController.Instance?.PlayPopup();
-        AnimatePopupOpen(errorPopupRect);
+        AnimateErrorPopupOpen();
     }
 
     internal void ShowExitGamePopup()
@@ -286,8 +296,7 @@ public sealed class PopupManager : MonoBehaviour
             errorOkButton.interactable = false;
         }
 
-        AnimatePopupClose(
-            errorPopupRect,
+        AnimateErrorPopupClose(
             () =>
             {
                 if (closingPopup != null)
@@ -318,6 +327,68 @@ public sealed class PopupManager : MonoBehaviour
                 {
                     ExitGame();
                 }
+            });
+    }
+
+    private void AnimateErrorPopupOpen()
+    {
+        KillCurrentPopupTween();
+
+        if (errorPopupRect == null)
+        {
+            return;
+        }
+
+        Vector3 targetScale = errorPopupNormalScale;
+        Vector3 overshootScale =
+            targetScale * Mathf.Max(1f, errorPopupOvershootScale);
+        errorPopupRect.localScale = Vector3.zero;
+
+        Sequence openSequence = DOTween.Sequence().SetUpdate(true);
+        openSequence.Append(
+            errorPopupRect
+                .DOScale(
+                    overshootScale,
+                    Mathf.Max(0.01f, errorPopupGrowDuration))
+                .SetEase(Ease.OutCubic));
+        openSequence.Append(
+            errorPopupRect
+                .DOScale(
+                    targetScale,
+                    Mathf.Max(0.01f, errorPopupSettleDuration))
+                .SetEase(Ease.OutQuad));
+        openSequence.OnComplete(() =>
+        {
+            currentPopupTween = null;
+            if (errorPopupRect != null)
+            {
+                errorPopupRect.localScale = targetScale;
+            }
+        });
+
+        currentPopupTween = openSequence;
+    }
+
+    private void AnimateErrorPopupClose(Action onComplete)
+    {
+        KillCurrentPopupTween();
+
+        if (errorPopupRect == null)
+        {
+            onComplete?.Invoke();
+            return;
+        }
+
+        currentPopupTween = errorPopupRect
+            .DOScale(
+                Vector3.zero,
+                Mathf.Max(0.01f, errorPopupCloseDuration))
+            .SetEase(Ease.InCubic)
+            .SetUpdate(true)
+            .OnComplete(() =>
+            {
+                currentPopupTween = null;
+                onComplete?.Invoke();
             });
     }
 

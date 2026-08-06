@@ -1281,9 +1281,6 @@ public class SlotView : MonoBehaviour
 
         float animationDuration =
             symbolAnimationManager.GetWinSymbolLoopDuration();
-        float loopDuration =
-            animationDuration /
-            symbolAnimationManager.GetWinAnimationSpeedMultiplier(symbolId);
         int loops = Mathf.Max(1, loopCount);
 
         StopWinAnimations();
@@ -1291,7 +1288,7 @@ public class SlotView : MonoBehaviour
             PlayPrioritySymbolAnimation(
                 uniquePositions,
                 animationDuration,
-                loopDuration * loops,
+                animationDuration * loops,
                 onComplete));
         return true;
     }
@@ -1338,18 +1335,11 @@ public class SlotView : MonoBehaviour
         float cycleDuration = symbolAnimationManager != null
             ? symbolAnimationManager.GetWinSymbolLoopDuration()
             : 1.6f;
-        float wildSpeedMultiplier = symbolAnimationManager != null
-            ? symbolAnimationManager.GetWinAnimationSpeedMultiplier(
-                StPatricksGoldSymbolIds.Wild)
-            : 1f;
-        float wildLoopDuration =
-            cycleDuration /
-            wildSpeedMultiplier;
-        int wildLoopsBeforeNextStage = symbolAnimationManager != null
-            ? symbolAnimationManager.GetWildWinLoopsBeforeNextStage()
+        int winLoopsBeforeNextStage = symbolAnimationManager != null
+            ? symbolAnimationManager.GetWinLoopsBeforeNextStage()
             : 2;
         float stageDuration =
-            wildLoopDuration * wildLoopsBeforeNextStage;
+            cycleDuration * winLoopsBeforeNextStage;
 
         // Celebrate the complete result first, then present each returned line
         // separately so overlapping wins are still easy to read.
@@ -1400,7 +1390,7 @@ public class SlotView : MonoBehaviour
         {
             ShowWildMultiplierIcons(
                 individualWinningLines[lineIndex],
-                wildLoopDuration);
+                cycleDuration);
         }
         AnimateWinPositions(allWinningPositions, cycleDuration);
         yield return new WaitForSecondsRealtime(stageDuration);
@@ -1423,7 +1413,7 @@ public class SlotView : MonoBehaviour
                     line.DisplayRow,
                     line.WinAmount,
                     false);
-                ShowWildMultiplierIcons(line, wildLoopDuration);
+                ShowWildMultiplierIcons(line, cycleDuration);
                 AnimateWinPositions(
                     line.Positions,
                     cycleDuration);
@@ -1448,7 +1438,7 @@ public class SlotView : MonoBehaviour
                     line.DisplayRow,
                     line.WinAmount,
                     false);
-                ShowWildMultiplierIcons(line, wildLoopDuration);
+                ShowWildMultiplierIcons(line, cycleDuration);
                 AnimateWinPositions(
                     line.Positions,
                     cycleDuration);
@@ -1917,16 +1907,12 @@ public class SlotView : MonoBehaviour
         SetWinIndicatorActive(column, imageIndex, true);
 
         int symbolId = GetSymbolId(symbolImage.sprite);
-        float speedMultiplier =
-            symbolAnimationManager.GetWinAnimationSpeedMultiplier(symbolId);
-        float symbolLoopDuration =
-            animationDuration / Mathf.Max(0.01f, speedMultiplier);
 
         symbolAnimationManager.PlayAnimation(
             symbolId,
             symbolImage,
             animationImage,
-            symbolLoopDuration);
+            animationDuration);
     }
 
     private void ResetSymbolAnimation(int column, int imageIndex)

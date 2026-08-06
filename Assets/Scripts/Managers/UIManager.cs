@@ -112,6 +112,16 @@ public class UIManager : MonoBehaviour
     [SerializeField] private GameObject soundPanel;
     [SerializeField] private Button soundPanelButton;
     [SerializeField] private Button soundPanelCloseButton;
+
+    [Header("Sound Panel Animation")]
+    [Tooltip("Time used to grow the sound panel from zero to its overshoot size.")]
+    [SerializeField, Min(0.01f)] private float soundPanelGrowDuration = 0.28f;
+    [Tooltip("Scale reached before the sound panel settles to its authored size.")]
+    [SerializeField, Range(1f, 1.3f)] private float soundPanelOvershootScale = 1.08f;
+    [Tooltip("Time used to settle the sound panel from overshoot to its authored size.")]
+    [SerializeField, Min(0.01f)] private float soundPanelSettleDuration = 0.12f;
+    [Tooltip("Time used to shrink the sound panel to zero before deactivation.")]
+    [SerializeField, Min(0.01f)] private float soundPanelCloseDuration = 0.25f;
     [SerializeField] private AudioController audioController;
 
     [Header("Platform Navigation")]
@@ -203,6 +213,9 @@ public class UIManager : MonoBehaviour
     private bool waitForHamburgerDismissPointerRelease;
     private bool isPortraitPresentationActive;
     private Sequence winLineAmountFontSizeSequence;
+    private RectTransform soundPanelRect;
+    private Vector3 soundPanelNormalScale = Vector3.one;
+    private Tween soundPanelTween;
 
     private sealed class SpinHoldEventRegistration
     {
@@ -499,6 +512,11 @@ public class UIManager : MonoBehaviour
         }
         else
         {
+            CacheSoundPanelAnimationState();
+            if (soundPanelRect != null)
+            {
+                soundPanelRect.localScale = soundPanelNormalScale;
+            }
             soundPanel.SetActive(false);
         }
 
@@ -897,6 +915,7 @@ public class UIManager : MonoBehaviour
         waitForAutoPlayDismissPointerRelease = false;
         ResetAutoPlayPanelAnimation();
         ResetHamburgerMenu();
+        ResetSoundPanelAnimation();
         UnregisterSpinHoldEvents();
         UnregisterGenericUiAudio();
 
@@ -2435,17 +2454,114 @@ public class UIManager : MonoBehaviour
         gameManager?.StopAutoPlay();
         CloseInfoPage();
         CloseGuidePage();
+        CacheSoundPanelAnimationState();
+        KillSoundPanelTween();
         soundPanel.SetActive(true);
+        if (soundPanelRect != null)
+        {
+            Vector3 targetScale = soundPanelNormalScale;
+            Vector3 overshootScale =
+                targetScale * Mathf.Max(1f, soundPanelOvershootScale);
+            soundPanelRect.localScale = Vector3.zero;
+
+            Sequence openSequence = DOTween.Sequence().SetUpdate(true);
+            openSequence.Append(
+                soundPanelRect
+                    .DOScale(
+                        overshootScale,
+                        Mathf.Max(0.01f, soundPanelGrowDuration))
+                    .SetEase(Ease.OutCubic));
+            openSequence.Append(
+                soundPanelRect
+                    .DOScale(
+                        targetScale,
+                        Mathf.Max(0.01f, soundPanelSettleDuration))
+                    .SetEase(Ease.OutQuad));
+            openSequence.OnComplete(() =>
+            {
+                soundPanelTween = null;
+                if (soundPanelRect != null)
+                {
+                    soundPanelRect.localScale = targetScale;
+                }
+            });
+            soundPanelTween = openSequence;
+        }
         audioController?.PlayPopup();
         RefreshControlsForBlockingOverlayState();
     }
 
     private void CloseSoundPanel()
     {
-        if (soundPanel != null)
+        if (soundPanel == null || !soundPanel.activeSelf)
+        {
+            return;
+        }
+
+        CacheSoundPanelAnimationState();
+        KillSoundPanelTween();
+        if (soundPanelRect == null)
         {
             soundPanel.SetActive(false);
             RefreshControlsForBlockingOverlayState();
+            return;
+        }
+
+        soundPanelTween = soundPanelRect
+            .DOScale(
+                Vector3.zero,
+                Mathf.Max(0.01f, soundPanelCloseDuration))
+            .SetEase(Ease.InCubic)
+            .SetUpdate(true)
+            .OnComplete(() =>
+            {
+                soundPanelTween = null;
+                if (soundPanel != null)
+                {
+                    soundPanel.SetActive(false);
+                }
+
+                if (soundPanelRect != null)
+                {
+                    soundPanelRect.localScale = soundPanelNormalScale;
+                }
+
+                RefreshControlsForBlockingOverlayState();
+            });
+    }
+
+    private void CacheSoundPanelAnimationState()
+    {
+        if (soundPanelRect == null && soundPanel != null)
+        {
+            soundPanelRect = soundPanel.GetComponent<RectTransform>();
+        }
+
+        if (soundPanelRect == null)
+        {
+            return;
+        }
+
+        Vector3 authoredScale = soundPanelRect.localScale;
+        if (authoredScale.sqrMagnitude > 0.0001f &&
+            soundPanelTween == null)
+        {
+            soundPanelNormalScale = authoredScale;
+        }
+    }
+
+    private void KillSoundPanelTween()
+    {
+        soundPanelTween?.Kill();
+        soundPanelTween = null;
+    }
+
+    private void ResetSoundPanelAnimation()
+    {
+        KillSoundPanelTween();
+        if (soundPanelRect != null)
+        {
+            soundPanelRect.localScale = soundPanelNormalScale;
         }
     }
 
@@ -2722,7 +2838,7 @@ public class UIManager : MonoBehaviour
 
         if (wonLabelText != null)
         {
-            wonLabelText.text = "WON";
+            wonLabelText.text = "WIN";
             wonLabelText.gameObject.SetActive(hasWin);
         }
 
@@ -2762,7 +2878,7 @@ public class UIManager : MonoBehaviour
 
         if (portraitWonLabelText != null)
         {
-            portraitWonLabelText.text = "WON";
+            portraitWonLabelText.text = "WIN";
             portraitWonLabelText.gameObject.SetActive(hasWin);
         }
 

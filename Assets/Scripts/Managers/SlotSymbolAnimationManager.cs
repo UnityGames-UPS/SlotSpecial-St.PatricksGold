@@ -147,13 +147,11 @@ public class SlotSymbolAnimationManager : MonoBehaviour
 
     [Header("Win Animation Timing")]
     [Tooltip("Duration in seconds of one complete winning-symbol loop at 1x speed. Lower values play faster.")]
-    [SerializeField, Min(0.1f)] private float winSymbolLoopDuration = 1.6f;
-    [SerializeField, HideInInspector, Min(0.01f)]
-    private float nonWildWinAnimationSpeedMultiplier = 1f;
-    [SerializeField, HideInInspector, Min(0.01f)]
-    private float wildWinAnimationSpeedMultiplier = 1f;
+    [SerializeField, Min(0.1f)] private float winSymbolLoopDuration = 1f;
+    [UnityEngine.Serialization.FormerlySerializedAs(
+        "wildWinLoopsBeforeNextStage")]
     [SerializeField, HideInInspector, Min(1)]
-    private int wildWinLoopsBeforeNextStage = 2;
+    private int winLoopsBeforeNextStage = 2;
 
     [SerializeField, HideInInspector, Min(0.001f)]
     private float frameDuration = 1f / 30f;
@@ -250,18 +248,9 @@ public class SlotSymbolAnimationManager : MonoBehaviour
         return scatterWheelMainFrames?.Length ?? 0;
     }
 
-    internal float GetWinAnimationSpeedMultiplier(int symbolId)
+    internal int GetWinLoopsBeforeNextStage()
     {
-        float speedMultiplier =
-            symbolId == StPatricksGoldSymbolIds.Wild
-                ? wildWinAnimationSpeedMultiplier
-                : nonWildWinAnimationSpeedMultiplier;
-        return Mathf.Max(0.01f, speedMultiplier);
-    }
-
-    internal int GetWildWinLoopsBeforeNextStage()
-    {
-        return Mathf.Max(1, wildWinLoopsBeforeNextStage);
+        return Mathf.Max(1, winLoopsBeforeNextStage);
     }
 
     internal bool PlayAnimation(
