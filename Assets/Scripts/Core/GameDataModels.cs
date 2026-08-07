@@ -137,6 +137,29 @@ public class StPatricksGoldFeatureConfig
     public TempleRichesConfig templeRiches;
     public WildMultiplierConfig wildMultiplier;
     public LowSymbolAnyPayConfig lowSymbolAnyPay;
+    public JackpotData jackpotData;
+}
+
+[Serializable]
+public class JackpotData
+{
+    public JackpotValues values;
+}
+
+[Serializable]
+public class JackpotValues
+{
+    public string miniJackpot;
+    public string minorJackpot;
+    public string majorJackpot;
+    public string grandJackpot;
+}
+
+[Serializable]
+public class JackpotSyncData
+{
+    public string gameId;
+    public JackpotValues values;
 }
 
 [Serializable]
@@ -175,6 +198,7 @@ public class StPatricksGoldConfigResponse
     public SlotMatrixDimensions matrix;
     public List<StPatricksGoldSymbol> symbols;
     public StPatricksGoldFeatureConfig features;
+    public JackpotData jackpotData;
     public bool isSpecial;
 }
 
@@ -459,6 +483,7 @@ public class StPatricksGoldGameConfig
     public TempleRichesConfig templeRiches;
     public WildMultiplierConfig wildMultiplierFeature;
     public LowSymbolAnyPayConfig lowSymbolAnyPay;
+    public JackpotData jackpotData;
 }
 
 [Serializable]
@@ -582,6 +607,7 @@ public static class GameDataConverter
             paylines = serverData.lines ?? new List<List<int>>(),
             availableBets = serverData.bets ?? new List<double>(),
             symbols = new List<StPatricksGoldSymbolInfo>(),
+            jackpotData = serverData.jackpotData,
             isSpecial = serverData.isSpecial
         };
 

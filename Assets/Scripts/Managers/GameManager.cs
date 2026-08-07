@@ -755,19 +755,9 @@ public class GameManager : MonoBehaviour
         currentState = scatterTriggered
             ? GameState.ShowingWin
             : GameState.Idle;
-        displayedWinAmount = ultraTriggered
+        displayedWinAmount = ultraTriggered || scatterTriggered
             ? 0
-            : scatterTriggered
-                ? completedScatterBonus.totalAward
-                : completedResult.winAmount;
-
-        if (!ultraTriggered)
-        {
-            CompleteOptimisticBalanceTransaction(
-                scatterTriggered
-                    ? completedScatterBonus.totalAward
-                    : completedResult.winAmount);
-        }
+            : completedResult.winAmount;
 
         if (ultraTriggered && isAutoPlaying)
         {
@@ -800,6 +790,12 @@ public class GameManager : MonoBehaviour
 
         SpinActivityChanged?.Invoke(false);
         GamePresentationChanged?.Invoke();
+
+        if (!ultraTriggered && !scatterTriggered)
+        {
+            CompleteOptimisticBalanceTransaction(completedResult.winAmount);
+            GamePresentationChanged?.Invoke();
+        }
 
         if (scatterTriggered)
         {
@@ -864,6 +860,7 @@ public class GameManager : MonoBehaviour
                 () =>
                     FinishScatterWinPresentation(
                         shouldContinueAutoPlay,
+                        totalWinAmount,
                         0f)))
         {
             Debug.Log(
@@ -874,11 +871,13 @@ public class GameManager : MonoBehaviour
 
         FinishScatterWinPresentation(
             shouldContinueAutoPlay,
+            totalWinAmount,
             scatterAutoPlayResultHoldDuration);
     }
 
     private void FinishScatterWinPresentation(
         bool shouldContinueAutoPlay,
+        double totalWinAmount,
         float autoPlayDelay)
     {
         if (currentState == GameState.ShowingWin)
@@ -886,7 +885,12 @@ public class GameManager : MonoBehaviour
             currentState = GameState.Idle;
         }
 
+        displayedWinAmount = Math.Max(0d, totalWinAmount);
+
         SpinActivityChanged?.Invoke(false);
+        GamePresentationChanged?.Invoke();
+
+        CompleteOptimisticBalanceTransaction(totalWinAmount);
         GamePresentationChanged?.Invoke();
 
         if (shouldContinueAutoPlay)
@@ -1466,8 +1470,6 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator ShowUltraWinThenReturnToNormal()
     {
-        PrepareCompletedUltraWin();
-
         bool totalWinCountCompleted = false;
         bool popupStarted =
             popupManager != null &&
@@ -1498,6 +1500,7 @@ public class GameManager : MonoBehaviour
         ultraWheelsCoroutine = null;
         if (isUltraSlotUnlocked)
         {
+            PrepareCompletedUltraWin();
             PlayUltraRewardReturnTransition();
         }
     }

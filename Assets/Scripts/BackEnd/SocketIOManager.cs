@@ -181,6 +181,7 @@ public class SocketIOManager : MonoBehaviour
         gameSocket.On<string>("pong", OnPongReceived);
         gameSocket.On<string>("AnotherDevice", OnAnotherDevice);
         gameSocket.On<string>("balance:sync", OnBalanceSync);
+        gameSocket.On<string>("jackpot:sync", OnJackpotSyncReceived);
 
         socketManager.Open();
     }
@@ -300,6 +301,11 @@ public class SocketIOManager : MonoBehaviour
                 stPatricksGoldConfig.symbolCount);
 
             isInitialized = true;
+
+            if (stPatricksGoldConfig.jackpotData != null && stPatricksGoldConfig.jackpotData.values != null && uiManager != null)
+            {
+                uiManager.UpdateJackpotDisplay(stPatricksGoldConfig.jackpotData.values);
+            }
 
             if (gameManager == null)
             {
@@ -1252,6 +1258,25 @@ public class SocketIOManager : MonoBehaviour
         }
 
         gameManager?.UpdateBalanceDisplay(syncPayload.balance);
+    }
+
+    private void OnJackpotSyncReceived(string jsonData)
+    {
+        Debug.Log($"[SocketIO] Jackpot Sync received: {jsonData}");
+
+        try
+        {
+            var syncData = JsonConvert.DeserializeObject<JackpotSyncData>(jsonData);
+
+            if (syncData != null && syncData.values != null && uiManager != null)
+            {
+                uiManager.UpdateJackpotDisplay(syncData.values);
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[SocketIO] Jackpot Sync parse failed: {e.Message}");
+        }
     }
 
     #endregion

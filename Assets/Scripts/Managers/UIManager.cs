@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -9,6 +10,10 @@ using DG.Tweening;
 
 public class UIManager : MonoBehaviour
 {
+    private const float InfiniteAutoPlayFontSize = 85f;
+    private readonly Dictionary<TMP_Text, float> autoPlayCountDefaultFontSizes =
+        new Dictionary<TMP_Text, float>();
+
     [Header("References")]
     [SerializeField] private GameManager gameManager;
     [Tooltip(
@@ -39,6 +44,12 @@ public class UIManager : MonoBehaviour
     [SerializeField] private TMP_Text winAmountText;
     [SerializeField] private TMP_Text balanceAmountText;
     [SerializeField] private TMP_Text betAmountText;
+
+    [Header("Jackpot Display")]
+    [SerializeField] private TMP_Text miniJackpotText;
+    [SerializeField] private TMP_Text minorJackpotText;
+    [SerializeField] private TMP_Text majorJackpotText;
+    [SerializeField] private TMP_Text grandJackpotText;
 
     [Header("Win Line Row Amounts")]
     [Tooltip("The SlotView that presents individual winning lines. It is found automatically when left empty.")]
@@ -152,6 +163,12 @@ public class UIManager : MonoBehaviour
     [SerializeField] private TMP_Text portraitBalanceAmountText;
     [SerializeField] private TMP_Text portraitBetAmountText;
 
+    [Header("Portrait Jackpot Display")]
+    [SerializeField] private TMP_Text portraitMiniJackpotText;
+    [SerializeField] private TMP_Text portraitMinorJackpotText;
+    [SerializeField] private TMP_Text portraitMajorJackpotText;
+    [SerializeField] private TMP_Text portraitGrandJackpotText;
+
     [Header("Ping Display")]
     [SerializeField] private TMP_Text pingText;
     [SerializeField] private TMP_Text pingTextPortrait;
@@ -212,6 +229,7 @@ public class UIManager : MonoBehaviour
     private bool isHamburgerMenuOpen;
     private bool waitForHamburgerDismissPointerRelease;
     private bool isPortraitPresentationActive;
+    private JackpotValues currentJackpotValues;
     private Sequence winLineAmountFontSizeSequence;
     private RectTransform soundPanelRect;
     private Vector3 soundPanelNormalScale = Vector3.one;
@@ -1257,6 +1275,17 @@ public class UIManager : MonoBehaviour
         {
             pingTextPortrait.text = content;
         }
+    }
+
+    internal void UpdateJackpotDisplay(JackpotValues values)
+    {
+        if (values == null)
+        {
+            return;
+        }
+
+        currentJackpotValues = values;
+        RefreshJackpotTexts();
     }
 
     private void OnOrientationChanged(
@@ -2818,6 +2847,14 @@ public class UIManager : MonoBehaviour
     {
         if (gameManager == null) return;
 
+        if (currentJackpotValues == null)
+        {
+            currentJackpotValues =
+                gameManager.stPatricksGoldConfig?.jackpotData?.values;
+        }
+
+        RefreshJackpotTexts();
+
         if (winLinesCountText != null)
         {
             winLinesCountText.text = gameManager.GetDisplayedPaylineCount().ToString();
@@ -2902,6 +2939,61 @@ public class UIManager : MonoBehaviour
                     gameManager.GetDisplayedTotalBetAmount());
         }
 
+    }
+
+    private void RefreshJackpotTexts()
+    {
+        if (currentJackpotValues == null)
+        {
+            return;
+        }
+
+        SetJackpotText(miniJackpotText, currentJackpotValues.miniJackpot);
+        SetJackpotText(minorJackpotText, currentJackpotValues.minorJackpot);
+        SetJackpotText(majorJackpotText, currentJackpotValues.majorJackpot);
+        SetJackpotText(grandJackpotText, currentJackpotValues.grandJackpot);
+
+        SetJackpotText(
+            portraitMiniJackpotText,
+            currentJackpotValues.miniJackpot);
+        SetJackpotText(
+            portraitMinorJackpotText,
+            currentJackpotValues.minorJackpot);
+        SetJackpotText(
+            portraitMajorJackpotText,
+            currentJackpotValues.majorJackpot);
+        SetJackpotText(
+            portraitGrandJackpotText,
+            currentJackpotValues.grandJackpot);
+    }
+
+    private static void SetJackpotText(TMP_Text target, string value)
+    {
+        if (target != null)
+        {
+            target.text = FormatJackpotValue(value);
+        }
+    }
+
+    private static string FormatJackpotValue(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        if (decimal.TryParse(
+                value,
+                NumberStyles.Number,
+                CultureInfo.InvariantCulture,
+                out decimal amount))
+        {
+            return "$" + amount.ToString(
+                "#,##0.00",
+                CultureInfo.InvariantCulture);
+        }
+
+        return "$" + value.Trim();
     }
 
     private void ResolveWinLineAmountReferences()
@@ -3166,6 +3258,32 @@ public class UIManager : MonoBehaviour
             return;
         }
 
+        if (!autoPlayCountDefaultFontSizes.TryGetValue(
+                countText,
+                out float defaultFontSize))
+        {
+            defaultFontSize = countText.fontSize;
+            autoPlayCountDefaultFontSizes.Add(countText, defaultFontSize);
+        }
+
+        bool isInfiniteAutoPlay =
+            isAutoPlaying &&
+            gameManager.autoPlayRemainingRounds ==
+                GameManager.InfiniteAutoPlayRounds;
+
+        // The infinity symbol needs a fixed presentation size. Restore Auto
+        // Size for finite counts and before hiding the text when autoplay ends.
+        if (isInfiniteAutoPlay)
+        {
+            countText.enableAutoSizing = false;
+            countText.fontSize = InfiniteAutoPlayFontSize;
+        }
+        else
+        {
+            countText.enableAutoSizing = true;
+            countText.fontSize = defaultFontSize;
+        }
+
         // If the text is a child of the stop button, control it
         // independently. If both components share one GameObject, the
         // button visibility above controls it.
@@ -3180,8 +3298,7 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        if (gameManager.autoPlayRemainingRounds ==
-            GameManager.InfiniteAutoPlayRounds)
+        if (isInfiniteAutoPlay)
         {
             countText.text = "∞";
         }
