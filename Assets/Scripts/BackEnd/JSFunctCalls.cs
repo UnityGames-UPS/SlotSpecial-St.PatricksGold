@@ -5,9 +5,6 @@ public class JSFunctCalls : MonoBehaviour
 {
   #region External Functions
   [DllImport("__Internal")]
-  private static extern void SendLogToReactNative(string message);
-
-  [DllImport("__Internal")]
   private static extern void SendPostMessage(string message);
 
   [DllImport("__Internal")]
@@ -21,34 +18,19 @@ public class JSFunctCalls : MonoBehaviour
 
   [DllImport("__Internal")]
   private static extern void RegisterVisibilityChangeListener(string gameObjectName);
+
+  [DllImport("__Internal")]
+  private static extern void RegisterResizeListener(string gameObjectName, string methodName);
+
+  [DllImport("__Internal")]
+  private static extern void RegisterTokenListener(string gameObjectName, string methodName);
   #endregion
 
   #region Unity Lifecycle
-  private void OnEnable()
+  private void Start()
   {
-#if UNITY_WEBGL && !UNITY_EDITOR
-        Application.logMessageReceived += HandleLog;
-        Debug.Log("[JS] Log forwarding enabled");
-#endif
+    RegisterDimensionsListener();
   }
-
-  private void OnDisable()
-  {
-#if UNITY_WEBGL && !UNITY_EDITOR
-        Application.logMessageReceived -= HandleLog;
-        Debug.Log("[JS] Log forwarding disabled");
-#endif
-  }
-  #endregion
-
-  #region Private Methods
-#if UNITY_WEBGL && !UNITY_EDITOR
-    private void HandleLog(string logString, string stackTrace, LogType type)
-    {
-        string formattedMessage = $"[{type}] {logString}";
-        SendLogToReactNative(formattedMessage);
-    }
-#endif
   #endregion
 
   #region Public API
@@ -105,6 +87,24 @@ public class JSFunctCalls : MonoBehaviour
         RegisterVisibilityChangeListener(gameObjectName);
 #else
     Debug.Log("[JS] Visibility listener not registered (editor mode)");
+#endif
+  }
+
+  internal void RegisterDimensionsListener(string gameObjectName = "OC", string methodName = "SwitchDisplay")
+  {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        RegisterResizeListener(gameObjectName, methodName);
+#else
+    Debug.Log($"[JS] Resize listener not registered ('{gameObjectName}.{methodName}', editor mode)");
+#endif
+  }
+
+  internal void RegisterAuthTokenListener(string gameObjectName, string methodName = "ReceiveAuthToken")
+  {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        RegisterTokenListener(gameObjectName, methodName);
+#else
+    Debug.Log($"[JS] Token listener not registered ('{gameObjectName}.{methodName}', editor mode)");
 #endif
   }
   #endregion
