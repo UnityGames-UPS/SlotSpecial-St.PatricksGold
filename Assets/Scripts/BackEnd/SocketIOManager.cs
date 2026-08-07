@@ -117,6 +117,7 @@ public class SocketIOManager : MonoBehaviour
 #if UNITY_WEBGL && !UNITY_EDITOR
         if (JSManager != null)
         {
+            JSManager.RegisterAuthTokenListener(gameObject.name);
             JSManager.SendCustomMessage("authToken");
         }
 #else
