@@ -24,6 +24,7 @@ public class SocketIOManager : MonoBehaviour
 
     private SocketManager socketManager;
     private Socket gameSocket;
+    private bool socketSetupStarted;
 
     private string authToken;
     private string socketURL;
@@ -127,6 +128,12 @@ public class SocketIOManager : MonoBehaviour
 
     void ReceiveAuthToken(string jsonData)
     {
+        if (socketSetupStarted)
+        {
+            Debug.LogWarning("[SocketIO] Duplicate auth token ignored");
+            return;
+        }
+
         Debug.Log($"[SocketIO] Auth received " + jsonData);
 
         try
@@ -150,6 +157,13 @@ public class SocketIOManager : MonoBehaviour
 
     private void InitializeSocket()
     {
+        if (socketSetupStarted)
+        {
+            return;
+        }
+
+        socketSetupStarted = true;
+
         if (RaycastBlocker) RaycastBlocker.SetActive(true);
 
         SocketOptions options = new SocketOptions
