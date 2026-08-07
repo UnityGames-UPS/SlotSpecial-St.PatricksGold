@@ -2784,7 +2784,6 @@ public class UIManager : MonoBehaviour
     {
         bool canChangeMode =
             gameManager != null &&
-            !gameManager.isAutoPlaying &&
             !IsBottomPanelInteractionBlocked();
         SpinSpeed selectedMode = gameManager != null
             ? gameManager.GetSpinSpeed()

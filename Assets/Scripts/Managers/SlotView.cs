@@ -1382,9 +1382,7 @@ public class SlotView : MonoBehaviour
         double totalWinAmount,
         System.Action onComplete)
     {
-        bool isAuto = (gameManager != null && gameManager.isAutoPlaying);
-        bool showTotalOnly =
-            activeSpinWasAutoPlay && activeSpinSpeed == SpinSpeed.SkipSpin;
+        bool showTotalOnly = activeSpinWasAutoPlay;
         float cycleDuration = symbolAnimationManager != null
             ? symbolAnimationManager.GetWinSymbolLoopDuration()
             : 1.6f;
@@ -1451,29 +1449,6 @@ public class SlotView : MonoBehaviour
 
         if (showTotalOnly)
         {
-            winAnimationCoroutine = null;
-            onComplete?.Invoke();
-            yield break;
-        }
-
-        if (isAuto)
-        {
-            // Autoplay shows every individual line once, then advances normally.
-            for (int lineIndex = 0; lineIndex < individualWinningLines.Count; lineIndex++)
-            {
-                WinningLinePresentation line = individualWinningLines[lineIndex];
-                WinLineAmountPresentationChanged?.Invoke(
-                    line.DisplayRow,
-                    line.WinAmount,
-                    false);
-                ShowWildMultiplierIcons(line, cycleDuration);
-                AnimateWinPositions(
-                    line.Positions,
-                    cycleDuration);
-                yield return new WaitForSecondsRealtime(stageDuration);
-                StopWinAnimations(false);
-            }
-
             winAnimationCoroutine = null;
             onComplete?.Invoke();
             yield break;

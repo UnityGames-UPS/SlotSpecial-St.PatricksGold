@@ -786,12 +786,6 @@ public class GameManager : MonoBehaviour
             {
                 StopAutoPlay();
             }
-            else if (!CanAffordBet())
-            {
-                Debug.LogWarning("[GameManager] Autoplay stopped because the balance is insufficient for another spin.");
-                StopAutoPlay();
-                popupManager?.ShowInsufficientFundsError();
-            }
             else
             {
                 shouldContinueAutoPlay = true;
@@ -928,8 +922,7 @@ public class GameManager : MonoBehaviour
                socketManager != null &&
                socketManager.isConnected &&
                slotView != null &&
-               !slotView.IsSpinning() &&
-               CanAffordBet();
+               !slotView.IsSpinning();
     }
 
     internal bool CanRequestStop()
@@ -3746,10 +3739,6 @@ public class GameManager : MonoBehaviour
         {
             popupManager?.CloseInsufficientBalancePopup();
         }
-        else
-        {
-            popupManager?.ShowInsufficientFundsError();
-        }
     }
 
     internal double GetDisplayedBetAmount()
@@ -3833,8 +3822,7 @@ public class GameManager : MonoBehaviour
                socketManager != null &&
                socketManager.isConnected &&
                slotView != null &&
-               !slotView.IsSpinning() &&
-               CanAffordBet();
+               !slotView.IsSpinning();
     }
 
     private void QueueNextAutoPlaySpin()
