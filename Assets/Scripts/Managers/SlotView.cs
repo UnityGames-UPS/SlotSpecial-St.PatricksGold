@@ -21,6 +21,10 @@ public class SlotView : MonoBehaviour
     [SerializeField] private UIManager uiManager;
     [Tooltip("Parent object containing the external 5x3 winning-symbol animation panels.")]
     [SerializeField] private GameObject animationsParentPanel;
+    [Tooltip(
+        "Mask on the normal 5x3 slot. It is refreshed after successful game " +
+        "initialization so its stencil state is rebuilt before gameplay begins.")]
+    [SerializeField] private Mask slotMask;
 
     [Header("St. Patrick's Gold Symbol Sprites")]
     [SerializeField] private Sprite spriteAce;                // ID: 0
@@ -156,6 +160,47 @@ public class SlotView : MonoBehaviour
             symbolAnimationManager);
         BuildSymbolSpriteArray();
         InitializeReels();
+    }
+
+    internal void RefreshMaskAfterSuccessfulInitialization()
+    {
+        if (slotMask == null)
+        {
+            Debug.LogWarning(
+                "[SlotView] The slot mask was not refreshed because its " +
+                "Inspector reference is not assigned.");
+            return;
+        }
+
+        Graphic maskGraphic = slotMask.graphic;
+        if (maskGraphic == null)
+        {
+            Debug.LogWarning(
+                "[SlotView] The slot mask was not refreshed because its " +
+                "GameObject has no UI Graphic.",
+                slotMask);
+            return;
+        }
+
+        if (slotMask.GetComponentInParent<Canvas>(true) == null)
+        {
+            Debug.LogWarning(
+                "[SlotView] The slot mask was not refreshed because it is " +
+                "not under a Canvas.",
+                slotMask);
+            return;
+        }
+
+        // Re-enable in the same frame so Mask.OnEnable rebuilds the stencil
+        // state even when the component was already enabled in the scene.
+        slotMask.enabled = false;
+        slotMask.showMaskGraphic = false;
+        slotMask.enabled = true;
+
+        maskGraphic.SetMaterialDirty();
+        maskGraphic.SetVerticesDirty();
+        MaskUtilities.NotifyStencilStateChanged(slotMask);
+        Canvas.ForceUpdateCanvases();
     }
 
     private void BuildSymbolSpriteArray()

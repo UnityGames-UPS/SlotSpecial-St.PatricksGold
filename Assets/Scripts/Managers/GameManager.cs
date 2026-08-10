@@ -204,6 +204,17 @@ public class GameManager : MonoBehaviour
 
         ResetUltraSlotState();
 
+        if (slotView != null)
+        {
+            slotView.RefreshMaskAfterSuccessfulInitialization();
+        }
+        else
+        {
+            Debug.LogWarning(
+                "[GameManager] The slot mask was not refreshed after " +
+                "initialization because SlotView is not assigned.");
+        }
+
         SpinActivityChanged?.Invoke(false);
         GamePresentationChanged?.Invoke();
 

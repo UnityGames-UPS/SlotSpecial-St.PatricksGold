@@ -2921,6 +2921,7 @@ MonoBehaviour:
   scatterWheelPresentationManager: {fileID: 1796664687}
   uiManager: {fileID: 1784191470}
   animationsParentPanel: {fileID: 2142925030}
+  slotMask: {fileID: 1425112759}
   spriteAce: {fileID: 21300000, guid: c9ab7822690950044a03084714d9079c, type: 3}
   spriteKing: {fileID: 21300000, guid: ca81f16cc16cf0e4eb577bf1061d37eb, type: 3}
   spriteQueen: {fileID: 21300000, guid: acf5fe843e282a142a8fb3508eabe6d4, type: 3}
@@ -5289,7 +5290,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f521a04de7f494272a617b2719edd271, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SocketIOManager
-  testToken: 7dc5050fae744c90bcb8ece17add2e0c
+  testToken: e62ce37d3217446baae21bae61b29122
   gameManager: {fileID: 1660987171}
   uiManager: {fileID: 1784191470}
   JSManager: {fileID: 2001094553}
