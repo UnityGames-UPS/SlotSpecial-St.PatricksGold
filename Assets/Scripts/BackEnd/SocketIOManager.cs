@@ -245,7 +245,9 @@ public class SocketIOManager : MonoBehaviour
 
         if (gameManager != null && !gameManager.isInitialized)
         {
-            gameManager.initializationFailed = true;
+            isInitialized = false;
+            if (RaycastBlocker) RaycastBlocker.SetActive(false);
+            gameManager.OnInitializationFailed();
         }
 
         if (!string.IsNullOrEmpty(errorMessage) &&
@@ -314,8 +316,6 @@ public class SocketIOManager : MonoBehaviour
                 stPatricksGoldConfig.rowCount,
                 stPatricksGoldConfig.symbolCount);
 
-            isInitialized = true;
-
             if (stPatricksGoldConfig.jackpotData != null && stPatricksGoldConfig.jackpotData.values != null && uiManager != null)
             {
                 uiManager.UpdateJackpotDisplay(stPatricksGoldConfig.jackpotData.values);
@@ -328,6 +328,7 @@ public class SocketIOManager : MonoBehaviour
 
             gameManager.OnStPatricksGoldConfigReceived(stPatricksGoldConfig, playerData, initialMatrix);
 
+            isInitialized = true;
             if (RaycastBlocker) RaycastBlocker.SetActive(false);
 
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -340,9 +341,11 @@ public class SocketIOManager : MonoBehaviour
         catch (Exception e)
         {
             Debug.LogError($"[SocketIO] SL-SPG config parse failed: {e.Message}");
+            isInitialized = false;
+            if (RaycastBlocker) RaycastBlocker.SetActive(false);
             if (gameManager != null)
             {
-                gameManager.initializationFailed = true;
+                gameManager.OnInitializationFailed();
             }
         }
     }
@@ -1377,7 +1380,16 @@ public class SocketIOManager : MonoBehaviour
         }
 
         hasNotifiedUnexpectedDisconnection = true;
-        gameManager?.OnDisconnected();
+        if (gameManager != null && !gameManager.isInitialized)
+        {
+            isInitialized = false;
+            if (RaycastBlocker) RaycastBlocker.SetActive(false);
+            gameManager.OnInitializationFailed();
+        }
+        else
+        {
+            gameManager?.OnDisconnected();
+        }
     }
 
     #region Ping/Pong Health Check

@@ -133,16 +133,23 @@ public class SlotView : MonoBehaviour
     private bool activeSpinWasAutoPlay;
     private float activeSpinStartTime;
     private bool[] anticipatingReels;
+    private bool isViewInitialized;
 
     #region Initialization
 
     private void Awake()
     {
         HideExternalAnimationPanels();
+        EnsureInitialized();
     }
 
-    private void Start()
+    private bool EnsureInitialized()
     {
+        if (isViewInitialized)
+        {
+            return true;
+        }
+
         if (uiManager == null)
         {
             uiManager = FindFirstObjectByType<UIManager>(
@@ -160,6 +167,22 @@ public class SlotView : MonoBehaviour
             symbolAnimationManager);
         BuildSymbolSpriteArray();
         InitializeReels();
+
+        isViewInitialized =
+            symbolSprites != null &&
+            symbolSprites.Length > 0 &&
+            GetFirstAvailableSymbolSprite() != null &&
+            reelImagesList != null &&
+            reelImagesList.Count > 0;
+
+        if (!isViewInitialized)
+        {
+            Debug.LogError(
+                "[SlotView] The slot view could not be initialized. Check " +
+                "the symbol sprites and reel image references.");
+        }
+
+        return isViewInitialized;
     }
 
     internal void RefreshMaskAfterSuccessfulInitialization()
@@ -248,10 +271,13 @@ public class SlotView : MonoBehaviour
         }
 
         // Cache VerticalLayoutGroup references from reel containers
-        reelLayoutGroups = new VerticalLayoutGroup[reelTransforms.Length];
-        reelRestingLocalPositions = new Vector3[reelTransforms.Length];
-        anticipatingReels = new bool[reelTransforms.Length];
-        for (int i = 0; i < reelTransforms.Length; i++)
+        int reelTransformCount = reelTransforms != null
+            ? reelTransforms.Length
+            : 0;
+        reelLayoutGroups = new VerticalLayoutGroup[reelTransformCount];
+        reelRestingLocalPositions = new Vector3[reelTransformCount];
+        anticipatingReels = new bool[reelTransformCount];
+        for (int i = 0; i < reelTransformCount; i++)
         {
             if (reelTransforms[i] != null)
             {
@@ -387,6 +413,12 @@ public class SlotView : MonoBehaviour
     {
         if (matrix == null || matrix.Count == 0) return;
 
+        if (!EnsureInitialized())
+        {
+            throw new System.InvalidOperationException(
+                "SlotView is not ready to display the initial matrix.");
+        }
+
         currentDisplayMatrix = matrix;
 
         int cols = matrix.Count;
@@ -411,6 +443,41 @@ public class SlotView : MonoBehaviour
             SetImageAlpha(col, 6, 0f);
 
         }
+    }
+
+    internal bool ShowRandomFallbackSymbols()
+    {
+        if (!EnsureInitialized())
+        {
+            return false;
+        }
+
+        int reelCount = Mathf.Min(
+            StPatricksGoldDefinition.ReelCount,
+            reelImagesList.Count);
+        if (reelCount <= 0)
+        {
+            return false;
+        }
+
+        var randomMatrix = new List<List<int>>(reelCount);
+        for (int column = 0; column < reelCount; column++)
+        {
+            var symbols = new List<int>(
+                StPatricksGoldDefinition.RowCount);
+            for (int row = 0;
+                 row < StPatricksGoldDefinition.RowCount;
+                 row++)
+            {
+                symbols.Add(GetRandomSpinSymbolId(
+                    StPatricksGoldDefinition.SymbolCount));
+            }
+
+            randomMatrix.Add(symbols);
+        }
+
+        SetInitialMatrix(randomMatrix);
+        return true;
     }
 
     #endregion
@@ -477,20 +544,48 @@ public class SlotView : MonoBehaviour
 
     private Sprite GetSymbolSprite(int symbolId)
     {
-        // Validate symbolId range (0-15)
+        if (symbolSprites == null || symbolSprites.Length == 0)
+        {
+            Debug.LogError(
+                "[SlotView] Symbol sprites have not been initialized.");
+            return null;
+        }
+
+        Sprite fallbackSprite = GetFirstAvailableSymbolSprite();
+
         if (symbolId < 0 || symbolId >= symbolSprites.Length)
         {
             Debug.LogWarning($"[SlotView] Invalid symbolId {symbolId}, using default sprite 0. Total sprites: {symbolSprites.Length}");
-            return symbolSprites[0];
+            return fallbackSprite;
         }
 
         if (symbolSprites[symbolId] == null)
         {
             Debug.LogError($"[SlotView] Symbol sprite for ID {symbolId} is null!");
-            return symbolSprites[0];
+            return fallbackSprite;
         }
 
         return symbolSprites[symbolId];
+    }
+
+    private Sprite GetFirstAvailableSymbolSprite()
+    {
+        if (symbolSprites == null)
+        {
+            return null;
+        }
+
+        for (int symbolId = 0;
+             symbolId < symbolSprites.Length;
+             symbolId++)
+        {
+            if (symbolSprites[symbolId] != null)
+            {
+                return symbolSprites[symbolId];
+            }
+        }
+
+        return null;
     }
 
     #endregion
@@ -636,8 +731,23 @@ public class SlotView : MonoBehaviour
 
     private int GetRandomSpinSymbolId(int symbolCount)
     {
+        if (symbolSprites == null || symbolSprites.Length == 0)
+        {
+            return 0;
+        }
+
         int validSymbolCount = Mathf.Clamp(symbolCount, 1, symbolSprites.Length);
-        return Random.Range(0, validSymbolCount);
+        int firstRandomSymbolId = Random.Range(0, validSymbolCount);
+        for (int offset = 0; offset < validSymbolCount; offset++)
+        {
+            int symbolId = (firstRandomSymbolId + offset) % validSymbolCount;
+            if (symbolSprites[symbolId] != null)
+            {
+                return symbolId;
+            }
+        }
+
+        return 0;
     }
 
     #endregion

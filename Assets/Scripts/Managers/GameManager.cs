@@ -167,19 +167,20 @@ public class GameManager : MonoBehaviour
         ResolveUltraSlotReferences();
         CacheUltraSlotLayout();
         symbolAnimationManager?.StopUltraEntryTransition();
-    }
-
-    private void Start()
-    {
         currentState = GameState.Initializing;
         currentSpinSpeed = SpinSpeed.Normal;
         isInitialized = false;
         initializationFailed = false;
+    }
+
+    private void Start()
+    {
         ResetUltraSlotState();
     }
 
     internal void OnStPatricksGoldConfigReceived(StPatricksGoldGameConfig config, PlayerData player, List<List<int>> initialMatrix)
     {
+        initializationFailed = false;
         stPatricksGoldConfig = config;
         playerData = player;
         currentBetIndex = playerData.currentBetIndex;
@@ -219,6 +220,31 @@ public class GameManager : MonoBehaviour
         GamePresentationChanged?.Invoke();
 
         Debug.Log("[GameManager] Game initialized.");
+    }
+
+    internal void OnInitializationFailed(string message = null)
+    {
+        isInitialized = false;
+        initializationFailed = true;
+        currentState = GameState.Initializing;
+
+        slotView?.ShowRandomFallbackSymbols();
+        SpinActivityChanged?.Invoke(false);
+        GamePresentationChanged?.Invoke();
+
+        if (popupManager == null)
+        {
+            popupManager = FindFirstObjectByType<PopupManager>(
+                FindObjectsInactive.Include);
+        }
+
+        if (popupManager == null ||
+            !popupManager.ShowInitializationFailurePopup(message))
+        {
+            Debug.LogError(
+                "[GameManager] Initialization failed, but the error popup " +
+                "could not be shown.");
+        }
     }
 
     private void ApplyUltraWheelServerValues()

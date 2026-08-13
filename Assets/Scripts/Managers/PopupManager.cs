@@ -11,6 +11,8 @@ public sealed class PopupManager : MonoBehaviour
         "Game disconnected due to a network error. Please relaunch the game.";
     private const string DefaultInsufficientBalanceMessage =
         "Insufficient balance. Please add funds to continue.";
+    private const string DefaultInitializationFailureMessage =
+        "Game is not Initialized";
 
     [Header("Scatter Win Popup")]
     [Tooltip("Assign the complete ScatterWinPanel RectTransform.")]
@@ -775,6 +777,23 @@ public sealed class PopupManager : MonoBehaviour
                 ? DefaultInsufficientBalanceMessage
                 : message,
             false);
+        return true;
+    }
+
+    internal bool ShowInitializationFailurePopup(string message = null)
+    {
+        if (errorPopup == null)
+        {
+            Debug.LogError(
+                "[PopupManager] Assign the reusable Error Popup reference.");
+            return false;
+        }
+
+        ShowErrorPopup(
+            string.IsNullOrWhiteSpace(message)
+                ? DefaultInitializationFailureMessage
+                : message,
+            true);
         return true;
     }
 
