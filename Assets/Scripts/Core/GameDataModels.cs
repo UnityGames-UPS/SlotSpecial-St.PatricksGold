@@ -292,6 +292,19 @@ public class ServerSpinResponse
 }
 
 [Serializable]
+public class JackpotOpenRequest
+{
+    public string type = "JACKPOT_OPEN";
+    public JackpotOpenPayload payload = new JackpotOpenPayload();
+}
+
+[Serializable]
+public class JackpotOpenPayload
+{
+  public string tier;
+}
+
+[Serializable]
 public class ServerPlayerBalance
 {
     public double? balance; // Nullable because server sends null

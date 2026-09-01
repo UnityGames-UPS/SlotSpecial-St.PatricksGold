@@ -7,6 +7,7 @@ using Best.SocketIO;
 using Best.SocketIO.Events;
 using Best.HTTP.JSON;
 using Newtonsoft.Json;
+using UnityEngine.UI;
 
 public class SocketIOManager : MonoBehaviour
 {
@@ -22,6 +23,8 @@ public class SocketIOManager : MonoBehaviour
     [SerializeField] internal JSFunctCalls JSManager;
     [SerializeField] private GameObject RaycastBlocker;
 
+    [SerializeField] private List<Button> buttons;
+
     private SocketManager socketManager;
     private Socket gameSocket;
     private bool socketSetupStarted;
@@ -29,6 +32,7 @@ public class SocketIOManager : MonoBehaviour
     private string authToken;
     private string socketURL;
 
+    private bool JackpotOpen;
     internal bool isConnected;
     internal bool isInitialized;
     internal bool isExiting;   // True when CloseSocket is called intentionally (exit button)
@@ -63,6 +67,43 @@ public class SocketIOManager : MonoBehaviour
         hasFocus = true;
         isBeingDestroyed = false;
         hasNotifiedUnexpectedDisconnection = false;
+        for (int i = 0; i < buttons.Count; i++)
+        {
+            buttons[i].onClick.RemoveAllListeners();
+            string buttonName = buttons[i].name;
+            buttons[i].onClick.AddListener(() => SendJackpotOpen(buttonName));
+        }
+    }
+
+    void SendJackpotOpen(string JackpotType)
+    {
+        if (JackpotOpen)
+        return;
+
+        JackpotOpen = true;
+
+        var request = new JackpotOpenRequest
+        {
+            type = "JACKPOT_OPEN",
+            payload = new JackpotOpenPayload
+            {
+                tier = JackpotType
+            }
+        };
+
+        string json = JsonConvert.SerializeObject(request);
+        Debug.Log($"[SocketIO] Jackpot Open request: {json}");
+        if (gameSocket != null)
+        {
+            gameSocket.Emit("request", json);
+        }
+
+        Invoke(nameof(ResetJackpotOpen), 1f);
+    }
+
+    void ResetJackpotOpen()
+    {
+        JackpotOpen = false;
     }
 
     private void Start()
