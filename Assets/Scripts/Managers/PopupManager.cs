@@ -59,7 +59,7 @@ public sealed class PopupManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI errorHeaderText;
     [Tooltip("Message TMP text inside the error popup.")]
     [SerializeField] private TextMeshProUGUI errorMessageText;
-    [Tooltip("Cancel button used to acknowledge the error.")]
+    [Tooltip("Close button used to acknowledge the error.")]
     [SerializeField] private Button errorOkButton;
 
     [Header("Error Popup Animation")]
@@ -198,7 +198,8 @@ public sealed class PopupManager : MonoBehaviour
     private void ShowErrorPopup(
         string header,
         string message,
-        bool isCritical)
+        bool isCritical,
+        bool showCloseButton = true)
     {
         if (errorPopup == null)
         {
@@ -236,7 +237,8 @@ public sealed class PopupManager : MonoBehaviour
 
         if (errorOkButton != null)
         {
-            errorOkButton.interactable = true;
+            errorOkButton.gameObject.SetActive(showCloseButton);
+            errorOkButton.interactable = showCloseButton;
         }
 
         isErrorCritical = isCritical;
@@ -797,8 +799,19 @@ public sealed class PopupManager : MonoBehaviour
         ShowErrorPopup(
             DefaultReconnectionHeader,
             DefaultReconnectionMessage,
-            true);
+            true,
+            false);
         return true;
+    }
+
+    internal void CloseReconnectionPopup()
+    {
+        if (currentActivePopup == errorPopup &&
+            errorHeaderText != null &&
+            errorHeaderText.text == DefaultReconnectionHeader)
+        {
+            CloseCurrentPopup();
+        }
     }
 
     internal bool ShowInsufficientBalancePopup()

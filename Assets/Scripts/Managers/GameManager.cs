@@ -3909,6 +3909,16 @@ public class GameManager : MonoBehaviour
 
     #region Connection Events
 
+    internal void OnConnectionRecoveryStarted()
+    {
+        popupManager?.ShowReconnectionPopup();
+    }
+
+    internal void OnConnectionRecovered()
+    {
+        popupManager?.CloseReconnectionPopup();
+    }
+
     internal void OnDisconnected()
     {
         if (spinCoroutine != null)

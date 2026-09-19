@@ -1466,6 +1466,11 @@ public class SocketIOManager : MonoBehaviour
                 {
                     missedPongs++;
 
+                    if (missedPongs == 1)
+                    {
+                        gameManager?.OnConnectionRecoveryStarted();
+                    }
+
                     if (missedPongs >= MAX_MISSED_PONGS)
                     {
                         Debug.LogWarning("[SocketIO] Max pongs missed - disconnecting");
@@ -1507,6 +1512,7 @@ public class SocketIOManager : MonoBehaviour
         if (missedPongs > 0)
         {
             missedPongs = 0;
+            gameManager?.OnConnectionRecovered();
         }
     }
 
