@@ -7,12 +7,21 @@ using UnityEngine.UI;
 [DisallowMultipleComponent]
 public sealed class PopupManager : MonoBehaviour
 {
+    private const string DefaultErrorHeader = "ERROR";
+    private const string DefaultDisconnectionHeader = "DISCONNECTED";
     private const string DefaultDisconnectionMessage =
-        "Game disconnected due to a network error. Please relaunch the game.";
+        "Please restart the game.";
+    private const string DefaultReconnectionHeader = "CONNECTION LOST";
+    private const string DefaultReconnectionMessage =
+        "Trying to reconnect...";
+    private const string DefaultInsufficientBalanceHeader =
+        "INSUFFICIENT BALANCE";
     private const string DefaultInsufficientBalanceMessage =
-        "Insufficient balance. Please add funds to continue.";
+        "Please add funds to continue.";
+    private const string DefaultInitializationFailureHeader =
+        "INITIALIZATION FAILED";
     private const string DefaultInitializationFailureMessage =
-        "Game is not Initialized";
+        "Please restart the game.";
 
     [Header("Scatter Win Popup")]
     [Tooltip("Assign the complete ScatterWinPanel RectTransform.")]
@@ -46,6 +55,8 @@ public sealed class PopupManager : MonoBehaviour
     [Header("Reusable Error Popup")]
     [Tooltip("Complete error popup GameObject.")]
     [SerializeField] private GameObject errorPopup;
+    [Tooltip("Header TMP text inside the error popup.")]
+    [SerializeField] private TextMeshProUGUI errorHeaderText;
     [Tooltip("Message TMP text inside the error popup.")]
     [SerializeField] private TextMeshProUGUI errorMessageText;
     [Tooltip("Cancel button used to acknowledge the error.")]
@@ -181,6 +192,14 @@ public sealed class PopupManager : MonoBehaviour
         string message,
         bool isCritical)
     {
+        ShowErrorPopup(DefaultErrorHeader, message, isCritical);
+    }
+
+    private void ShowErrorPopup(
+        string header,
+        string message,
+        bool isCritical)
+    {
         if (errorPopup == null)
         {
             return;
@@ -189,11 +208,14 @@ public sealed class PopupManager : MonoBehaviour
         ResolveErrorPopupRect();
         CachePanelScale(errorPopupRect, ref errorPopupNormalScale);
 
+        string popupHeader = header ?? string.Empty;
         string popupMessage = message ?? string.Empty;
 
         if (currentActivePopup == errorPopup &&
             errorPopup.activeSelf &&
             isErrorCritical == isCritical &&
+            (errorHeaderText == null ||
+             errorHeaderText.text == popupHeader) &&
             (errorMessageText == null ||
              errorMessageText.text == popupMessage))
         {
@@ -201,6 +223,11 @@ public sealed class PopupManager : MonoBehaviour
         }
 
         CloseCurrentPopup();
+
+        if (errorHeaderText != null)
+        {
+            errorHeaderText.text = popupHeader;
+        }
 
         if (errorMessageText != null)
         {
@@ -750,9 +777,26 @@ public sealed class PopupManager : MonoBehaviour
         }
 
         ShowErrorPopup(
+            DefaultDisconnectionHeader,
             string.IsNullOrWhiteSpace(message)
                 ? DefaultDisconnectionMessage
                 : message,
+            true);
+        return true;
+    }
+
+    internal bool ShowReconnectionPopup()
+    {
+        if (errorPopup == null)
+        {
+            Debug.LogError(
+                "[PopupManager] Assign the reusable Error Popup reference.");
+            return false;
+        }
+
+        ShowErrorPopup(
+            DefaultReconnectionHeader,
+            DefaultReconnectionMessage,
             true);
         return true;
     }
@@ -773,6 +817,7 @@ public sealed class PopupManager : MonoBehaviour
         }
 
         ShowErrorPopup(
+            DefaultInsufficientBalanceHeader,
             string.IsNullOrWhiteSpace(message)
                 ? DefaultInsufficientBalanceMessage
                 : message,
@@ -790,6 +835,7 @@ public sealed class PopupManager : MonoBehaviour
         }
 
         ShowErrorPopup(
+            DefaultInitializationFailureHeader,
             string.IsNullOrWhiteSpace(message)
                 ? DefaultInitializationFailureMessage
                 : message,
