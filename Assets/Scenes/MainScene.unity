@@ -5535,15 +5535,7 @@ MonoBehaviour:
   uiManager: {fileID: 1784191470}
   JSManager: {fileID: 2001094553}
   RaycastBlocker: {fileID: 1606079289}
-  buttons:
-  - {fileID: 1591561041}
-  - {fileID: 792345787}
-  - {fileID: 352979595}
-  - {fileID: 1462773588}
-  - {fileID: 1285206263}
-  - {fileID: 1964619929}
-  - {fileID: 181371207}
-  - {fileID: 160632664}
+  buttons: []
 --- !u!1001 &192860916
 PrefabInstance:
   m_ObjectHideFlags: 0
